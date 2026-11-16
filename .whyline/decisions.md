@@ -45326,3 +45326,144 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 9a51968ab0744752a4d2e67c4aded880 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-16T06:31:55.270Z"} -->
+
+## 2026-11-16 — Start-failure alerts dedupe via a start_alerts table keyed (agent, due_at); only sent when on_failure=alert
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ASST-26
+
+**Because:** a 2-minute tick must not repeat the alert; silent agents stay silent
+
+**Rejected:**
+
+- alert on every tick — spams
+
+**Files:** src/whyline/agents/tick.py
+
+<!-- whyline-event: b93cfbe123484bb9b89cb51d4a8c99a0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T06:33:30.033Z"} -->
+
+## 2026-11-16 — Pass ASST-26 Round 2 testing
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** ASST-26
+
+**Because:** Missed and skipped runs send failure alerts when on_failure=alert and stay quiet otherwise; start errors alert once per occurrence deduplicated in state.py without blocking subsequent agents; alert send errors are isolated; 35 focused tests and full test suite (5015 passed, 1 skipped) passed
+
+**Files:** src/whyline/agents/deliver.py
+
+<!-- whyline-event: 9fb23349a99c41d2a841b83af85adafc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T06:53:44.491Z"} -->
+
+## 2026-11-16 — Request ASST-26 Round 3 changes
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-26
+
+**Because:** Scheduler-created missed occurrences are never delivered and omit next-run guidance; spawn failures remain running and queued spawn failures can abort the tick; normal delivery failure results are not logged
+
+**Rejected:**
+
+- approve — passing tests do not cover the unmet production paths
+
+**Files:** src/whyline/agents/tick.py
+
+<!-- whyline-event: 831e84d0f988446991a99a1477234fde -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T07:14:31.809Z"} -->
+
+## 2026-11-16 — Missed-run alerts fire from the tick when record_missed_new inserts a row; spawn failures mark the occurrence 'failed'
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ASST-26
+
+**Because:** inserting once gives natural dedup; 'failed' frees the slot yet keeps the unique (agent, due) key so a tick does not retry and re-alert
+
+**Rejected:**
+
+- reset to claimed — retries and spawn-fails every 2 minutes
+
+**Files:** src/whyline/agents/tick.py
+
+<!-- whyline-event: 59b25cd8c3484f12ad02ee0c901c7b6d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T07:16:29.438Z"} -->
+
+## 2026-11-16 — Pass ASST-26 Round 5 testing
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** ASST-26
+
+**Because:** Missed and skipped runs alert when on_failure=alert and stay quiet otherwise; scheduler-created missed runs alert with next run time; fresh and queued spawn failures mark occurrences failed without holding slots and alert once per occurrence via start_alerts deduplication; delivery failures are logged; focused tests (38 passed) and full test suite (5018 passed, 1 skipped) all passed
+
+**Files:** src/whyline/agents/deliver.py
+
+<!-- whyline-event: dbea8ea9c2d94faaa2086c2fa5396a00 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T07:36:39.078Z"} -->
+
+## 2026-11-16 — Reject ASST-26 Round 6 pending queued preparation-error isolation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-26
+
+**Because:** The alert and spawn-failure paths pass tests, but _start_waiting calls _runnable outside its exception guard, so a preparation or store error for a queued due occurrence raises out of the tick, sends no start alert, and prevents later due agents; the new tests cover spawn errors only
+
+**Rejected:**
+
+- approve — focused and full suites are green but do not exercise the unmet preparation-error requirement
+
+**Files:** src/whyline/agents/tick.py
+
+<!-- whyline-event: e2835757613c45c5ac23057ae330eeaf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T07:57:22.239Z"} -->
+
+## 2026-11-16 — Queued preparation errors mark the occurrence failed and alert once if the definition still loads
+
+**Actor:** claude
+**Role:** implementer
+**Task:** ASST-26
+
+**Because:** _runnable can raise on store errors; failing the row stops per-tick retries and the start_alerts key dedups
+
+**Rejected:**
+
+- leave claimed — re-raises every 2 minutes and blocks later agents
+
+**Files:** src/whyline/agents/tick.py
+
+<!-- whyline-event: b0eedac85f1d4c318d3c8ed2494de6e6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T08:08:06.681Z"} -->
+
+## 2026-11-16 — Pass ASST-26 Round 8 testing
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** ASST-26
+
+**Because:** Queued and fresh start/preparation errors fail the occurrence without holding a slot and alert once per occurrence deduplicated in state.py; missed and skipped runs alert when on_failure=alert; alert send errors are isolated; focused suite (39 passed) and full test suite (5019 passed, 1 skipped) all passed
+
+**Files:** src/whyline/agents/tick.py
+
+<!-- whyline-event: 0458d0639d4c4f7d9c6acc550437cf8b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T08:28:54.462Z"} -->
+
+## 2026-11-16 — Approve ASST-26 Round 9
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-26
+
+**Because:** Missed and skipped outcomes now honor on_failure alerting, fresh and queued start failures are recorded and deduplicated per occurrence, delivery failures are isolated and logged, the focused suite passed 39 tests, and the full suite completed successfully
+
+**Rejected:**
+
+- request changes — the implementation and tests cover the required failure paths without a material defect
+
+**Files:** src/whyline/agents/tick.py
+
+<!-- whyline-event: 7d642681a7164c2fbc9a1985e5b2996d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T08:49:36.641Z"} -->

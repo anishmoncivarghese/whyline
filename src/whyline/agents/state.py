@@ -32,6 +32,11 @@ _SCHEMA = (
       UNIQUE(agent_id, due_at)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS start_alerts (
+      agent_id TEXT, due_at TEXT, PRIMARY KEY (agent_id, due_at)
+    )
+    """,
 )
 
 # SQLITE_CORRUPT is 11, SQLITE_NOTADB is 26. A lock or a missing directory
@@ -235,7 +240,12 @@ def claim(conn: sqlite3.Connection, agent_id: str, due_at: str, source: str,
 
 def record_missed(conn: sqlite3.Connection, agent_id: str, due_ats) -> int:
     """Record each stale due time once. Returns how many rows this call inserted."""
-    inserted = 0
+    return len(record_missed_new(conn, agent_id, due_ats))
+
+
+def record_missed_new(conn: sqlite3.Connection, agent_id: str, due_ats) -> list[str]:
+    """Like record_missed, but returns the due times this call inserted."""
+    inserted = []
     for due in due_ats:
         try:
             conn.execute(
@@ -245,8 +255,17 @@ def record_missed(conn: sqlite3.Connection, agent_id: str, due_ats) -> int:
             )
         except sqlite3.IntegrityError:
             continue
-        inserted += 1
+        inserted.append(due)
     return inserted
+
+
+def claim_start_alert(conn: sqlite3.Connection, agent_id: str, due_at: str) -> bool:
+    """True once per agent and due time: the caller may send the could-not-start alert."""
+    try:
+        conn.execute("INSERT INTO start_alerts (agent_id, due_at) VALUES (?, ?)", (agent_id, due_at))
+    except sqlite3.IntegrityError:
+        return False
+    return True
 
 
 def occurrence(conn: sqlite3.Connection, occurrence_id: int) -> sqlite3.Row | None:

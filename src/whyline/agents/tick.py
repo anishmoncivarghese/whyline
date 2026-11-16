@@ -53,9 +53,13 @@ def _definition(act: state.Activation) -> d.AgentDef | None:
         return None
 
 
-def run_tick(*, now: datetime | None = None, spawn=None) -> TickReport:
+def run_tick(*, now: datetime | None = None, spawn=None, alert=None, missed_alert=None) -> TickReport:
     now = now or datetime.now().replace(microsecond=0)
     spawn = spawn or _spawn
+    if alert is None or missed_alert is None:
+        from whyline.agents import deliver
+        alert = alert or deliver.start_failed
+        missed_alert = missed_alert or deliver.missed
     report = TickReport()
     with wstate.file_lock(paths.home() / "tick"):
         conn = state.connect()
@@ -81,16 +85,25 @@ def run_tick(*, now: datetime | None = None, spawn=None) -> TickReport:
                 due, stale = schedule.plan_tick(
                     defn.trigger, last_run_at=last, accepted_at=accepted, now=now
                 )
+                nxt = schedule.next_due(defn.trigger, now=now)
                 if stale:
-                    report.missed += state.record_missed(
+                    new = state.record_missed_new(
                         conn, act.agent_id, [item.isoformat() for item in stale]
                     )
+                    report.missed += len(new)
+                    for due_at in new:
+                        try:
+                            missed_alert(defn, due_at, nxt)
+                        except Exception:
+                            logging.getLogger(__name__).exception("missed-run alert failed")
                 if due is not None:
                     source = "catch_up" if now - due > CATCH_UP_AFTER else "schedule"
-                    occ = state.claim(conn, act.agent_id, due.isoformat(), source)
-                    if occ is not None:
-                        _start(conn, act.agent_id, occ, spawn, report, now)
-                nxt = schedule.next_due(defn.trigger, now=now)
+                    try:
+                        occ = state.claim(conn, act.agent_id, due.isoformat(), source)
+                        if occ is not None:
+                            _start(conn, act.agent_id, occ, spawn, report, now)
+                    except Exception as error:
+                        _start_failed(conn, defn, due.isoformat(), error, alert)
                 state.update(conn, act.agent_id, next_due_at=nxt.isoformat() if nxt else "")
             elif defn.trigger.kind == "folder":
                 # Task 13. A saved folder agent must not abort every other agent
@@ -103,10 +116,21 @@ def run_tick(*, now: datetime | None = None, spawn=None) -> TickReport:
                     conn, defn, act, now=now,
                     start=lambda occ: _start(conn, act.agent_id, occ, spawn, report, now),
                 )
-        _start_waiting(conn, spawn, report, now)
+        _start_waiting(conn, spawn, report, now, alert)
         _run_workflows(now)
         _run_inbox(now)
     return report
+
+
+def _start_failed(conn, defn, due_at: str, error: Exception, alert) -> None:
+    """A due agent could not be prepared or spawned: log it and alert once
+    per occurrence. Nothing here may stop the other agents."""
+    logging.getLogger(__name__).error("could not start %s: %s", defn.agent_id, error)
+    try:
+        if state.claim_start_alert(conn, defn.agent_id, due_at):
+            alert(defn, error)
+    except Exception:
+        logging.getLogger(__name__).exception("start-failure alert failed")
 
 
 def _run_workflows(now: datetime) -> None:
@@ -147,9 +171,20 @@ def _start(conn, agent_id: str, occurrence_id: int, spawn, report: TickReport,
     if busy:
         report.skipped_busy += 1
         return  # stays 'claimed'; _start_waiting picks it up on a later tick
+    _spawn_running(conn, occurrence_id, spawn, report)
+
+
+def _spawn_running(conn, occurrence_id: int, spawn, report: TickReport) -> None:
     state.set_occurrence(conn, occurrence_id, status="running")
     report.started.append(occurrence_id)
-    spawn(occurrence_id)
+    try:
+        spawn(occurrence_id)
+    except Exception:
+        # Keep the (agent, due time) row so it is not retried every tick,
+        # but never leave it 'running' or it would hold a slot forever.
+        state.set_occurrence(conn, occurrence_id, status="failed")
+        report.started.remove(occurrence_id)
+        raise
 
 
 def _running_total(conn) -> int:
@@ -176,16 +211,22 @@ def _runnable(conn, agent_id: str, now: datetime) -> d.AgentDef | None:
     return defn
 
 
-def _start_waiting(conn, spawn, report: TickReport, now: datetime) -> None:
+def _start_waiting(conn, spawn, report: TickReport, now: datetime, alert=None) -> None:
     rows = conn.execute(
-        "SELECT id, agent_id FROM occurrences WHERE status='claimed' ORDER BY id"
+        "SELECT id, agent_id, due_at FROM occurrences WHERE status='claimed' ORDER BY id"
     ).fetchall()
     for row in rows:
         if row["id"] in report.started:
             continue
         # Skip before the capacity break, so a rejected claim does not
         # keep a later, still-accepted claim from taking a free slot.
-        if _runnable(conn, row["agent_id"], now) is None:
+        try:
+            defn = _runnable(conn, row["agent_id"], now)
+        except Exception as error:
+            alert = alert or _default_alert()
+            _preparation_failed(conn, row, error, alert)
+            continue
+        if defn is None:
             continue
         if _running_total(conn) >= MAX_RUNNING:
             break
@@ -195,9 +236,34 @@ def _start_waiting(conn, spawn, report: TickReport, now: datetime) -> None:
         ).fetchone()[0]
         if running:
             continue
-        state.set_occurrence(conn, row["id"], status="running")
-        report.started.append(row["id"])
-        spawn(row["id"])
+        try:
+            _spawn_running(conn, row["id"], spawn, report)
+        except Exception as error:
+            alert = alert or _default_alert()
+            _start_failed(conn, defn, row["due_at"], error, alert)
+
+
+def _default_alert():
+    from whyline.agents import deliver
+    return deliver.start_failed
+
+
+def _preparation_failed(conn, row, error: Exception, alert) -> None:
+    """A queued claim could not even be prepared (a store or definition error).
+    Mark it failed so later ticks do not repeat it, and alert once if the
+    definition can still be read. Nothing here may stop the other agents."""
+    log = logging.getLogger(__name__)
+    try:
+        state.set_occurrence(conn, row["id"], status="failed")
+        act = state.get(conn, row["agent_id"])
+        defn = _definition(act) if act is not None else None
+    except Exception:
+        log.exception("could not record preparation failure for %s", row["agent_id"])
+        return
+    if defn is None:
+        log.error("could not start %s: %s", row["agent_id"], error)
+        return
+    _start_failed(conn, defn, row["due_at"], error, alert)
 
 
 def run_occurrence(occurrence_id: int, *, now: datetime | None = None):

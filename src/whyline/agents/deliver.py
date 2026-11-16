@@ -2,16 +2,19 @@
 (deliveries spec 2, 7, 8). Never raises; never changes the run's outcome."""
 from __future__ import annotations
 
+import logging
 import os
 import platform
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
 from whyline.agents import convert, deliveries, mail_send, paths, records
 
 COMMAND_TIMEOUT = 120
 _SUCCEEDED = ("succeeded", "succeeded_with_denials")
-_NO_RUN = ("skipped", "missed", "nothing_new", "cancelled")
+_NO_RUN = ("nothing_new", "cancelled")
+_NOT_STARTED = ("skipped", "missed")
 _NO_WORD = "(Word conversion isn't available on this computer, so the Markdown file is attached.)"
 
 
@@ -20,10 +23,23 @@ def _telegram():
     return telegram
 
 
-def subject_line(defn, delivery, record, *, failed: bool = False) -> str:
+def subject_line(defn, delivery, record, *, failed: bool = False, word: str = "failed") -> str:
     base = delivery.subject.strip() or defn.label
     day = record.started[:10]
-    return f"{base} failed — {day}" if failed else f"{base} — {day}"
+    return f"{base} {word} — {day}" if failed else f"{base} — {day}"
+
+
+def _not_started_body(defn, record) -> str:
+    if record.reason:
+        return f"{defn.label} {record.outcome}: {record.reason}"
+    if record.outcome == "missed":
+        try:
+            at = datetime.fromisoformat(record.started).strftime("%H:%M")
+            run = f"the {at} run"
+        except (TypeError, ValueError):
+            run = "a run"
+        return (f"{defn.label} missed {run}: the Mac was asleep or the scheduler was off.")
+    return f"{defn.label} skipped a run: no reason given"
 
 
 def _signature() -> str:
@@ -127,6 +143,9 @@ def send(delivery, subject, body, attachment=None, *, mail=None, tg=None) -> lis
         results.append(_email(delivery, subject, body, attachment, mail))
     if delivery.telegram_chat:
         results.append(_send_telegram(delivery, subject, body, attachment, tg))
+    for result in results:
+        if not result["ok"]:
+            logging.getLogger(__name__).warning("%s delivery failed: %s", result["to"], result["detail"])
     return results
 
 
@@ -139,6 +158,7 @@ def after_run(defn, record, *, delivery=None, mail=None, tg=None, run=subprocess
     if delivery is None or delivery.empty or record.outcome in _NO_RUN:
         return []
     succeeded = record.outcome in _SUCCEEDED
+    not_started = record.outcome in _NOT_STARTED
     attachment, report_path = None, ""
     if succeeded:
         attachment, note = _attachment(defn, record, delivery)
@@ -152,6 +172,9 @@ def after_run(defn, record, *, delivery=None, mail=None, tg=None, run=subprocess
         report_path = str(records.run_folder(record.run_id) / "final.md")
         body = convert.summary(text) + (f"\n{note}" if note else "")
         subject = subject_line(defn, delivery, record)
+    elif not_started:
+        body = _not_started_body(defn, record)
+        subject = subject_line(defn, delivery, record, failed=True, word=record.outcome)
     else:
         body = f"{defn.label} {record.outcome}: {record.reason or 'no reason given'}"
         subject = subject_line(defn, delivery, record, failed=True)
@@ -185,6 +208,44 @@ def after_run(defn, record, *, delivery=None, mail=None, tg=None, run=subprocess
     except OSError:
         pass
     return results
+
+
+def missed(defn, due_at, next_run=None, *, delivery=None, mail=None, tg=None) -> list[dict]:
+    """Alert that the scheduler recorded a missed occurrence. Never raises."""
+    try:
+        if delivery is None:
+            delivery = deliveries.get(defn.agent_id)
+        if delivery is None or delivery.empty or delivery.on_failure != "alert":
+            return []
+        try:
+            run = f"the {datetime.fromisoformat(str(due_at)).strftime('%H:%M')} run"
+        except (TypeError, ValueError):
+            run = "a run"
+        body = f"{defn.label} missed {run}: the Mac was asleep or the scheduler was off."
+        if next_run is not None:
+            body += f" The next run is {next_run.strftime('%a %d %b %H:%M')}."
+        base = delivery.subject.strip() or defn.label
+        return send(delivery, f"{base} missed", body, mail=mail, tg=tg)
+    except Exception:
+        logging.getLogger(__name__).exception("missed-run alert failed")
+        return []
+
+
+def start_failed(defn, error, *, delivery=None, mail=None, tg=None) -> list[dict]:
+    """Alert that a due agent could not start. Never raises."""
+    try:
+        if delivery is None:
+            delivery = deliveries.get(defn.agent_id)
+        if delivery is None or delivery.empty or delivery.on_failure != "alert":
+            return []
+        text = " ".join(str(error).split()) or type(error).__name__
+        body = (f"{defn.label} could not start: {text}. "
+                "Run whyline doctor or open the console's Check.")
+        base = delivery.subject.strip() or defn.label
+        return send(delivery, f"{base} could not start", body, mail=mail, tg=tg)
+    except Exception:
+        logging.getLogger(__name__).exception("start-failure alert failed")
+        return []
 
 
 def send_test(label: str, delivery, *, mail=None, tg=None, run=subprocess.run,

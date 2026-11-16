@@ -33,6 +33,98 @@ def test_a_due_run_is_claimed_and_started_once(repo, home):
     assert again.started == [] and len(started) == 1
 
 
+def test_a_start_error_alerts_once_per_occurrence_and_not_other_agents(repo, home):
+    _scheduled(repo, name="a")
+    _scheduled(repo, name="b")
+    alerts, started = [], []
+
+    def spawn(occ):
+        if not started:
+            started.append(occ)
+            raise OSError("cannot spawn")
+        started.append(occ)
+
+    now = datetime(2026, 10, 5, 7, 1)
+    for _ in range(3):
+        tick.run_tick(now=now, spawn=spawn, alert=lambda defn, error: alerts.append((defn.name, str(error))))
+    assert alerts == [("a", "cannot spawn")]
+    assert len(started) == 2
+
+
+def test_scheduler_created_missed_occurrences_alert_once_with_next_run(repo, home):
+    defn = _scheduled(repo)
+    conn = state.connect()
+    state.update(conn, defn.agent_id, last_run_at="2026-10-02T07:00:00")
+    seen = []
+
+    def missed(d_, due_at, next_run):
+        seen.append((d_.name, due_at, next_run))
+
+    now = datetime(2026, 10, 5, 9, 0)
+    for _ in range(2):
+        tick.run_tick(now=now, spawn=lambda occ: None, missed_alert=missed)
+    assert [s[1] for s in seen] == ["2026-10-03T07:00:00", "2026-10-04T07:00:00"]
+    assert seen[0][2] == datetime(2026, 10, 6, 7, 0)
+
+
+def test_a_spawn_failure_is_not_left_running_and_a_queued_one_alerts(repo, home):
+    fresh = _scheduled(repo, name="f")
+    queued, queued_id = _queued(repo, name="q")
+    alerts = []
+
+    def spawn(occ):
+        raise OSError("no fork")
+
+    report = tick.run_tick(now=datetime(2026, 10, 5, 7, 1), spawn=spawn,
+                           alert=lambda defn, error: alerts.append(defn.name))
+    conn = state.connect()
+    assert sorted(alerts) == ["f", "q"]
+    assert report.started == []
+    assert state.running_count(conn) == 0
+    assert state.occurrence(conn, queued_id)["status"] == "failed"
+    tick.run_tick(now=datetime(2026, 10, 5, 7, 3), spawn=spawn,
+                  alert=lambda defn, error: alerts.append(defn.name))
+    assert sorted(alerts) == ["f", "q"]
+
+
+def test_a_queued_preparation_error_alerts_once_and_not_other_agents(repo, home, monkeypatch):
+    bad, bad_id = _queued(repo, name="bad")
+    good, good_id = _queued(repo, name="good")
+    real = tick._runnable
+
+    def runnable(conn, agent_id, now):
+        if agent_id == bad.agent_id:
+            raise RuntimeError("store schema error")
+        return real(conn, agent_id, now)
+
+    monkeypatch.setattr(tick, "_runnable", runnable)
+    alerts, started = [], []
+    for minute in (1, 3, 5):
+        tick.run_tick(now=datetime(2026, 10, 5, 7, minute), spawn=started.append,
+                      alert=lambda defn, error: alerts.append((defn.name, str(error))))
+    assert alerts == [("bad", "store schema error")]
+    assert started == [good_id]
+    assert state.occurrence(state.connect(), bad_id)["status"] == "failed"
+
+
+def test_an_alert_send_error_does_not_stop_other_due_agents(repo, home):
+    _scheduled(repo, name="a")
+    _scheduled(repo, name="b")
+    started = []
+
+    def spawn(occ):
+        if not started:
+            started.append(occ)
+            raise OSError("cannot spawn")
+        started.append(occ)
+
+    def alert(defn, error):
+        raise RuntimeError("mail down")
+
+    tick.run_tick(now=datetime(2026, 10, 5, 7, 1), spawn=spawn, alert=alert)
+    assert len(started) == 2
+
+
 def test_two_ticks_at_once_start_one_run(repo, home):
     _scheduled(repo)
     started, lock = [], threading.Lock()

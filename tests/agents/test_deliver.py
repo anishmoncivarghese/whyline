@@ -105,9 +105,54 @@ def test_silent_and_no_run_outcomes_send_nothing(agent, monkeypatch):
     assert deliver.after_run(agent, _run(agent, "failed", "boom", ""), delivery=silent,
                              mail=lambda *a, **k: mails.append(a), tg=FakeTelegram()) == []
     for outcome in ("skipped", "missed", "nothing_new", "cancelled"):
+        assert deliver.after_run(agent, _run(agent, outcome, "", ""), delivery=silent,
+                                 mail=lambda *a, **k: mails.append(a), tg=FakeTelegram()) == []
+    for outcome in ("nothing_new", "cancelled"):
         assert deliver.after_run(agent, _run(agent, outcome, "", ""), delivery=DELIVERY,
                                  mail=lambda *a, **k: mails.append(a), tg=FakeTelegram()) == []
     assert mails == []
+
+
+def test_missed_and_skipped_runs_alert_when_on_failure_is_alert(agent, monkeypatch):
+    _no_docx(monkeypatch)
+    mails, tg = [], FakeTelegram()
+    deliver.after_run(agent, _run(agent, "missed", "", ""), delivery=DELIVERY,
+                      mail=lambda *a, **k: mails.append(a), tg=tg)
+    assert mails[0][1] == "Daily jobs missed — 2026-10-09"
+    assert "missed the 07:00 run: the Mac was asleep or the scheduler was off." in mails[0][2]
+    deliver.after_run(agent, _run(agent, "skipped", "another run was still going", ""),
+                      delivery=DELIVERY, mail=lambda *a, **k: mails.append(a), tg=tg)
+    assert "skipped: another run was still going" in mails[1][2]
+    assert len(tg.sent) == 2
+
+
+def test_missed_alert_names_the_run_and_next_run_and_logs_send_failures(agent, caplog):
+    from datetime import datetime
+    mails = []
+    results = deliver.missed(agent, "2026-10-09T09:00:00", datetime(2026, 10, 10, 9, 0),
+                             delivery=DELIVERY, mail=lambda *a, **k: mails.append(a),
+                             tg=FakeTelegram(fail="down"))
+    assert "missed the 09:00 run: the Mac was asleep or the scheduler was off. " in mails[0][2]
+    assert "The next run is Sat 10 Oct 09:00." in mails[0][2]
+    assert [r["ok"] for r in results] == [True, False]
+    assert "telegram delivery failed" in caplog.text
+    silent = dl.Delivery(email=("a@example.com",), on_failure="silent")
+    assert deliver.missed(agent, "2026-10-09T09:00:00", None, delivery=silent) == []
+
+
+def test_start_failed_alerts_both_places_and_never_raises(agent):
+    mails, tg = [], FakeTelegram()
+    results = deliver.start_failed(agent, RuntimeError("no such table:\nx"), delivery=DELIVERY,
+                                   mail=lambda *a, **k: mails.append(a), tg=tg)
+    assert [r["to"] for r in results] == ["email", "telegram"]
+    assert ("jobs (personal) could not start: no such table: x. "
+            "Run whyline doctor or open the console's Check.") in mails[0][2]
+    def boom(*a, **k):
+        raise RuntimeError("down")
+    assert deliver.start_failed(agent, RuntimeError("e"), delivery=DELIVERY, mail=boom,
+                                tg=FakeTelegram(fail="down"))[0]["ok"] is False
+    silent = dl.Delivery(email=("a@example.com",), on_failure="silent")
+    assert deliver.start_failed(agent, RuntimeError("e"), delivery=silent, mail=boom) == []
 
 
 def test_mail_failing_still_sends_telegram(agent, monkeypatch):
