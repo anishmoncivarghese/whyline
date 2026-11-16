@@ -348,7 +348,7 @@ Rules every task keeps:
   3. Assertions are not weakened or removed, and no test is marked skip, xfail or flaky.
   Verify by running the three tests 20 times in a row (`for i in $(seq 20); do uv run pytest -q <the three ids> || break; done`) with all passing, then `uv run pytest -q`.
 
-- [ ] RDF-4: New agents are personal by default
+- [x] RDF-4: New agents are personal by default
   Edit `src/whyline/console/agents_screens.py` and its tests only.
   Why: agents and workflows are meant to be the same whichever repository is selected. New workflow already starts as `Personal (this Mac)` and `whyline agents new` only makes personal agents, but the console's New agent form starts as `In this repository`, which saves the agent in that checkout's `.whyline/agents/` and hides it everywhere else. The skill picker also offers the selected repository's skills (`whyline-repo` and `claude-project`) to a personal agent, and a personal agent saved with one fails to load with `unknown skill`, because a personal agent's skills are looked up without a repository (`definitions._check_tools`, `runner.prepare_run`).
   1. `_KIND` lists `Personal (this Mac, every repository)` first and `Only in this repository` second. A new agent starts as `personal` (the form's default and the fallback in the save path). An agent opened for editing keeps its own scope.
