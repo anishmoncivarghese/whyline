@@ -302,7 +302,7 @@ Rules every task keeps:
   - the reason reaches `record.reason`
   Verify with the named focused tests. Change nothing else.
 
-- [ ] ASST-26: Alert when a scheduled run never starts
+- [x] ASST-26: Alert when a scheduled run never starts
   Edit `src/whyline/agents/deliver.py`, `src/whyline/agents/tick.py`, `src/whyline/agents/state.py`, `tests/agents/test_deliver.py`, and `tests/agents/test_tick.py` only.
   Today an agent with `on_failure = "alert"` alerts on `failed`, `timed_out` and `all_unavailable`, but a run that stops before it starts sends nothing.
   - `missed` and `skipped` outcomes also send the failure alert when `on_failure = "alert"`. The reason says what happened and the fix, for example: `missed the 09:00 run: the Mac was asleep or the scheduler was off. The next run is <time>.` `nothing_new` stays silent.
