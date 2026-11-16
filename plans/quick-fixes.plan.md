@@ -290,7 +290,7 @@ Rules every task keeps:
   - the CLI and console share `background_access`
   Verify with `uv run pytest -q tests/ideas/test_brief.py tests/ideas/test_cli.py tests/console/test_assistant_screen.py`. Change nothing else.
 
-- [ ] ASST-25: Denial reasons name the app that was refused
+- [x] ASST-25: Denial reasons name the app that was refused
   Edit `src/whyline/ideas/brief.py`, `src/whyline/agents/runner.py`, `tests/ideas/test_brief.py`, and `tests/agents/test_runner.py` only.
   - `brief.collect` takes `scheduled: bool`. The runner passes `True` when the run's source is `schedule` (or any source started by `whyline agents tick`).
   - For a scheduled run, an access denial reads: `macOS blocked <App> for whyline's scheduled runs (<short name>, <path>). Open whyline console → Assistant → Morning brief → Grant access for scheduled runs, or turn on <short name> in System Settings → Privacy & Security → <list>.` For Mail, the list is Automation → Mail.
