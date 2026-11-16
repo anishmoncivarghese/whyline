@@ -161,6 +161,93 @@ def test_behind_origin(repo, tmp_path):
     assert got["synced"].fix
 
 
+def _push_from_other(tmp_path, files):
+    other = tmp_path / "other"
+    _git(tmp_path, "clone", str(tmp_path / "origin.git"), str(other))
+    _git(other, "config", "user.email", "t@example.com")
+    _git(other, "config", "user.name", "t")
+    for name, text in files.items():
+        (other / name).write_text(text)
+    _git(other, "add", ".")
+    _git(other, "commit", "-m", "more")
+    _git(other, "push", "origin", "main")
+
+
+@pytest.mark.parametrize("setup,flag,ok,text", [
+    ("feature", True, True, "1 commits behind origin/main; Release brings them in first"),
+    ("main", True, False, "HEAD is behind origin/main"),
+    ("detached", True, False, "HEAD is behind origin/main"),
+    ("feature", False, False, "HEAD is behind origin/main"),
+])
+def test_behind_passes_only_when_bring_in_will_run(repo, tmp_path, setup, flag, ok, text):
+    _push_from_other(tmp_path, {"b.txt": "b\n"})
+    if setup == "feature":
+        _git(repo, "checkout", "-b", "feature")
+    elif setup == "detached":
+        _git(repo, "checkout", "--detach")
+    cfg = ReleaseConfig(bring_in_main=flag)
+    item = by_key(run_check(repo, cfg))["synced"]
+    assert item.ok is ok
+    assert item.text == text
+    assert bool(item.fix) is (not ok)
+
+
+def _conflicting(repo, tmp_path, names):
+    _push_from_other(tmp_path, {n: "theirs\n" for n in names})
+    _git(repo, "checkout", "-b", "feature")
+    for n in names:
+        (repo / n).write_text("mine\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "mine")
+    _git(repo, "fetch", "origin", "main")
+
+
+def test_trial_merge_reports_conflicts_and_changes_nothing(repo, tmp_path):
+    from whyline.release import source
+
+    _conflicting(repo, tmp_path, ["c.txt"])
+    before = (_git(repo, "status", "--porcelain"), _git(repo, "for-each-ref"))
+    assert source.trial_merge(repo, "main", run=make_run(repo)) == ["c.txt"]
+    assert (_git(repo, "status", "--porcelain"), _git(repo, "for-each-ref")) == before
+
+
+def test_trial_merge_clean_and_unavailable(repo, tmp_path):
+    from whyline.release import source
+
+    _push_from_other(tmp_path, {"b.txt": "b\n"})
+    _git(repo, "checkout", "-b", "feature")
+    _git(repo, "fetch", "origin", "main")
+    assert source.trial_merge(repo, "main", run=make_run(repo)) == []
+    for code in (128, 129):
+        assert source.trial_merge(repo, "main", run=lambda *a, **k: Result(code)) is None
+
+
+def test_conflicting_bring_in_is_not_ready(repo, tmp_path):
+    _conflicting(repo, tmp_path, ["c.txt"])
+    item = by_key(run_check(repo))["synced"]
+    assert not item.ok
+    assert item.text == "Bringing in main would conflict: c.txt"
+    assert item.fix == ("Merge origin/main into this branch, resolve the conflicts, "
+                        "then check again")
+
+
+def test_conflict_text_shows_two_names_and_k_more(repo, tmp_path):
+    _conflicting(repo, tmp_path, ["c1.txt", "c2.txt", "c3.txt", "c4.txt"])
+    item = by_key(run_check(repo))["synced"]
+    assert item.text == "Bringing in main would conflict: c1.txt, c2.txt and 2 more"
+
+
+def test_trial_merge_unavailable_counts_as_ready(repo, tmp_path, monkeypatch):
+    from whyline.release import source
+
+    _push_from_other(tmp_path, {"b.txt": "b\n"})
+    _git(repo, "checkout", "-b", "feature")
+    monkeypatch.setattr(source, "trial_merge", lambda *a, **k: None)
+    item = by_key(run_check(repo))["synced"]
+    assert item.ok
+    assert item.text == "1 commits behind origin/main; Release brings them in first"
+
+
 def test_ahead_of_origin_ok(repo):
     (repo / "b.txt").write_text("b\n")
     _git(repo, "add", ".")

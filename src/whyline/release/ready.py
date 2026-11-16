@@ -182,7 +182,30 @@ def _synced(root, cfg, version, run, *, fetch, **_):
     if res.returncode == 0:
         return ReadyItem("synced", True, f"HEAD is up to date with origin/{branch}")
     if res.returncode == 1:
-        return ReadyItem("synced", False, f"HEAD is behind origin/{branch}", fix)
+        behind = ReadyItem("synced", False, f"HEAD is behind origin/{branch}", fix)
+        if not cfg.bring_in_main:
+            return behind
+        head = _git(run, root, "rev-parse", "--abbrev-ref", "HEAD")
+        current = (getattr(head, "stdout", "") or "").strip()
+        if head.returncode != 0 or current in ("", "HEAD", branch):
+            return behind
+        from whyline.release import source
+
+        conflicts = source.trial_merge(root, branch, run=run)
+        if conflicts:
+            names = ", ".join(conflicts[:2])
+            if len(conflicts) > 2:
+                names = f"{conflicts[0]}, {conflicts[1]} and {len(conflicts) - 2} more"
+            elif len(conflicts) == 2:
+                names = f"{conflicts[0]} and {conflicts[1]}"
+            return ReadyItem(
+                "synced", False, f"Bringing in {branch} would conflict: {names}",
+                f"Merge origin/{branch} into this branch, resolve the conflicts, "
+                "then check again")
+        count = _git(run, root, "rev-list", "--count", f"HEAD..origin/{branch}")
+        n = (getattr(count, "stdout", "") or "").strip() or "0"
+        return ReadyItem("synced", True,
+                         f"{n} commits behind origin/{branch}; Release brings them in first")
     raise RuntimeError(_short(res.stderr) or "git merge-base failed")
 
 

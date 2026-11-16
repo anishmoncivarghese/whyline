@@ -45501,3 +45501,58 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e72c546122c4490fbd405a40ec1f3637 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-16T09:53:38.646Z"} -->
+
+## 2026-11-16 — Ready runs a trial merge when behind on a non-release branch with Bring in main on
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RDF-1
+
+**Because:** git merge-tree --write-tree changes no ref, index or file, so Check stays read-only; source is imported lazily in ready to avoid a circular import
+
+**Rejected:**
+
+- real merge then abort — touches the working tree and index
+
+**Files:** src/whyline/release/ready.py
+
+<!-- whyline-event: 5cb98a73a76740989f6403f8e5622ca3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T09:55:19.501Z"} -->
+
+## 2026-11-16 — Pass RDF-1 Ready on a branch that is behind main
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RDF-1
+
+**Because:** trial_merge reports conflicts via git merge-tree without altering refs or working files; _synced reports ready with commit count when bring_in_main is on, and conflicts with up to two names and and <k> more when conflicts exist; all ready and source tests passed
+
+**Rejected:**
+
+- fail RDF-1 for test_tui_relay_run flake — known unrelated TUI resume flake that passed on rerun
+
+**Test:** uv run pytest -q tests/release/test_ready.py: passed (34 passed)
+**Test:** uv run pytest -q tests/release/: passed (400 passed)
+**Test:** uv run pytest -q tests/console/test_release_screens.py: passed (67 passed)
+
+**Files:** src/whyline/release/ready.py, src/whyline/release/source.py, tests/release/test_ready.py
+
+<!-- whyline-event: 372c57e1a6564f0da26e1d6f6c344d4f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T10:18:18.735Z"} -->
+
+## 2026-11-16 — Approve RDF-1 Ready handling for branches behind main
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RDF-1
+
+**Because:** The implementation gates the trial merge to non-release attached branches with Bring in main enabled, reports clean or unavailable trials as ready with the real commit count, reports conflicts with the required formatting and fix, and uses read-only merge-tree; the tests exercise real clean and conflicting repositories and prove refs and worktree state are unchanged. The full suite had one unrelated Textual timing failure whose exact test passed on rerun.
+
+**Rejected:**
+
+- Request changes for the full-suite UI timeout — the failure is outside the changed code and passed immediately when rerun in isolation
+
+**Files:** src/whyline/release/ready.py, src/whyline/release/source.py, tests/release/test_ready.py
+
+<!-- whyline-event: 2cceae60736b4fc39c3d7e98004929e4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T10:39:42.451Z"} -->

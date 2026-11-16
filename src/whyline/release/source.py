@@ -41,6 +41,22 @@ def _out(root: Path, run: Run, *args: str) -> str:
     return (getattr(res, "stdout", "") or "").strip()
 
 
+def trial_merge(root: Path, branch: str, *, run: Run) -> list[str] | None:
+    """Files that would conflict merging origin/<branch> into HEAD; None if git can't tell.
+
+    `git merge-tree --write-tree` writes no ref, index or working file.
+    """
+    res = _git(run, Path(root), "merge-tree", "--write-tree", "--name-only",
+               "--no-messages", "HEAD", f"origin/{branch}")
+    code = getattr(res, "returncode", None)
+    if code == 0:
+        return []
+    if code == 1:
+        lines = (getattr(res, "stdout", "") or "").splitlines()
+        return [line.strip() for line in lines[1:] if line.strip()]
+    return None
+
+
 def _finished_plans(root: Path) -> tuple[Path, ...]:
     plans_dir = (root / relay_ops.PLANS_DIR).resolve()
     return tuple(
