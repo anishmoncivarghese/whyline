@@ -50,6 +50,12 @@ class AgentsListScreen(ModalScreen):
         super().__init__()
         self._rows = rows
 
+    @staticmethod
+    def _label(defn) -> str:
+        if defn.kind == "repo":
+            return f"{defn.name} · this repository only"
+        return defn.name
+
     def compose(self) -> ComposeResult:
         body: list = [Label("Agents" if self._rows else NO_AGENTS)]
         if self._rows:
@@ -66,7 +72,7 @@ class AgentsListScreen(ModalScreen):
                     continue
                 cli = row.defn.runner + (f" → {', '.join(row.defn.backup)}" if row.defn.backup else "")
                 table.add_row(
-                    row.defn.label, cli, row.when, row.next_due or "—",
+                    self._label(row.defn), cli, row.when, row.next_due or "—",
                     row.last_outcome or "—", row.status, key=f"{row.defn.kind}:{row.defn.name}",
                 )
             body.append(table)
@@ -980,9 +986,10 @@ def _first_folder(picked: list[Path]) -> Path | None:
 
 
 _KIND = (
-    ("In this repository", "repo"),
-    ("Personal (runs in a folder you choose)", "personal"),
+    ("Personal (this Mac, every repository)", "personal"),
+    ("Only in this repository", "repo"),
 )
+_REPO_SKILL_ORIGINS = ("whyline-repo", "claude-project")
 _WHEN = (
     ("When I run it", "manual"),
     ("Every day", "daily"),
@@ -1167,16 +1174,17 @@ class SkillPickScreen(ModalScreen):
         " SkillPickScreen #sp-error { height: auto; color: $error; }"
     )
 
-    def __init__(self, root, chosen: list[str]) -> None:
+    def __init__(self, root, chosen: list[str], scope: str = "repo") -> None:
         super().__init__()
         self._root = Path(root)
+        self._scope = scope
         self._chosen = set(chosen)
         self._skills: list = []
 
     def compose(self) -> ComposeResult:
         from whyline.tools import skills
 
-        self._skills = skills.find(self._root)
+        self._skills = skills.find(None if self._scope == "personal" else self._root)
         boxes = []
         for i, skill in enumerate(self._skills):
             label = f"{skill.name} ({skill.origin})"
@@ -1501,7 +1509,7 @@ class NewAgentScreen(ModalScreen):
         chats = telegram.known_chats()
         chat_options = _chat_options(chats)
         chat_value = existing_delivery.telegram_chat if existing_delivery.telegram_chat in chats else 0
-        kind = existing.kind if existing else "repo"
+        kind = existing.kind if existing else "personal"
         when = existing.trigger.kind if existing else "manual"
         runnable = self._runnable()
         offered = self._choice_clis()
@@ -1701,6 +1709,7 @@ class NewAgentScreen(ModalScreen):
         select_id = event.select.id
         if select_id == "na-kind":
             self._sync_kind()
+            self._drop_repo_skills()
         elif select_id == "na-runner":
             self._sync_backups()
         elif select_id == "na-when":
@@ -1731,7 +1740,9 @@ class NewAgentScreen(ModalScreen):
             packs = [s for s in self._sources if s.startswith("pack:")]
             self.app.push_screen(PackPickScreen(packs), self._packs_done)
         elif button_id == "na-add-skills":
-            self.app.push_screen(SkillPickScreen(self._root, self._skills), self._skills_done)
+            self.app.push_screen(SkillPickScreen(self._root, self._skills, self._choice("#na-kind") or "personal"),
+                self._skills_done,
+            )
         elif button_id == "na-clear-skills":
             self._skills.clear()
             self._refresh_list("#na-skills-list", self._skills_text())
@@ -1748,6 +1759,30 @@ class NewAgentScreen(ModalScreen):
             self.query_one("#na-workdir-row").display = self._choice("#na-kind") == "personal"
         except NoMatches:
             return
+
+    def _repo_skills(self) -> list[str]:
+        return [ref for ref in self._skills if ref.partition(":")[0] in _REPO_SKILL_ORIGINS]
+
+    @staticmethod
+    def _repo_skill_text(refs: list[str]) -> str:
+        return (
+            f"Removed {len(refs)} skills that are only in this repository: "
+            f"{', '.join(refs)}. A personal agent can use skills from "
+            "~/.whyline/skills and ~/.claude/skills."
+        )
+
+    def _drop_repo_skills(self) -> None:
+        try:
+            if self._choice("#na-kind") != "personal":
+                return
+        except NoMatches:
+            return
+        refs = self._repo_skills()
+        if not refs:
+            return
+        self._skills[:] = [ref for ref in self._skills if ref not in refs]
+        self._refresh_list("#na-skills-list", self._skills_text())
+        self._show_error(self._repo_skill_text(refs))
 
     def _sync_when(self) -> None:
         try:
@@ -1916,7 +1951,7 @@ class NewAgentScreen(ModalScreen):
         return _q(raw)
 
     def _toml(self) -> tuple[str, str, Path]:
-        kind = self._choice("#na-kind") or "repo"
+        kind = self._choice("#na-kind") or "personal"
         name = self.query_one("#na-name", Input).value.strip()
         runner = self._choice("#na-runner")
         when = self._choice("#na-when") or "manual"
@@ -1988,6 +2023,9 @@ class NewAgentScreen(ModalScreen):
     def _submit(self) -> None:
         try:
             text, kind, path = self._toml()
+            if kind == "personal" and self._repo_skills():
+                self._show_error(self._repo_skill_text(self._repo_skills()))
+                return
             defn = d.parse(
                 text,
                 kind=kind,

@@ -45659,3 +45659,72 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a5badaf0cd124d3da3cf623de5130fe0 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-16T13:05:01.989Z"} -->
+
+## 2026-11-16 — New agents default to personal scope; personal agents get only personal skills
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RDF-4
+
+**Because:** Repo-scoped agents are hidden in other repos and a personal agent saved with a repo skill fails to load with unknown skill; the picker, scope change and save now agree
+
+**Rejected:**
+
+- Silently dropping repo skills on save — the user would not learn why the skill vanished
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 7a8e5b268dde48899f7a665250c8d9ce -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T13:22:04.469Z"} -->
+
+## 2026-11-16 — Pass RDF-4 round 2 testing for personal-by-default agents and scope-aware skills
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RDF-4
+
+**Because:** Verified all 6 requirements: _KIND order and labels, default and fallback to personal scope, keeping scope on edit, SkillPickScreen scope awareness, dropping repo skills when switching to personal, save rejection for repo skills on personal agent, and repo marker in agents list; all 5041 tests passed (1870 in console, 3171 in other suites)
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: f5e6dd3154074b2e949cf456f497d604 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T13:49:54.428Z"} -->
+
+## 2026-11-16 — Request RDF-4 changes for exact agent list scope labels
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RDF-4
+
+**Because:** AgentsListScreen builds from AgentDef.label, so repository rows retain the redundant (repo) marker and personal rows retain (personal), contrary to the required repository-only suffix and no extra personal text; the test only checks substring presence instead of exact cells. The plain full suite had one unrelated relay setup timing failure that passed in isolation.
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 4f1908a2741c44839ee914265548418a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T14:11:06.570Z"} -->
+
+## 2026-11-16 — Pass RDF-4 round 5 testing with exact agent list scope labels
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RDF-4
+
+**Because:** Verified all 6 requirements: AgentsListScreen exact row labels ('repox · this repository only' and 'personalx'), _KIND ordering, default/fallback to personal, scope-aware SkillPickScreen, dropping repo skills on scope change, and save refusal; all RDF-4 tests passed (19 passed) and full test suite passed (5040 passed, 1 unrelated relay setup test timing flake verified passing in isolation with 73/73 passed)
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: b62ce232d97d406182c2ae42de3d5509 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T14:46:38.630Z"} -->
+
+## 2026-11-16 — Approve RDF-4 round 6 with exact scope labels and personal-safe skills
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RDF-4
+
+**Because:** The diff satisfies all six requirements, the tests cover defaults, fallback, edit preservation, scope-aware skill discovery, removal and refusal, exact choices, and exact list rows, git diff --check is clean, and uv run pytest -q exited 0
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: c51cf9e96e934691be8576c49061296a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T15:07:07.561Z"} -->

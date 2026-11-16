@@ -97,6 +97,7 @@ async def test_each_section_saves_through_definitions(tmp_path):
         app.push_screen(NewAgentScreen(root, STATUS), app._new_agent_done)
         await pilot.pause()
         s = app.screen
+        s.query_one("#na-kind", tui.Select).value = "repo"
         s.query_one("#na-name", tui.Input).value = "helper"
         s.query_one("#na-instructions").load_text("Help.")
         s._page_done("https://example.com/a")

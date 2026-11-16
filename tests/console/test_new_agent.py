@@ -63,6 +63,7 @@ async def test_fill_review_and_save_a_repo_agent(tmp_path, monkeypatch):
         app.push_screen(NewAgentScreen(tmp_path / "repo", STATUS), app._new_agent_done)
         await pilot.pause()
         s = app.screen
+        s.query_one("#na-kind", tui.Select).value = "repo"
         s.query_one("#na-name", tui.Input).value = "digest"
         s.query_one("#na-instructions").load_text("Summarise what changed.")
         s.query_one("#na-runner", tui.Select).value = "claude"
@@ -361,7 +362,7 @@ async def test_blank_keeps_todays_flow_without_templates_create(tmp_path, monkey
             "blank form shown",
         )
         screen = app.screen
-        assert screen.query_one("#na-kind", tui.Select).value == "repo"
+        assert screen.query_one("#na-kind", tui.Select).value == "personal"
         assert screen.query_one("#na-name", tui.Input).value == ""
         screen.query_one("#na-name", tui.Input).value = "blank-check"
         screen.query_one("#na-instructions", tui.TextArea).load_text("Check repo notes.")
@@ -372,7 +373,7 @@ async def test_blank_keeps_todays_flow_without_templates_create(tmp_path, monkey
             "review shown",
         )
         app.screen.query_one("#rv-save", tui.Button).press()
-        saved = repo / ".whyline" / "agents" / "blank-check.toml"
+        saved = tmp_path / "home" / ".whyline" / "agents" / "blank-check.toml"
         await _until(pilot, lambda: saved.is_file(), "blank agent saved")
     assert 'name = "blank-check"' in saved.read_text(encoding="utf-8")
 
