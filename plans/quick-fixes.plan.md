@@ -338,7 +338,7 @@ Rules every task keeps:
   5. Rerun, Ask an agent and the stop dialog are unchanged: they already show `Failure.text()`.
   Tests: `test_known_failing_job_is_not_blamed` (jobs in the order Windows, Ubuntu; Windows failed in the last passing run; the failure names the Ubuntu job and lists Windows in `known_jobs`), `test_no_baseline_names_every_failed_job`, every failed job known-failing so the first is named, the two extra lines and their caps, the round trip, and an old saved failure loading.
 
-- [ ] RDF-3: Three console tests wait for the screen
+- [x] RDF-3: Three console tests wait for the screen
   Edit `tests/console/test_workflows_builder.py`, `tests/console/test_relay_screens.py` and `tests/console/test_new_agent_deliveries.py` only. No source file changes.
   1. Each of these tests failed once on CI on 2026-11-14 or 2026-11-15 and passes locally:
      - `test_workflows_builder.py::test_routing_select_offers_only_later_steps` (`assert Select.BLANK == 'no'`)
