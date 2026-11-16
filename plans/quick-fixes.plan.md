@@ -315,7 +315,7 @@ Rules every task keeps:
   - an alert send error does not stop other due agents
   Verify with the named focused tests. Change nothing else.
 
-- [ ] ASST-27: Scheduled access documentation and full check
+- [x] ASST-27: Scheduled access documentation and full check
   Edit `docs/assistant.md` only.
   Add a "Scheduled runs need their own permission" section: why the terminal and scheduled runs are different apps to macOS, the console's `Grant access for scheduled runs` first and `whyline idea brief access --scheduled --grant` second, what the failure alert looks like, and that missed runs now alert.
   Run `git diff --check` and `uv run pytest -q`. If a failure needs an application-code change, leave the task unapproved with the exact failing test and request a new task.
