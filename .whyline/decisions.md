@@ -45556,3 +45556,72 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2cceae60736b4fc39c3d7e98004929e4 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-16T10:39:42.451Z"} -->
+
+## 2026-11-16 — Fail RDF-2: 2 existing release tests broken by diagnose changes
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RDF-2
+
+**Because:** Adding headBranch to gh run view breaks test_targets.py assertion for exact --json fields, and other_jobs leaks ci_ignore jobs into failure text breaking test_github.py
+
+**Rejected:**
+
+- Pass RDF-2 — full pytest suite must pass with exit 0 and these regressions are directly caused by ci_failure.py changes
+
+**Files:** src/whyline/release/ci_failure.py
+
+<!-- whyline-event: a36c39a82b0244fd80d97120a6599296 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T11:05:42.778Z"} -->
+
+## 2026-11-16 — Pass ignored CI jobs into diagnose so they are never named; update view-args test
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RDF-2
+
+**Because:** The other_jobs list leaked ci_ignore jobs into the failure text, so diagnose takes an ignore set that github.failed_error passes from the ignored names
+
+**Rejected:**
+
+- Filter ignored jobs in github.py after diagnose — Failure text is built inside diagnose, so it would be too late
+
+**Files:** src/whyline/release/ci_failure.py, src/whyline/release/github.py
+
+<!-- whyline-event: dfe0a6e0036347a4b01007686354f326 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T11:26:37.119Z"} -->
+
+## 2026-11-16 — Pass RDF-2: known_failing baseline exclusion and multi-failure reporting verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RDF-2
+
+**Because:** All RDF-2 requirements for known_failing and diagnose are met; test_ci_failure, test_targets, test_github, tests/release (367 passed), and cross-suite tests pass with 0 failures
+
+**Rejected:**
+
+- Fail RDF-2 — previous round regressions in test_targets and github ignored jobs are resolved cleanly and verified
+
+**Files:** src/whyline/release/ci_failure.py
+
+<!-- whyline-event: e878a0421bf348ca90483c89bf07c09d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T11:42:58.648Z"} -->
+
+## 2026-11-16 — Approve RDF-2 multi-job CI failure diagnosis
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RDF-2
+
+**Because:** The required baseline exclusion, fallback behavior, job lists, capped text, serialization compatibility, and Ask text path are implemented; all 367 release tests pass, the unrelated console timeout passes in isolation, and the github caller extension preserves existing ci_ignore behavior
+
+**Rejected:**
+
+- Reject for the full-suite console timeout — the untouched timing test passed immediately in isolation and does not exercise RDF-2
+- Reject the github.py integration as out of scope — passing ignored job names is the minimal compatibility fix needed to keep ci_ignore jobs out of the new multi-job text
+
+**Files:** src/whyline/release/ci_failure.py
+
+<!-- whyline-event: d7b179d4571b494c90b8666f94c12875 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T11:58:30.034Z"} -->

@@ -6,7 +6,7 @@ import json
 import subprocess
 import threading
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from pathlib import Path
 
 from whyline import worktrees
@@ -117,9 +117,9 @@ _PASSED_RUN = {"success", "skipped", "neutral"}
 
 
 def failed_error(root: Path, run: Run, run_id: object, *, name: str = "",
-                 url: str = "") -> StepError:
+                 url: str = "", ignored: Collection[str] = ()) -> StepError:
     """A StepError saying why run `run_id` failed; name and url fill what gh couldn't."""
-    failure = diagnose(root, run_id, run=run)
+    failure = diagnose(root, run_id, run=run, ignore=ignored)
     failure.workflow = failure.workflow or name
     failure.url = failure.url or url
     return StepError(failure.text(), failure=failure)
@@ -147,7 +147,7 @@ def _run_outcome(root: Path, run: Run, item: dict, ignored: set[str]) -> int | S
     for job in kept:
         if job.get("status") == "completed" and job.get("conclusion") in _FAILED:
             return failed_error(root, run, item.get("databaseId", ""),
-                                name=name, url=str(item.get("url", "")))
+                                name=name, url=str(item.get("url", "")), ignored=ignored)
     if not jobs:
         if failed:
             return failed_error(root, run, item.get("databaseId", ""),

@@ -350,3 +350,76 @@ def test_default_ask_agent_is_read_only_in_a_temp_folder(tmp_path, monkeypatch):
                          run=_real_run)
     assert got.text == "ok"
     assert cwds and cwds[0] != tmp_path and tmp_path not in cwds[0].parents
+
+
+def _multi_gh(failed, baseline, *, branch="main", list_rc=0):
+    """A fake gh whose run has several failed jobs; `baseline` is the failed names of the
+    last passing run, or None when there is no passing run."""
+    def jobs(names):
+        return [{"name": n, "conclusion": "failure", "databaseId": i + 10, "steps": []}
+                for i, n in enumerate(names)]
+
+    def run(args, cwd=None, **kw):
+        if args[:3] == ["gh", "run", "list"]:
+            assert args[args.index("--branch") + 1] == branch
+            assert args[args.index("--workflow") + 1] == "ci"
+            out = [] if baseline is None else [{"databaseId": 99}]
+            return SimpleNamespace(returncode=list_rc, stdout=json.dumps(out), stderr="")
+        if args[:3] == ["gh", "run", "view"] and "--log-failed" in args:
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        if args[:3] == ["gh", "run", "view"]:
+            if args[3] == "99":
+                data = {"jobs": jobs(baseline or [])}
+            else:
+                data = {"name": "ci", "url": "u", "attempt": 1, "headBranch": branch,
+                        "jobs": jobs(failed)}
+            return SimpleNamespace(returncode=0, stdout=json.dumps(data), stderr="")
+        return SimpleNamespace(returncode=0, stdout="[]", stderr="")
+    return run
+
+
+def test_known_failing_job_is_not_blamed(tmp_path):
+    failure = diagnose(tmp_path, 7, run=_multi_gh(["Windows", "Ubuntu"], ["Windows"]))
+    assert failure.job == "Ubuntu"
+    assert failure.known_jobs == ["Windows"] and failure.other_jobs == []
+    assert "Also failed, as in the last passing run: Windows" in failure.text()
+
+
+def test_no_baseline_names_every_failed_job(tmp_path):
+    failure = diagnose(tmp_path, 7, run=_multi_gh(["Windows", "Ubuntu"], None))
+    assert failure.job == "Windows"
+    assert failure.other_jobs == ["Ubuntu"] and failure.known_jobs == []
+    assert "Also failed: Ubuntu" in failure.text()
+
+
+def test_failed_baseline_call_names_every_failed_job(tmp_path):
+    failure = diagnose(tmp_path, 7, run=_multi_gh(["Windows", "Ubuntu"], ["Windows"], list_rc=1))
+    assert failure.job == "Windows" and failure.known_jobs == []
+
+
+def test_every_failed_job_known_names_the_first(tmp_path):
+    failure = diagnose(tmp_path, 7, run=_multi_gh(["Windows", "Ubuntu"], ["Ubuntu", "Windows"]))
+    assert failure.job == "Windows"
+    assert failure.other_jobs == ["Ubuntu"] and failure.known_jobs == []
+
+
+def test_known_failing_returns_names_or_none(tmp_path):
+    run = _multi_gh([], ["Windows"])
+    assert ci_failure.known_failing(tmp_path, "ci", "main", run=run) == {"Windows"}
+    assert ci_failure.known_failing(tmp_path, "ci", "main", run=_multi_gh([], None)) is None
+
+
+def test_also_failed_lines_cap_at_three_names():
+    failure = Failure(job="a", other_jobs=["b", "c", "d", "e", "f"], known_jobs=["g", "h"])
+    text = failure.text()
+    assert "Also failed: b, c, d and 2 more" in text
+    assert "Also failed, as in the last passing run: g, h" in text
+    assert "and 0 more" not in text
+
+
+def test_extra_job_lines_round_trip_and_old_failures_load():
+    failure = Failure(job="a", other_jobs=["b"], known_jobs=["c"])
+    again = Failure.from_dict(failure.to_dict())
+    assert again.other_jobs == ["b"] and again.known_jobs == ["c"]
+    old = Failure.from_dict({"cause": "tests", "job": "a", "run_id": "1"})
+    assert old.other_jobs == [] and old.known_jobs == []

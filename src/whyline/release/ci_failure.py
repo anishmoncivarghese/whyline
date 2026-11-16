@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -31,6 +31,8 @@ class Failure:
     url: str = ""
     tests: list[str] = field(default_factory=list)
     excerpt: str = ""
+    other_jobs: list[str] = field(default_factory=list)
+    known_jobs: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -50,6 +52,8 @@ class Failure:
                 url=str(data.get("url", "")),
                 tests=[str(t) for t in data.get("tests", [])],
                 excerpt=str(data.get("excerpt", "")),
+                other_jobs=[str(j) for j in data.get("other_jobs", []) or []],
+                known_jobs=[str(j) for j in data.get("known_jobs", []) or []],
             )
         except (TypeError, ValueError):
             return None
@@ -75,6 +79,10 @@ class Failure:
 
     def text(self) -> str:
         parts = [self.sentence()]
+        if self.other_jobs:
+            parts.append(f"Also failed: {_names(self.other_jobs)}")
+        if self.known_jobs:
+            parts.append(f"Also failed, as in the last passing run: {_names(self.known_jobs)}")
         where = self.workflow
         if self.attempt:
             where = f"{where}, attempt {self.attempt}" if where else f"attempt {self.attempt}"
@@ -87,6 +95,15 @@ class Failure:
         if self.url:
             parts.append(self.url)
         return "\n".join(parts)
+
+
+MAX_NAMED_JOBS = 3
+
+
+def _names(jobs: list[str]) -> str:
+    shown = ", ".join(jobs[:MAX_NAMED_JOBS])
+    more = len(jobs) - MAX_NAMED_JOBS
+    return f"{shown} and {more} more" if more > 0 else shown
 
 
 def _stdout(proc: object) -> str:
@@ -123,11 +140,30 @@ def _excerpt(log: str) -> str:
     return "\n".join(lines[-EXCERPT_LINES:])
 
 
-def diagnose(root: Path | str, run_id: object, *, run: Callable[..., object]) -> Failure:
-    """Work out why run `run_id` failed; never raises."""
+def known_failing(root: Path | str, workflow: str, branch: str, *,
+                  run: Callable[..., object]) -> set[str] | None:
+    """Names of jobs that failed in the latest passing run of `workflow` on `branch`."""
+    root = Path(root)
+    listed = _json(root, run, ["run", "list", "--workflow", workflow, "--branch", branch,
+                               "--status", "success", "--limit", "1", "--json", "databaseId"])
+    if not isinstance(listed, list) or not listed or not isinstance(listed[0], dict):
+        return None
+    base_id = listed[0].get("databaseId")
+    if not base_id:
+        return None
+    data = _json(root, run, ["run", "view", str(base_id), "--json", "jobs"])
+    if not isinstance(data, dict):
+        return None
+    return {str(j.get("name", "") or "") for j in data.get("jobs", []) or []
+            if isinstance(j, dict) and j.get("conclusion") in _BAD}
+
+
+def diagnose(root: Path | str, run_id: object, *, run: Callable[..., object],
+             ignore: Collection[str] = ()) -> Failure:
+    """Work out why run `run_id` failed; never raises. Jobs in `ignore` are never named."""
     root = Path(root)
     failure = Failure(run_id=str(run_id))
-    data = _json(root, run, ["run", "view", str(run_id), "--json", "jobs,name,url,attempt"])
+    data = _json(root, run, ["run", "view", str(run_id), "--json", "jobs,name,url,attempt,headBranch"])
     if not isinstance(data, dict):
         return failure
     failure.workflow = str(data.get("name", "") or "")
@@ -137,9 +173,19 @@ def diagnose(root: Path | str, run_id: object, *, run: Callable[..., object]) ->
     except (TypeError, ValueError):
         failure.attempt = 1
     jobs = [j for j in data.get("jobs", []) or [] if isinstance(j, dict)]
-    bad = next((j for j in jobs if j.get("conclusion") in _BAD), None)
-    if bad is None:
+    failed = [j for j in jobs if j.get("conclusion") in _BAD
+              and str(j.get("name", "") or "") not in ignore]
+    if not failed:
         return failure
+    branch = str(data.get("headBranch", "") or "")
+    known = known_failing(root, failure.workflow, branch, run=run) if (
+        branch and failure.workflow and len(failed) > 1) else None
+    left = [j for j in failed if str(j.get("name", "") or "") not in (known or set())]
+    if left and len(left) < len(failed):
+        failure.known_jobs = [str(j.get("name", "") or "") for j in failed if j not in left]
+        failed = left
+    bad = failed[0]
+    failure.other_jobs = [str(j.get("name", "") or "") for j in failed[1:]]
     failure.job = str(bad.get("name", "") or "")
     failure.url = str(bad.get("url", "") or failure.url)
     steps = [s for s in bad.get("steps", []) or [] if isinstance(s, dict)]
