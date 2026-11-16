@@ -132,6 +132,8 @@ Watch agents are personal agents in `~/.whyline/agents`. They do not depend on t
 
 ## Questions
 
+Answered 2026-11-17: question 1 is yes. Check-ins and `plans/watch-agents.plan.md` run straight after agent-setup (group 1c in `plans/RUN-ORDER.md`). Questions 2 to 4 were not answered; the plan uses the choices in "Calls I made", and failure messages go to the same delivery as hits.
+
 1. **Run order.** Check-ins sit in group 5 today, far down the list. Should check-ins and this plan move up to run straight after agent-setup?
 2. **Seconds.** You asked for seconds. I left them out for cost and because sites block it. Is a 5-minute floor acceptable?
 3. **Urgent by default.** Should a hit wait for active hours by default (my choice), or always come through?

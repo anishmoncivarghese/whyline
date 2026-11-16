@@ -4,7 +4,7 @@
 Spec: `docs/superpowers/specs/2026-11-14-assistant-2-design.md`, Part 4. Task ids are CKN (CHK is used by the job search plans). Read it before every task. Where this plan and the spec differ, this plan wins. In particular:
 - **A gate is a `before` step.** `agents/before.py` already has `Step(run, skip_when_empty=True)`: a step that returns 0 skips the agent. Gates are new steps of that kind that take arguments.
 
-Runs after `plans/assistant-memory.plan.md`, and before `plans/assistant-research.plan.md`.
+Runs after `plans/agent-setup.plan.md`, and before `plans/watch-agents.plan.md`. Moved up on 2026-11-17 so watch agents can follow it; it needs nothing from the assistant plans.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
@@ -67,7 +67,7 @@ Rules every task keeps:
   Tests: `test_held_until_active_hours`, `test_nothing_answer_is_silent`, `test_one_checkin_message_per_hour`, a range across midnight, weekday limits, the 20-item cap, and an agent with no gate delivers exactly as before.
 
 - [ ] CKN-4: Check-ins in the console and CLI
-  Edit `src/whyline/agents/cli.py`, the console's New agent and Agents screens (`src/whyline/console/agents_screens.py` or the file that holds them), and their tests.
+  Edit the `agents` command in `src/whyline/cli.py`, the console's New agent and Agents screens (`src/whyline/console/agents_screens.py` or the file that holds them), and their tests.
   1. One function `service.save_checkin(name, *, gate, gate_args, every_minutes, active_hours, silent)` validates and saves. Both the CLI and the console call it.
   2. CLI:
      - `whyline agents checkin add <agent> --gate <name> [--arg key=value …] [--every <minutes>] [--hours <range>] [--silent]`

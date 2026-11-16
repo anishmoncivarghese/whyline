@@ -1,7 +1,7 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-11-15T00:20:00+05:30 -->
 # Telegram daily use and the plan queue: waiting cards, the queue, instant feedback and the router
 
-Runs after `plans/agent-setup.plan.md`, and before `plans/raaid-log.plan.md`.
+Runs after `plans/watch-agents.plan.md`, and before `plans/raaid-log.plan.md`.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 

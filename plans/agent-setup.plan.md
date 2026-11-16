@@ -1,7 +1,7 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | spec: docs/superpowers/specs/2026-11-15-agent-models-skills-tools-design.md | created: 2026-11-15T21:30:00+05:30 -->
 # Agent setup: picker fixes, a model per CLI, folders, a skills catalogue, a connector catalogue, made tools, tool risk and live relay settings
 
-Runs after `plans/quick-fixes.plan.md`, and before `plans/telegram-daily-use.plan.md`. Spec: `docs/superpowers/specs/2026-11-15-agent-models-skills-tools-design.md`. Read it before every task. Where this plan and the spec differ, this plan wins. In particular:
+Runs after `plans/quick-fixes.plan.md`, and before `plans/assistant-checkins.plan.md`. Spec: `docs/superpowers/specs/2026-11-15-agent-models-skills-tools-design.md`. Read it before every task. Where this plan and the spec differ, this plan wins. In particular:
 - **Not in this plan:** connectors that need a browser sign-in (remote MCP servers), any catalogue entry that pays, and script tools. Risk levels and limits for paying tools are built here so those can follow safely.
 - **Find a tool also searches skills.**
 - **The default folder is the folder a new agent runs in.** Agent files stay in `~/.whyline/agents/`.
