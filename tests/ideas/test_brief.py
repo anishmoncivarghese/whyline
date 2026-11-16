@@ -749,3 +749,39 @@ def test_check_shows_both_access_rows(monkeypatch):
     assert "When you run it here" in row.detail
     assert "Scheduled runs (python3.11)" in row.detail
     assert "turn on python3.11" in row.detail
+
+
+_DENIALS = [
+    (brief.AccessDenied("Calendar", "Calendars", "calendars"), "Calendars"),
+    (brief.AccessDenied("Reminders", "Reminders", "reminders"), "Reminders"),
+    (brief.AccessDenied("Mail", "Mail", "automation"), "Automation → Mail"),
+]
+
+
+@pytest.mark.parametrize("exc, listed", _DENIALS)
+def test_scheduled_denial_names_the_blocked_app(exc, listed):
+    text = brief.scheduled_denial(exc, "/opt/py/bin/python3.13")
+    assert text == (
+        f"macOS blocked {exc.app} for whyline's scheduled runs "
+        "(python3.13, /opt/py/bin/python3.13). Open whyline console → Assistant → "
+        "Morning brief → Grant access for scheduled runs, or turn on python3.13 in "
+        f"System Settings → Privacy & Security → {listed}."
+    )
+
+
+@pytest.mark.parametrize("exc, listed", _DENIALS)
+def test_collect_rewords_denials_only_when_scheduled(monkeypatch, tmp_path, ideas_home, exc, listed):
+    def refuse(*args, **kwargs):
+        raise exc
+
+    for name in ("calendar", "mail", "reminders"):
+        monkeypatch.setattr(brief, name, lambda *a, **k: None)
+    monkeypatch.setattr(brief, exc.app.lower(), refuse)
+    monkeypatch.setattr(brief, "scheduler_python", lambda: "/opt/py/bin/python3.13")
+    with pytest.raises(brief.CalendarError) as scheduled:
+        brief.collect(tmp_path, scheduled=True)
+    assert str(scheduled.value).startswith(f"macOS blocked {exc.app} for whyline's scheduled runs")
+    assert f"Privacy & Security → {listed}." in str(scheduled.value)
+    with pytest.raises(brief.AccessDenied) as interactive:
+        brief.collect(tmp_path)
+    assert str(interactive.value).startswith(f"{exc.app} access is denied for")

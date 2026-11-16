@@ -45300,3 +45300,29 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ef5faccaf8a343859bb6cc55aed37505 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-16T05:47:49.340Z"} -->
+
+## 2026-11-16 — ASST-25 passes round-2 testing
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** ASST-25
+
+**Because:** Focused tests in test_brief.py and test_runner.py (105 passed) verify scheduled denial wording for Calendar, Reminders, and Mail, scheduled flag propagation from run sources, and denial error propagation to record.reason; full suite passed with zero regression failures
+
+**Files:** src/whyline/ideas/brief.py
+
+<!-- whyline-event: bc47193361164162a7a32d49e4be6b3d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T06:11:06.154Z"} -->
+
+## 2026-11-16 — Approve ASST-25 scheduled denial reasons
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-25
+
+**Because:** The collector preserves interactive wording, rewrites Calendar, Reminders, and Mail denials with the scheduled executable and correct System Settings destination, the runner derives scheduled context for schedule and tick-started runs, the complete reason reaches record.reason, and focused plus full project tests pass
+
+**Files:** src/whyline/ideas/brief.py
+
+<!-- whyline-event: 9a51968ab0744752a4d2e67c4aded880 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T06:31:55.270Z"} -->

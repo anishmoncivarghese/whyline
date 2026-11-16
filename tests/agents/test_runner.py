@@ -515,3 +515,33 @@ def test_every_cli_gets_the_same_prompt(repo, home):
     assert len(calls) == 2 and calls[0][1] == calls[1][1]
     assert "Skills (chosen by the user" in calls[0][1]
     assert "--add-dir" in calls[0][0] and "--add-dir" in calls[1][0]
+
+
+@pytest.mark.parametrize("source, unattended, expected", [
+    ("manual", False, False), ("schedule", False, True), ("event", True, True),
+])
+def test_the_runner_passes_scheduled_from_the_run_source(repo, monkeypatch, source, unattended, expected):
+    from whyline.ideas import brief
+
+    seen = []
+    monkeypatch.setattr(brief, "collect", lambda run_dir, *, scheduled: seen.append(scheduled) or 0)
+    run_fn, _ = _script(Result(0, json.dumps({"result": "ok", "permission_denials": []})))
+    runner.execute_once(_with_before(repo), source=source, unattended=unattended, now=NOW, run_fn=run_fn)
+    assert seen == [expected]
+
+
+def test_a_scheduled_denial_reaches_the_record_reason(repo, monkeypatch):
+    from whyline.ideas import brief
+
+    def refuse(run_dir, *, scheduled):
+        denied = brief.AccessDenied("Mail", "Mail", "automation")
+        raise brief.CalendarError(brief.scheduled_denial(denied, "/x/python3"))
+
+    monkeypatch.setattr(brief, "collect", refuse)
+    run_fn, calls = _script()
+    rec = runner.execute_once(_with_before(repo), source="schedule", now=NOW, run_fn=run_fn)
+    assert calls == []
+    assert rec.reason.startswith(
+        "before step failed: macOS blocked Mail for whyline's scheduled runs (python3, /x/python3)"
+    )
+    assert rec.reason.endswith("Automation → Mail.")

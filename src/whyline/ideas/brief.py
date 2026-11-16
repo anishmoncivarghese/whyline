@@ -99,6 +99,7 @@ class AccessDenied(CalendarError):
     def __init__(self, app: str = "Calendar", where: str = "Calendars",
                  pane: str = "calendars") -> None:
         self.app = app
+        self.where = where
         self.pane = pane
         super().__init__(denied_help(app, where, pane, host_app()))
 
@@ -561,6 +562,43 @@ def background_access(
         states[name] = _ACCESS_WORDS.get(code, f"unknown ({code})") if isinstance(code, int) else "unknown"
     states["Mail"] = str(data.get("mail", "unknown"))
     return BackgroundAccess(program, app, states)
+
+
+def scheduled_denial(exc: AccessDenied, program: str | None = None) -> str:
+    """The refusal as a scheduled run sees it: names the program macOS blocked."""
+    program = program or scheduler_python()
+    short = Path(program).name
+    listed = "Automation → Mail" if exc.pane == "automation" else exc.where
+    return (
+        f"macOS blocked {exc.app} for whyline's scheduled runs ({short}, {program}). "
+        "Open whyline console → Assistant → Morning brief → Grant access for scheduled runs, "
+        f"or turn on {short} in System Settings → Privacy & Security → {listed}."
+    )
+
+
+def collect(run_dir: Path, *, scheduled: bool = False) -> int:
+    """Write today.md, mail.md, tasks.md for the morning brief.
+
+    ``scheduled`` is True for runs started by the scheduler; a refused
+    permission is then reworded to name the program macOS blocked.
+    """
+    from whyline.ideas import store
+
+    conn = store.connect()
+    try:
+        calendars = selected(conn)
+        mailboxes = mailboxes_selected(conn)
+    finally:
+        conn.close()
+    try:
+        calendar(run_dir, calendars=calendars)
+        mail(run_dir, mailboxes=mailboxes)
+        reminders(run_dir)
+    except AccessDenied as exc:
+        if not scheduled:
+            raise
+        raise CalendarError(scheduled_denial(exc)) from exc
+    return 3
 
 
 _PANES = {"Calendar": "Calendars", "Reminders": "Reminders", "Mail": "Automation"}

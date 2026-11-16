@@ -306,7 +306,12 @@ def execute_once(defn, *, source: str, payload_dir: Path | None = None, unattend
     if step is not None:
         existing = {p.name for p in folder.iterdir()}
         try:
-            written = step.run(defn, folder, now)
+            if defn.before == "brief-collect":
+                from whyline.ideas import brief
+
+                written = brief.collect(folder, scheduled=unattended or source == "schedule")
+            else:
+                written = step.run(defn, folder, now)
             events = [*events, *sorted(p for p in folder.iterdir()
                                          if p.name not in existing and p.name not in step.hidden)]
         except Exception as caught:
