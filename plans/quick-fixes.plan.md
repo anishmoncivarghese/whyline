@@ -329,7 +329,7 @@ Rules every task keeps:
   3. The release's own **Check ready** step runs after **Bring in main**, so it sees HEAD up to date and is unchanged. The console **Check**, `whyline release check` and the queue get the new result through `ready.check`, with no change of their own.
   Tests: `test_behind_passes_only_when_bring_in_will_run` (another branch with the setting on, the release branch, a detached HEAD, the setting off), `test_trial_merge_reports_conflicts_and_changes_nothing` (a temporary repository with an add/add conflict; compare `git status --porcelain` and `git for-each-ref` before and after), the clean trial merge, the None case treated as ready, the commit count in the text, and the `and <k> more` form.
 
-- [ ] RDF-2: Name the job that stopped the release
+- [x] RDF-2: Name the job that stopped the release
   Edit `src/whyline/release/ci_failure.py` and its tests only.
   1. `ci_failure.known_failing(root, workflow, branch, *, run) -> set[str] | None`: the names of jobs whose conclusion was a failure in the latest run of that workflow on that branch whose overall conclusion was `success` (`gh run list --workflow <workflow> --branch <branch> --status success --limit 1 --json databaseId`, then `gh run view <id> --json jobs`). None when there is no such run or either call fails.
   2. `diagnose` reads `headBranch` with the run's other fields, collects every failed job, and takes the known-failing names out when at least one other failed job is left. The first job left is diagnosed as today. With no baseline (None), or when every failed job is known-failing, nothing is taken out.
