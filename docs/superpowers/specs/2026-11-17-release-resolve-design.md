@@ -141,6 +141,8 @@ After a fix, **Resume release** is the default button.
 
 ## Questions
 
+Answered 2026-11-17: question 1, it runs after watch agents (group 1d in `plans/RUN-ORDER.md`). Questions 2 and 3 were not answered; the plan offers both Commit them and Set them aside, and never runs a fix by itself.
+
 1. **When it runs.** My choice is straight after watch agents and before telegram-daily-use, since every plan ends in a release. Or should it go first, before agent-setup?
 2. **Commit them.** For a dirty tree, should the commit go on the release branch as offered, or should Resolve only offer to set the files aside?
 3. **Auto mode.** Should the two safest fixes (Bring in main with no conflicts, and ticks-only conflicts) be allowed to run by themselves in auto mode, or always wait for you?

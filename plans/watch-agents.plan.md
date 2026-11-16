@@ -1,7 +1,7 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | spec: docs/superpowers/specs/2026-11-17-watch-agents-design.md | created: 2026-11-17T10:00:00+05:30 -->
 # Watch agents: dated schedules, a page check with no model, and stopping when it's found
 
-Runs after `plans/assistant-checkins.plan.md`, and before `plans/telegram-daily-use.plan.md`. Spec: `docs/superpowers/specs/2026-11-17-watch-agents-design.md`. Read it before every task. Where this plan and the spec differ, this plan wins. In particular:
+Runs after `plans/assistant-checkins.plan.md`, and before `plans/release-resolve.plan.md`. Spec: `docs/superpowers/specs/2026-11-17-watch-agents-design.md`. Read it before every task. Where this plan and the spec differ, this plan wins. In particular:
 - **The shortest interval is 5 minutes.** Seconds are not offered.
 - **A hit waits for active hours** unless the watch is marked urgent. It never waits for the hourly message limit.
 - **Failure messages go to the same delivery as hits.**
