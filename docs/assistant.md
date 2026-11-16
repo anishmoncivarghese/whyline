@@ -145,6 +145,36 @@ Command line: `whyline idea brief calendar --preview`, `brief mail --preview`,
 `whyline idea brief setup --at 07:00 --runner claude --chat <id>`, and
 `whyline idea doctor` for the checks.
 
+### Scheduled runs need their own permission
+
+To macOS, the terminal you type in and the scheduled brief are different apps.
+A grant you gave your terminal covers only things started from it. The
+scheduled brief is started in the background by the scheduler, through its own
+Python program, and macOS asks about that program separately. So the brief can
+work when you press Preview and still be refused at 07:00.
+
+Grant access to the scheduled program:
+
+1. In the console, press **Grant access for scheduled runs** (Assistant,
+   Morning brief) and answer the macOS prompts. Do this first.
+2. Without the console: `whyline idea brief access --scheduled --grant`.
+3. Press Check. The "brief scheduled access" line shows what scheduled runs
+   can read.
+
+If a scheduled run is refused, the failure alert names what was blocked and
+which program, for example:
+
+    macOS blocked Calendar for whyline's scheduled runs (python3, <path>).
+    Open whyline console → Assistant → Morning brief → Grant access for
+    scheduled runs, or turn on python3 in System Settings → Privacy &
+    Security → Calendars.
+
+Runs that never start now alert too. If the Mac was asleep or the scheduler
+was off at the brief time, you get "morning-brief missed the 07:00 run: the
+Mac was asleep or the scheduler was off." A run that is skipped, or that fails
+to start, alerts as well. Each missed or failed occurrence alerts once, not
+on every scheduler tick, and only for agents whose failure setting is alert.
+
 ### If the Mac sleeps at the brief time
 
 A sleeping Mac cannot run the brief. Check shows a hint. Either set a

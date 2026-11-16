@@ -45467,3 +45467,37 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 7d642681a7164c2fbc9a1985e5b2996d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-16T08:49:36.641Z"} -->
+
+## 2026-11-16 — Pass ASST-27 Round 2 testing
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** ASST-27
+
+**Because:** git diff --check is clean; docs/assistant.md accurately documents why terminal and scheduled runs differ under macOS permissions, console Grant access for scheduled runs first and CLI brief access second, example failure alert text, and missed run alerts; focused brief and assistant tests pass cleanly; full pytest suite had only the known unrelated UI timing flake in test_paused_clean_tree_is_unchanged which passed in isolation
+
+**Rejected:**
+
+- Fail ASST-27 for test_paused_clean_tree_is_unchanged — unrelated console UI timing flake that passed immediately on rerun and does not exercise docs/assistant.md
+
+**Files:** docs/assistant.md
+
+<!-- whyline-event: a6951f476e1a45249fd64faa9df15586 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T09:33:38.302Z"} -->
+
+## 2026-11-16 — Approve ASST-27 Round 3 review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** ASST-27
+
+**Because:** docs/assistant.md covers the separate macOS identity of terminal and scheduled runs, the console-first Grant access flow and CLI fallback, the failure alert format, and missed-run alerts; git diff --check is clean; the full suite had one unrelated relay-console timing failure in test_paused_owned_changes_show_ok_and_resume_allows_dirty that passed immediately in isolation
+
+**Rejected:**
+
+- Request an application-code task — the only failure is outside the documentation-only ASST-27 scope and passed on direct rerun, showing no code change is needed
+
+**Files:** docs/assistant.md
+
+<!-- whyline-event: e72c546122c4490fbd405a40ec1f3637 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-16T09:53:38.646Z"} -->
