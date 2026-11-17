@@ -288,11 +288,14 @@ def execute_once(defn, *, source: str, payload_dir: Path | None = None, unattend
     record, folder = records.new_run(defn, source=source, now=now)
     sources = [p for p in definitions.resolve_sources(defn)]
     events = sorted(payload_dir.iterdir()) if payload_dir and payload_dir.is_dir() else []
-    step = before_steps.STEPS.get(defn.before)
-    if step is not None:
+    steps = [(before_steps.GATE, "gate failed")] if defn.gate else []
+    if defn.before:
+        steps.append((defn.before, "before step failed"))
+    for name, failure in steps:
+        step = before_steps.STEPS[name]
         existing = {p.name for p in folder.iterdir()}
         try:
-            if defn.before == "brief-collect":
+            if name == "brief-collect":
                 from whyline.ideas import brief
 
                 written = brief.collect(folder, scheduled=unattended or source == "schedule")
@@ -301,7 +304,7 @@ def execute_once(defn, *, source: str, payload_dir: Path | None = None, unattend
             events = [*events, *sorted(p for p in folder.iterdir()
                                          if p.name not in existing and p.name not in step.hidden)]
         except Exception as caught:
-            record.outcome, record.reason = "failed", f"before step failed: {caught}"
+            record.outcome, record.reason = "failed", f"{failure}: {caught}"
             record.ended = datetime.now().isoformat()
             return records.finish(record, folder, final_text="", defn=defn)
         if written == 0 and step.skip_when_empty:

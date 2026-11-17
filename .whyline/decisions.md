@@ -46202,3 +46202,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c44de66ce14a4df8a5fd9e7dee06b5da -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-17T11:19:15.793Z"} -->
+
+## 2026-11-17 — Gate step lives in before.STEPS but is hidden from names(); an empty gate records nothing_new
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CKN-2
+
+**Because:** before="gate" must not be a valid user choice, and nothing_new is the existing skip_when_empty outcome that deliver/after already treat as no-run
+
+**Rejected:**
+
+- new 'skipped' outcome — would duplicate nothing_new and need changes in after.py/deliver.py
+
+**Files:** src/whyline/agents/before.py
+
+<!-- whyline-event: e12c69cfb784451e81023e93700a3ab5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T11:22:01.042Z"} -->
+
+## 2026-11-17 — Verify check-in fields parsing/rendering, gate runner execution, and gate state persistence
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CKN-2
+
+**Because:** All checkin fields round trip and validate correctly, runner executes gate step before defn.before and skips on empty runs without invoking provider, gate state persists across runs, and all 429 agents tests pass
+
+**Files:** src/whyline/agents/runner.py, src/whyline/agents/definitions.py
+
+<!-- whyline-event: e2d3c8a4e7dd4c8d890e5aedb37e9ac7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T11:57:06.035Z"} -->
+
+## 2026-11-17 — Approve CKN-2 check-in fields and gate execution
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CKN-2
+
+**Because:** The diff implements validated check-in parsing and rendering, per-agent gate state, gate-before-before execution, empty-gate provider suppression, found.md prompt inclusion, and required failure recording; targeted tests cover the requested cases, git diff --check is clean, and uv run pytest -q exited 0
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: 8d48ba07363c483f82b8bb6f4369e4fc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T12:17:51.125Z"} -->

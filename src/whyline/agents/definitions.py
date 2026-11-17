@@ -23,6 +23,10 @@ MAX_RUNS_LIMIT = 10000
 TOOL_PERMISSIONS = ("allowed", "ask")
 _TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_DAY = "(?:mon|tue|wed|thu|fri|sat|sun)"
+_HOURS = re.compile(
+    rf"^(?P<a>([01]\d|2[0-3]):[0-5]\d)-(?P<b>([01]\d|2[0-3]):[0-5]\d)"
+    rf"(?: (?P<days>{_DAY}-{_DAY}|{_DAY}(?:,{_DAY})*))?$")
 
 
 class DefinitionError(ValueError):
@@ -64,6 +68,10 @@ class AgentDef:
     timeout_minutes: int = 15
     before: str = ""
     trigger: Trigger = field(default_factory=Trigger)
+    gate: str = ""  # a check-in gate (gates.py); empty runs the agent every time
+    gate_args: dict[str, str] = field(default_factory=dict)
+    active_hours: str = ""  # HH:MM-HH:MM, then optional days: mon-fri or mon,wed
+    silent: bool = False
 
     @property
     def agent_id(self) -> str:
@@ -179,6 +187,34 @@ def _trigger(raw: object) -> Trigger:
     return t
 
 
+def _checkin(raw: object) -> tuple[str, dict[str, str], str, bool]:
+    from whyline.agents import gates
+
+    if not isinstance(raw, dict):
+        raise DefinitionError("checkin must be a table")
+    gate = _str(raw, "gate")
+    args = raw.get("gate_args", {})
+    if not isinstance(args, dict) or not all(isinstance(v, str) for v in args.values()):
+        raise DefinitionError("checkin gate_args must be a table of text")
+    hours = _str(raw, "active_hours").strip()
+    silent = raw.get("silent", False)
+    if not isinstance(silent, bool):
+        raise DefinitionError("checkin silent must be true or false")
+    if gate:
+        try:
+            args = gates.validate(gate, args)
+        except gates.GateError as error:
+            raise DefinitionError(f"checkin gate: {error}") from error
+    elif args:
+        raise DefinitionError("checkin gate_args need a gate")
+    if hours:
+        found = _HOURS.match(hours)
+        if not found or found["a"] == found["b"]:
+            raise DefinitionError(
+                "checkin active_hours must look like 09:00-17:00 or 09:00-17:00 mon-fri")
+    return gate, dict(args), hours, silent
+
+
 def _expand(value: str, base: Path) -> Path:
     path = Path(value).expanduser()
     return path if path.is_absolute() else base / path
@@ -219,12 +255,14 @@ def parse(text: str, *, kind: str, path: Path, repo_root: Path | None = None) ->
         raise DefinitionError(f"before must be one of {allowed}")
     sources = _strs(raw, "sources")
     knowledge = tuple(dict.fromkeys((*_strs(raw, "knowledge"), *sources)))
+    gate, gate_args, active_hours, silent = _checkin(raw.get("checkin", {}))
     defn = AgentDef(
         name=name, kind=kind, path=path, root=root, instructions=instructions,
         runner=runner, backup=backup, model=_str(raw, "model"), sources=sources,
         skills=_strs(raw, "skills"), knowledge=knowledge, tools=_tools(raw.get("tools", {})),
         workdir=workdir, report_folder=_str(raw, "report_folder"),
         timeout_minutes=timeout, before=before, trigger=_trigger(raw.get("trigger", {})),
+        gate=gate, gate_args=gate_args, active_hours=active_hours, silent=silent,
     )
     resolve_sources(defn)  # validates repo containment
     _check_tools(defn)
@@ -340,6 +378,17 @@ def render(defn: AgentDef) -> str:
     if t.folder:
         lines.append(f"folder = {_q(t.folder)}")
     lines.append(f"min_gap_minutes = {t.min_gap_minutes}")
+    if defn.gate or defn.active_hours or defn.silent:
+        lines += ["", "[checkin]"]
+        if defn.gate:
+            lines.append(f"gate = {_q(defn.gate)}")
+        if defn.active_hours:
+            lines.append(f"active_hours = {_q(defn.active_hours)}")
+        if defn.silent:
+            lines.append("silent = true")
+        if defn.gate_args:
+            lines += ["", "[checkin.gate_args]"]
+            lines += [f"{_q(k)} = {_q(v)}" for k, v in sorted(defn.gate_args.items())]
     return "\n".join(lines) + "\n"
 
 

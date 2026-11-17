@@ -38,11 +38,30 @@ def jobs_fetch(defn, run_dir: Path, now: datetime) -> int:
     return step.jobs_fetch(defn, run_dir, now)
 
 
+def gate(defn, run_dir: Path, now: datetime) -> int:
+    """Run the agent's check-in gate and write found.md; its state is kept per agent."""
+    from whyline.agents import gates, state
+
+    conn = state.connect()
+    try:
+        old = state.get_gate_state(conn, defn.agent_id)
+        found = gates.check(defn.gate, defn.gate_args, old, now=now)
+        count = gates.write(found, run_dir)
+        state.save_gate_state(conn, defn.agent_id, found.state)
+    finally:
+        conn.close()
+    return count
+
+
+GATE = "gate"
+
 STEPS: dict[str, Step] = {
     "brief-collect": Step(brief_collect),
     "jobs-fetch": Step(jobs_fetch, skip_when_empty=True, hidden=("manifest.json",)),
+    GATE: Step(gate, skip_when_empty=True),
 }
 
 
 def names() -> tuple[str, ...]:
-    return ("", *STEPS)
+    # The gate step is chosen by a check-in's gate, never by `before`.
+    return ("", *(name for name in STEPS if name != GATE))

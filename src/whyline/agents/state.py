@@ -3,6 +3,7 @@ active activation whose definition hash still matches may run on a schedule
 or trigger. SQLite, so concurrent ticks can claim occurrences safely."""
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import time
@@ -30,6 +31,11 @@ _SCHEMA = (
       id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id TEXT, due_at TEXT, source TEXT,
       payload_dir TEXT DEFAULT '', status TEXT, run_id TEXT DEFAULT '',
       UNIQUE(agent_id, due_at)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS gate_state (
+      agent_id TEXT PRIMARY KEY, state TEXT DEFAULT '{}'
     )
     """,
     """
@@ -214,6 +220,22 @@ def run_count(conn: sqlite3.Connection, agent_id: str) -> int:
 def remove(conn: sqlite3.Connection, agent_id: str) -> None:
     conn.execute("DELETE FROM activations WHERE agent_id=?", (agent_id,))
     conn.execute("DELETE FROM occurrences WHERE agent_id=?", (agent_id,))
+    conn.execute("DELETE FROM gate_state WHERE agent_id=?", (agent_id,))
+
+
+def get_gate_state(conn: sqlite3.Connection, agent_id: str) -> dict:
+    """What the agent's gate remembered last time; empty when new or unreadable."""
+    row = conn.execute("SELECT state FROM gate_state WHERE agent_id=?", (agent_id,)).fetchone()
+    try:
+        value = json.loads(row["state"]) if row else {}
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def save_gate_state(conn: sqlite3.Connection, agent_id: str, value: dict) -> None:
+    conn.execute("INSERT OR REPLACE INTO gate_state (agent_id, state) VALUES (?, ?)",
+                 (agent_id, json.dumps(value)))
 
 
 def check_hash(conn: sqlite3.Connection, defn) -> str:
