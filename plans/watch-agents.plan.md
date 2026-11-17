@@ -137,7 +137,7 @@ Rules every task keeps:
   Cover: what a check-in is, the five gates and their arguments, active hours and the held message, `NOTHING`, the hourly limit, and **Test gate now**.
   Verify with `uv run pytest -q`.
 
-- [ ] WCH-4: The `page` gate
+- [x] WCH-4: The `page` gate
   Edit `src/whyline/agents/gates.py` and `tests/agents/test_gates.py` only.
   1. `GATES` gains `page` with arguments `url` (one to three addresses separated by spaces), `rule` (`changed`, `appears`, `gone`, `always`), `text` (needed for `appears` and `gone`, 2 to 200 characters), and optional `start` and `end`. `Arg.kind` gains `choice` with its `choices`.
   2. For each address it calls `pagefetch.fetch`. When `start` and `end` are both set, only the text between their first occurrences is used; when either is missing from the page, the check is `failed` with `the start or end text isn't on the page`.
