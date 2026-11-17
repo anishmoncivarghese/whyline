@@ -109,7 +109,7 @@ Rules every task keeps:
   4. `Trigger.every_minutes` is already there from WCH-1 (5 to 10080, with its due times in `schedule.py`). Use it as it is. Do not add the field, change its range, or edit `schedule.py`.
   Tests: `test_empty_gate_skips_the_agent` (the run is recorded as skipped and no provider is called), a gate with items runs the agent with `found.md` present, round trip of the new fields, an old agent file loads unchanged, and the hours format refused when wrong.
 
-- [ ] CKN-3: Active hours, staying silent and the hourly limit
+- [x] CKN-3: Active hours, staying silent and the hourly limit
   Create `src/whyline/agents/quiet.py` and `tests/agents/test_quiet.py`. Edit `src/whyline/agents/deliver.py`, `src/whyline/agents/tick.py` and their tests.
   1. `quiet.active(hours: str, now: datetime) -> bool` and `quiet.next_start(hours, now) -> datetime`. Empty hours are always active. A range may cross midnight.
   2. `quiet.is_nothing(text) -> bool`: the agent's whole answer, trimmed, is `NOTHING` (any case, an optional full stop).
