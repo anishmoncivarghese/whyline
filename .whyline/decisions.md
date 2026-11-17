@@ -46016,3 +46016,97 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: aa2a6ed4b43143548e05a0d6d5e655ff -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-17T08:19:16.065Z"} -->
+
+## 2026-11-17 — pagefetch: own opener(url, headers, timeout) with manual redirects; reuse knowledge._download for limit/timeout
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-3
+
+**Because:** urllib redirects cannot be checked per hop, and fetch_pages' opener takes no headers
+
+**Rejected:**
+
+- knowledge.fetch_pages — follows redirects itself and cannot set headers or return status
+
+**Files:** src/whyline/agents/pagefetch.py
+
+<!-- whyline-event: bf56d42dab2c4fbba6c9a6c0a91a7406 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T08:20:34.223Z"} -->
+
+## 2026-11-17 — Page fetch and test suite pass all requirements and regression tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-3
+
+**Because:** All 28 unit tests in tests/agents/test_pagefetch.py and the full test suite (5111 passed) verify safe address checks, redirects, blocked states, retry headers, caching, and exception handling
+
+**Files:** src/whyline/agents/pagefetch.py, tests/agents/test_pagefetch.py
+
+<!-- whyline-event: 480af5ce347e4a8198a9c0458ff862d3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T08:41:15.734Z"} -->
+
+## 2026-11-17 — Request WCH-3 changes for robust Retry-After parsing and private cache files
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-3
+
+**Because:** A valid HTTP-date with the naive datetimes used by the agents runtime makes fetch return failed instead of blocked, oversized seconds can do the same, and a pre-existing mode-0644 cache temp file produces a non-private final cache
+
+**Rejected:**
+
+- Approve based on the green suite — the current tests cover only timezone-aware dates and a newly created temp file, so they miss both reproduced requirement violations
+
+**Files:** src/whyline/agents/pagefetch.py, tests/agents/test_pagefetch.py
+
+<!-- whyline-event: f8b30de3064e4a67ac9c00d778baf35a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T09:02:17.550Z"} -->
+
+## 2026-11-17 — Retry-After: clamp seconds and normalise dates to now's tz-awareness; fchmod temp file to 0600
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-3
+
+**Because:** naive now with an aware HTTP-date raised TypeError, huge seconds raised OverflowError, and os.open mode does not change an existing temp file
+
+**Rejected:**
+
+- Skip chmod when file is new — a stale 0644 temp would be renamed into a public cache
+
+**Files:** src/whyline/agents/pagefetch.py
+
+<!-- whyline-event: 3219467d378b43cbba97126a3db1c1fb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T09:03:03.256Z"} -->
+
+## 2026-11-17 — Page fetch passes all requirements and regression tests including Retry-After fixes and cache permissions
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-3
+
+**Because:** All 33 unit tests in tests/agents/test_pagefetch.py and the full test suite (5116 passed) verify address security, redirect limits, blocked states, retry handling with naive/aware datetimes, cache privacy with mode 0600, and non-raising behavior
+
+**Files:** src/whyline/agents/pagefetch.py
+
+<!-- whyline-event: 56e757a59a2f4405b71f45688e9ce20d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T09:23:27.550Z"} -->
+
+## 2026-11-17 — Approve WCH-3 careful page fetch
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-3
+
+**Because:** The scoped implementation meets the address, redirect, header, body, blocking, Retry-After, cache, and never-raises requirements; all 33 pagefetch tests pass, and the sole full-suite failure was an unrelated async console timing flake that passed on isolated rerun
+
+**Rejected:**
+
+- Request changes for the full-suite console failure — the failing relay setup test does not touch WCH-3 and passed immediately in isolation
+
+**Files:** src/whyline/agents/pagefetch.py, tests/agents/test_pagefetch.py
+
+<!-- whyline-event: b0ca01634ec649f9b3ec99efe78267c6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T09:44:26.184Z"} -->
