@@ -66,7 +66,7 @@ Rules every task keeps:
   7. `when_text` covers the new kinds and dates: `once on 17 Nov at 10:00`, `Mon, Thu at 09:00`, `every 30 minutes`, `every 2 days`, with `from 17 Nov to 20 Nov` added when set.
   Tests: due times for `once`, `weekly` and several times a day, the `starts` and `ends` edges (the first and last day included), a daylight-saving day, each refusal with its message, an old file's round trip, and each `when_text` form.
 
-- [ ] WCH-2: A finished agent
+- [x] WCH-2: A finished agent
   Edit `src/whyline/agents/state.py`, `src/whyline/agents/tick.py`, `src/whyline/agents/service.py` and their tests.
   1. `state.finish(conn, agent_id, reason)` sets status `finished` with the reason in `paused_reason`. `state.run_count(conn, agent_id) -> int` counts occurrences that ran since `accepted_at`.
   2. `tick` skips a finished agent like a paused one. After it starts a run, and for each active agent with nothing due, it finishes the agent when `schedule.ended` is true (`ended on <date>`, or `ran once on <date>`) or `run_count >= max_runs` (`ran <n> times`).
