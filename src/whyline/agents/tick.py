@@ -79,6 +79,8 @@ def run_tick(*, now: datetime | None = None, spawn=None, alert=None, missed_aler
                 if act.status != "needs_review":
                     report.reviewed.append(act.agent_id)
                 continue
+            if status == "finished" and getattr(defn, "watch", None) is not None:
+                checkins[act.agent_id] = defn  # its held hit notice still goes out
             if status != "active":
                 continue
             if defn.gate:

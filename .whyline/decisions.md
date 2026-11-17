@@ -46557,3 +46557,144 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: be97d7888e5e4c16b9d19d7824c38ce4 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-17T18:56:58.669Z"} -->
+
+## 2026-11-17 — A watch run's daily-cap skip and no-item skip use outcome nothing_new; a no-instructions send is succeeded with reason 'sent without an agent'
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-6
+
+**Because:** after.finish counts 'skipped' as a failure and pauses an agent after 3, which a daily cap would trigger; nothing_new is what CKN-2 already uses and is not a failure
+
+**Rejected:**
+
+- outcome skipped — three capped runs in a row would pause the agent as needs_attention
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: 254caca2e4934eab977ef3d30c4fbcb0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T19:53:07.143Z"} -->
+
+## 2026-11-17 — Unreadable VALUE counts in a top-level gate-state key value_failures, not pages[url].failures
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-6
+
+**Because:** the page gate resets pages[url].failures to 0 on every good fetch, so a count kept there never reaches 3; the separate key survives and resets when a value is read
+
+**Rejected:**
+
+- bump pages[url].failures — reset by the next gate run, so the three-in-a-row message could never fire
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: 867827a930554695b78638a4efd88b66 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T19:53:07.272Z"} -->
+
+## 2026-11-17 — Verify watch execution, delivery notices, value hit handling, and daily cap controls
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-6
+
+**Because:** Watch agents correctly send plain-text notices outside hourly limits, respect active hours and urgency, handle found notices, skip empty runs, send own messages without CLI when instructions are empty, enforce daily run caps with a single daily notice, parse values with three-strike failure tracking, append the 4 required prompt instructions, finish on first hit when configured, suppress duplicate after_run delivery, and pass both test_watch_run and full pytest suite (5229 passed, 1 skipped)
+
+**Files:** src/whyline/agents/runner.py, src/whyline/agents/deliver.py
+
+<!-- whyline-event: b7e16e4bac5e4ca88d750277a3a36104 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T20:14:00.312Z"} -->
+
+## 2026-11-17 — Reject WCH-6 until notices obey active hours and unreadable values stay silent
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-6
+
+**Because:** The full uv run pytest -q suite exits 0, but deliver.notice runs command delivery while a non-urgent notice is held, gives immediate Telegram only the agent name instead of the required agent-plus-first-line subject, and held Telegram notices re-enter the hourly/coalescing path; runner also sends a third unreadable-VALUE notice although WCH-6 says that case sends nothing.
+
+**Rejected:**
+
+- Approve on green tests — the new tests omit command/held-flush semantics and explicitly expect the contrary third-failure delivery
+
+**Files:** src/whyline/agents/deliver.py, src/whyline/agents/runner.py, src/whyline/agents/tick.py, tests/agents/test_watch_run.py
+
+<!-- whyline-event: ae982dc7a310446ab142986a28d52548 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T20:35:35.388Z"} -->
+
+## 2026-11-17 — Held watch notices carry notice=True plus their command and are flushed one by one, not coalesced
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-6
+
+**Because:** keeps the '<agent>: <first line>' subject, bypasses the hourly Telegram limit and still runs the command when active hours return; tick keeps finished watch agents in the flush set
+
+**Rejected:**
+
+- store as ordinary check-ins — they get coalesced into 'While you were away' and rate-limited
+
+**Files:** src/whyline/agents/deliver.py
+
+<!-- whyline-event: c8bb1586be064adca8a36105ddcf9abf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T20:48:37.097Z"} -->
+
+## 2026-11-17 — Verify WCH-6 watch agent execution, notice delivery, unreadable value silence, and full test suite passes
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-6
+
+**Because:** All watch agent requirements verified: deliver.notice respects active hours, holds commands, and formats Telegram subjects with <agent>: <first line>; unreadable VALUE silently increments value_failures; stop=first finishes agent; daily cap enforced; prompt lines appended; unit and full test suites pass with code 0
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: 9b32e088da5840e3a6a2926796270297 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T21:21:29.113Z"} -->
+
+## 2026-11-17 — Reject WCH-6 because a page-gate notice can be delivered twice
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-6
+
+**Because:** src/whyline/agents/runner.py:324 dispatches found.notice on every iteration after found is set, so a watch with both the required page gate and a configured before step sends and records the same notice again; the full uv run pytest -q suite exits 0, showing the missing regression coverage rather than disproving the defect
+
+**Rejected:**
+
+- Approve on the green suite — tests do not combine found.notice with a later before step
+
+**Files:** src/whyline/agents/runner.py, tests/agents/test_watch_run.py
+
+<!-- whyline-event: 43975135fafc4606ac5b907ed17530fb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T21:42:32.535Z"} -->
+
+## 2026-11-17 — Verify found.notice single dispatch on page gate with subsequent before step, and full test suite passes
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-6
+
+**Because:** runner.py checks name == GATE before notifying found.notice, preventing duplicate dispatch during subsequent before steps; test_the_page_notice_is_sent_once_when_a_before_step_follows_the_gate verifies single dispatch; unit and full test suites exit 0
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: e6d34ce1f1454526a0b0a41886ca85d3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T22:05:20.886Z"} -->
+
+## 2026-11-17 — Approve WCH-6 watch execution and single-dispatch delivery
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-6
+
+**Because:** The implementation matches the requested gate, no-instructions, daily-cap, value, stop-first, prompt, active-hours, and delivery behavior; the duplicate found.notice regression is covered and fixed; git diff --check passes; the full uv run pytest -q run passed every WCH-6 test and failed only the untouched, previously documented flaky Textual mount test tests/console/test_relay_screens.py::test_set_up_opens_run_agents_while_running_and_setup_when_idle, which reproduced in isolation
+
+**Rejected:**
+
+- Reject WCH-6 for the console failure — the failure is outside the changed files, occurs while Textual mounts an unrelated Select widget, and is already documented in project history as flaky
+
+**Files:** src/whyline/agents/runner.py, src/whyline/agents/deliver.py, src/whyline/agents/tick.py, tests/agents/test_watch_run.py
+
+<!-- whyline-event: fc6f09b9585240a1a07803c0e526a222 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T22:26:21.133Z"} -->

@@ -38,19 +38,25 @@ def jobs_fetch(defn, run_dir: Path, now: datetime) -> int:
     return step.jobs_fetch(defn, run_dir, now)
 
 
-def gate(defn, run_dir: Path, now: datetime) -> int:
-    """Run the agent's check-in gate and write found.md; its state is kept per agent."""
+def run_gate(defn, run_dir: Path, now: datetime):
+    """Run the agent's check-in gate, write found.md and its files, and keep its
+    state per agent. Returns the gate's Found."""
     from whyline.agents import gates, state
 
     conn = state.connect()
     try:
         old = state.get_gate_state(conn, defn.agent_id)
         found = gates.check(defn.gate, defn.gate_args, old, now=now)
-        count = gates.write(found, run_dir)
+        gates.write(found, run_dir)
         state.save_gate_state(conn, defn.agent_id, found.state)
     finally:
         conn.close()
-    return count
+    return found
+
+
+def gate(defn, run_dir: Path, now: datetime) -> int:
+    """Run the agent's check-in gate and write found.md; its state is kept per agent."""
+    return len(run_gate(defn, run_dir, now).items)
 
 
 GATE = "gate"

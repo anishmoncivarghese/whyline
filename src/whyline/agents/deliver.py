@@ -300,6 +300,12 @@ def _flush_held(now, known, mail, tg) -> list[dict]:
             continue
         keep = []
         for item in items:
+            if item.get("notice"):
+                sent = _flush_notice(defn, item, mail_fn, tg)
+                results.extend(sent)
+                if any(not result["ok"] for result in sent):
+                    keep.append(item)
+                continue
             if item.get("email"):
                 delivery = deliveries.Delivery(email=tuple(item["email"]))
                 saved = Path(item["attachment"]) if item.get("attachment") else None
@@ -334,9 +340,83 @@ def _flush_held(now, known, mail, tg) -> list[dict]:
     return results
 
 
+def _notice_env(defn, text: str) -> dict:
+    return {
+        "WHYLINE_AGENT": defn.name, "WHYLINE_AGENT_LABEL": defn.label,
+        "WHYLINE_OUTCOME": "notice", "WHYLINE_REASON": "", "WHYLINE_RUN_ID": "",
+        "WHYLINE_REPORT": "", "WHYLINE_ATTACHMENT": "", "WHYLINE_SUMMARY": text,
+    }
+
+
+def _flush_notice(defn, item: dict, mail_fn, tg) -> list[dict]:
+    """Send one held notice by itself: with its own subject, outside the hourly
+    limit, and through every delivery it was held for."""
+    results = []
+    subject, text = item["subject"], item["body"]
+    if item.get("email"):
+        delivery = deliveries.Delivery(email=tuple(item["email"]))
+        results.append(_email(delivery, subject, text, None, mail_fn))
+    if item.get("chat"):
+        delivery = deliveries.Delivery(telegram_chat=item["chat"],
+                                       telegram_label=item.get("chat_label", ""))
+        results.append(_send_telegram(delivery, subject, text, None, tg))
+    if item.get("command"):
+        delivery = deliveries.Delivery(command=item["command"])
+        results.append(_command(delivery, _notice_env(defn, text), defn.root, None, subprocess.run))
+    return results
+
+
+def notice(defn, text: str, *, now: datetime, urgent: bool = False, held_ok: bool = True,
+           delivery=None, mail=None, tg=None, run=subprocess.run) -> list[dict]:
+    """Send plain text through the agent's delivery. It is outside the hourly
+    check-in limit. Outside active hours it is held for the next active hour
+    unless `urgent` (or `held_ok` is False, when holding is not acceptable).
+    Never raises."""
+    try:
+        if delivery is None:
+            delivery = deliveries.get(defn.agent_id)
+        text = (text or "").strip()
+        if delivery is None or delivery.empty or not text:
+            return []
+        first = next((line.strip() for line in text.splitlines() if line.strip()), "")
+        subject = f"{defn.name}: {first}"[:200]
+        hold = held_ok and not urgent and not quiet.active(defn.active_hours, now)
+        results = []
+        if hold:
+            with _held_lock():
+                data = _load_held()
+                _hold(data, defn, delivery, subject, text, text, email=bool(delivery.email),
+                      chat=bool(delivery.telegram_chat), now=now)
+                data["held"][defn.agent_id][-1].update(
+                    {"notice": True, "command": delivery.command})
+                _save_held(data)
+            at = quiet.next_start(defn.active_hours, now).strftime("%a %H:%M")
+            results.append(_result("held", True, f"held until {at}"))
+        else:
+            if delivery.email:
+                results.append(_email(delivery, subject, text, None, mail or mail_send.send))
+            if delivery.telegram_chat:
+                results.append(_send_telegram(delivery, subject, text, None, tg or _telegram()))
+            if delivery.command:
+                results.append(_command(delivery, _notice_env(defn, text), defn.root, None, run))
+        for result in results:
+            if not result["ok"]:
+                logging.getLogger(__name__).warning("%s delivery failed: %s", result["to"],
+                                                    result["detail"])
+        return results
+    except Exception:
+        logging.getLogger(__name__).exception("notice failed")
+        return []
+
+
 def after_run(defn, record, *, delivery=None, mail=None, tg=None, run=subprocess.run,
               now: datetime | None = None) -> list[dict]:
     now = now or datetime.now().replace(microsecond=0)
+    if getattr(defn, "watch", None) is not None and (
+            record.outcome in _SUCCEEDED or record.outcome in _NO_RUN):
+        # A watch run sends its own message (the runner calls notice), so a hit
+        # is sent once. A failed run still alerts below.
+        return []
     if delivery is None:
         try:
             delivery = deliveries.get(defn.agent_id)

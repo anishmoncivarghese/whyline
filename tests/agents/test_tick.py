@@ -402,3 +402,21 @@ def test_tick_flushes_held_check_ins_for_active_gated_agents(repo, home):
                   alert=lambda *a: None, missed_alert=lambda *a: None,
                   flush=lambda now, known: calls.append((now, sorted(known))))
     assert calls == [(datetime(2026, 11, 17, 10, 0), [defn.agent_id])]
+
+
+def test_tick_still_flushes_a_finished_watch_agent(repo, home):
+    folder = home / ".whyline/agents"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "w.toml").write_text(
+        'name="w"\ninstructions="x"\nrunner="codex"\n'
+        f'workdir="{repo}"\n[checkin]\ngate = "page"\n'
+        '[checkin.gate_args]\nurl = "https://a.test/x"\nrule = "always"\n[watch]\nstop = "first"\n')
+    defn = d.load(folder / "w.toml", kind="personal")
+    conn = state.connect()
+    state.accept(conn, defn)
+    state.finish(conn, defn.agent_id, "found on 2026-11-17")
+    calls = []
+    tick.run_tick(now=datetime(2026, 11, 17, 10, 0), spawn=lambda occ: None,
+                  alert=lambda *a: None, missed_alert=lambda *a: None,
+                  flush=lambda now, known: calls.append(sorted(known)))
+    assert calls == [[defn.agent_id]]
