@@ -1,7 +1,7 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | spec: docs/superpowers/specs/2026-11-17-release-resolve-design.md | created: 2026-11-17T13:00:00+05:30 -->
 # Resolve for Release: a fix for every failed check, conflicts settled in the window, and a box to say what you want
 
-Runs after `plans/watch-agents.plan.md`, and before `plans/telegram-daily-use.plan.md`. Spec: `docs/superpowers/specs/2026-11-17-release-resolve-design.md`. Read it before every task. Where this plan and the spec differ, this plan wins. In particular:
+Runs after `plans/agent-setup.plan.md`, and before `plans/telegram-daily-use.plan.md`. Spec: `docs/superpowers/specs/2026-11-17-release-resolve-design.md`. Read it before every task. Where this plan and the spec differ, this plan wins. In particular:
 - **A dirty tree offers both Commit them and Set them aside.**
 - **Resolve never runs by itself**, in any mode, including the two safest fixes.
 - **A conflict where one side deleted or renamed the file, or the file is binary, gets no keep-lines choice.** It offers Ask an agent and the commands to do it by hand.
