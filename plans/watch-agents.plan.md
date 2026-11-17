@@ -121,7 +121,7 @@ Rules every task keeps:
   5. A failure alert (`on_failure = "alert"`) follows the same hours and limit.
   Tests: `test_held_until_active_hours`, `test_nothing_answer_is_silent`, `test_one_checkin_message_per_hour`, a range across midnight, weekday limits, the 20-item cap, and an agent with no gate delivers exactly as before.
 
-- [ ] CKN-4: Check-ins in the console and CLI
+- [x] CKN-4: Check-ins in the console and CLI
   Edit the `agents` command in `src/whyline/cli.py`, the console's New agent and Agents screens (`src/whyline/console/agents_screens.py`), and their tests.
   1. One function `service.save_checkin(name, *, gate, gate_args, every_minutes, active_hours, silent)` validates and saves. Both the CLI and the console call it.
   2. CLI:
