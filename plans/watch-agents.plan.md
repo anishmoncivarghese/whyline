@@ -132,7 +132,7 @@ Rules every task keeps:
   3. Console: a **Check-in** section in New agent and Edit agent with a gate select, the gate's argument inputs, **Every (minutes)**, **Active hours**, **Stay silent when there's nothing**, and **Test gate now** showing the result. The Agents list shows `check-in: <gate>, last: <n found | nothing | held until HH:MM>`.
   Tests: CLI and console call `save_checkin`, `test` leaves the seen state unchanged, a bad argument shows the gate's reason, and `off` restores a plain agent.
 
-- [ ] CKN-5: Docs
+- [x] CKN-5: Docs
   Edit `docs/agents-capabilities.md`, `docs/assistant.md` and `README.md` only.
   Cover: what a check-in is, the five gates and their arguments, active hours and the held message, `NOTHING`, the hourly limit, and **Test gate now**.
   Verify with `uv run pytest -q`.
