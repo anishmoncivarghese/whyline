@@ -45814,3 +45814,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: ae3a88537f3a4531a65af17e58c41889 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-17T04:10:18.577Z"} -->
+
+## 2026-11-17 — Check-ins (CKN-1..5) moved into the watch-agents plan, after WCH-3 and before WCH-4
+
+**Actor:** claude
+**Role:** planner
+**Task:** WCH-2
+
+**Because:** The watch-agents relay was started before assistant-checkins; WCH-4 to WCH-7 edit gates.py, quiet.py and save_checkin, which only check-ins creates. Moving the five tasks in lets the paused relay resume at WCH-2 unchanged
+
+**Rejected:**
+
+- Start agent-setup and assistant-checkins first — the console only offers Resume over a saved pause, and the watch-agents branch would then be behind
+- Keep CKN-2 adding every_minutes — WCH-1 already added it (5 to 10080), so CKN-2 now reuses it
+
+**Files:** plans/watch-agents.plan.md
+
+<!-- whyline-event: eeb15e3474ce4e0faec7dbfb977735d7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T04:27:47.032Z"} -->
