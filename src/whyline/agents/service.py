@@ -16,7 +16,8 @@ class Ambiguous(LookupError):
     pass
 
 
-NO_AGENTS = "No agents yet. Create one with New in the console's Agents tab."
+DEFAULT_CHECKIN_MINUTES = 60
+NO_AGENTS ="No agents yet. Create one with New in the console's Agents tab."
 
 
 @dataclass
@@ -108,6 +109,137 @@ def save_new(defn: d.AgentDef) -> Path:
 
 def accept(name: str, repo_root: Path | None) -> None:
     state.accept(state.connect(), find(name, repo_root))
+
+
+def checkin_defn(defn: d.AgentDef, *, gate: str, gate_args: dict | None = None,
+                 every_minutes: int | None = None, active_hours: str = "",
+                 silent: bool = False) -> d.AgentDef:
+    """The agent with a check-in set, or a ValueError saying what is wrong (a bad gate
+    argument gives the gate's own reason). Nothing is written."""
+    from dataclasses import replace
+
+    from whyline.agents import gates
+
+    if gate not in gates.GATES:
+        raise ValueError(f"{gate or '(none)'} is not a gate; choose one of {', '.join(gates.GATES)}")
+    try:
+        args = gates.validate(gate, dict(gate_args or {}))
+    except gates.GateError as error:
+        raise ValueError(str(error)) from error
+    trigger = defn.trigger
+    if every_minutes is None and trigger.kind == "every" and trigger.every_minutes:
+        every_minutes = trigger.every_minutes
+    if every_minutes is None:
+        every_minutes = DEFAULT_CHECKIN_MINUTES
+    low, high = d.EVERY_MINUTES_RANGE
+    if (isinstance(every_minutes, bool) or not isinstance(every_minutes, int)
+            or not low <= every_minutes <= high):
+        raise ValueError(f"every must be a whole number of minutes from {low} to {high}")
+    out = replace(
+        defn,
+        trigger=replace(trigger, kind="every", every_minutes=every_minutes, every_hours=0),
+        gate=gate, gate_args=args, active_hours=(active_hours or "").strip(), silent=bool(silent),
+    )
+    # The checks a saved file gets: the hours text and the trigger.
+    d.parse(d.render(out), kind=out.kind, path=out.path,
+            repo_root=out.root if out.kind == "repo" else None)
+    return out
+
+
+def _write_changed(before: d.AgentDef, out: d.AgentDef) -> None:
+    conn = state.connect()
+    try:
+        status = state.check_hash(conn, before)
+        d.save(out)
+        if status not in ("not accepted", "needs_review"):
+            # It was accepted as it stood: the edit you asked for stays accepted, and a
+            # paused agent stays paused.
+            act = state.get(conn, out.agent_id)
+            state.accept(conn, out)
+            if act is not None and act.status != "active":
+                state.set_status(conn, out.agent_id, act.status, act.paused_reason)
+    finally:
+        conn.close()
+
+
+def save_checkin(name: str, *, gate: str, gate_args: dict | None = None,
+                 every_minutes: int | None = None, active_hours: str = "",
+                 silent: bool = False, repo_root: Path | None = None) -> d.AgentDef:
+    """Validate and save an agent's check-in. The CLI and the console both come here."""
+    before = find(name, repo_root)
+    out = checkin_defn(before, gate=gate, gate_args=gate_args, every_minutes=every_minutes,
+                       active_hours=active_hours, silent=silent)
+    _write_changed(before, out)
+    return out
+
+
+def remove_checkin(name: str, repo_root: Path | None = None) -> d.AgentDef:
+    """Drop the [checkin] table: a plain agent again. Its schedule is left as it is."""
+    from dataclasses import replace
+
+    before = find(name, repo_root)
+    out = replace(before, gate="", gate_args={}, active_hours="", silent=False)
+    _write_changed(before, out)
+    conn = state.connect()
+    try:
+        state.clear_gate_state(conn, out.agent_id)
+    finally:
+        conn.close()
+    return out
+
+
+def test_gate(agent_id: str | None, gate: str, gate_args: dict, *, now: datetime | None = None,
+              readers=None, run=None):
+    """Run a gate now against the agent's saved seen state (if any). Nothing is saved."""
+    import subprocess
+
+    from whyline.agents import gates
+
+    old: dict = {}
+    if agent_id:
+        conn = state.connect()
+        try:
+            old = state.get_gate_state(conn, agent_id)
+        finally:
+            conn.close()
+    try:
+        return gates.check(gate, gate_args, old, now=now or datetime.now(),
+                           run=run or subprocess.run, readers=readers)
+    except gates.GateError as error:
+        raise ValueError(str(error)) from error
+
+
+def test_checkin(name: str, repo_root: Path | None = None, **kwargs):
+    defn = find(name, repo_root)
+    if not defn.gate:
+        raise ValueError(f"{defn.name} has no check-in")
+    return test_gate(defn.agent_id, defn.gate, defn.gate_args, **kwargs)
+
+
+def checkin_last(defn) -> str:
+    """'3 found', 'nothing' or 'held until 09:00' from the latest run; '' when none."""
+    last = records.list_runs(defn.agent_id, limit=1)
+    if not getattr(defn, "gate", "") or not last:
+        return ""
+    run = last[0]
+    for item in run.deliveries or []:
+        detail = str(item.get("detail", ""))
+        if item.get("to") == "held" and detail.startswith("held until"):
+            return detail
+    if run.outcome == "nothing_new":
+        return "nothing"
+    try:
+        text = (records.run_folder(run.run_id) / "found.md").read_text(encoding="utf-8")
+    except OSError:
+        return run.outcome
+    count = len([line for line in text.splitlines() if line.strip()])
+    return f"{count} found" if count else "nothing"
+
+
+def checkin_line(defn) -> str:
+    if not getattr(defn, "gate", ""):
+        return ""
+    return f"check-in: {defn.gate}, last: {checkin_last(defn) or 'not yet'}"
 
 
 def pause(name: str, repo_root: Path | None) -> None:

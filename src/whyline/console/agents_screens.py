@@ -17,6 +17,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Collapsible, DataTable, Input, Label, Select, Static, TextArea
 
 from whyline.agents import capabilities, definitions as d, deliveries as dl, paths, records, templates
+from whyline.agents import service
 from whyline.agents.service import NO_AGENTS
 
 
@@ -62,18 +63,19 @@ class AgentsListScreen(ModalScreen):
             body.append(Label("Open an agent to run, edit or delete it.", id="al-hint"))
         if self._rows:
             table = DataTable(id="al-table", cursor_type="row")
-            table.add_columns("Agent", "CLI", "When", "Next", "Last", "Status")
+            table.add_columns("Agent", "CLI", "When", "Next", "Last", "Status", "Check-in")
             for row in self._rows:
                 if isinstance(row.defn, d.Broken):
                     table.add_row(
-                        f"{row.defn.path.name} (broken)", "", row.when, "", "", "needs review",
+                        f"{row.defn.path.name} (broken)", "", row.when, "", "", "needs review", "",
                         key=f"broken:{row.defn.path.name}",
                     )
                     continue
                 cli = row.defn.runner + (f" → {', '.join(row.defn.backup)}" if row.defn.backup else "")
                 table.add_row(
                     self._label(row.defn), cli, row.when, row.next_due or "—",
-                    row.last_outcome or "—", row.status, key=f"{row.defn.kind}:{row.defn.name}",
+                    row.last_outcome or "—", row.status, service.checkin_line(row.defn) or "—",
+                    key=f"{row.defn.kind}:{row.defn.name}",
                 )
             body.append(table)
         body.append(Static("", id="al-broken", markup=False))
@@ -1639,6 +1641,28 @@ class NewAgentScreen(ModalScreen):
             every_row,
             every_help,
             folder_row,
+            Label("Check-in"),
+            HorizontalGroup(
+                Label("Gate", classes="field-label"),
+                Select(self._gate_options(), value=existing.gate if existing else "",
+                       allow_blank=False, id="na-gate"),
+            ),
+            *self._gate_arg_rows(),
+            HorizontalGroup(
+                Label("Every (minutes)", classes="field-label"),
+                Input(self._ck_every_text(), id="na-ck-every", placeholder="60"),
+            ),
+            HorizontalGroup(
+                Label("Active hours", classes="field-label"),
+                Input(existing.active_hours if existing else "", id="na-ck-hours",
+                      placeholder="optional, e.g. 09:00-17:00 mon-fri"),
+            ),
+            Checkbox("Stay silent when there's nothing", value=bool(existing and existing.silent),
+                     id="na-ck-silent"),
+            HorizontalGroup(
+                Button("Test gate now", id="na-ck-test"),
+                Static("", id="na-ck-result", markup=False),
+            ),
             HorizontalGroup(
                 Label("Report", classes="field-label"),
                 Input(
@@ -1697,9 +1721,94 @@ class NewAgentScreen(ModalScreen):
             HorizontalGroup(*buttons, id="na-buttons"),
         )
 
+    @staticmethod
+    def _gate_options() -> list[tuple[str, str]]:
+        from whyline.agents import gates
+
+        return [("No check-in", ""), *((g.label, g.name) for g in gates.GATES.values())]
+
+    def _gate_arg_rows(self) -> list:
+        from whyline.agents import gates
+
+        saved = self._existing.gate_args if self._existing else {}
+        rows = []
+        for gate in gates.GATES.values():
+            for arg in gate.args:
+                rows.append(HorizontalGroup(
+                    Label(arg.label, classes="field-label"),
+                    Input(saved.get(arg.key, arg.default), id=f"na-ck-{arg.key}"),
+                    id=f"na-ck-row-{arg.key}", classes="na-ck-arg",
+                ))
+        return rows
+
+    def _ck_every_text(self) -> str:
+        trigger = self._existing.trigger if self._existing else None
+        if trigger is not None and trigger.kind == "every" and trigger.every_minutes:
+            return str(trigger.every_minutes)
+        return str(service.DEFAULT_CHECKIN_MINUTES)
+
+    def _sync_gate(self) -> None:
+        from whyline.agents import gates
+
+        try:
+            chosen = self._choice("#na-gate")
+        except NoMatches:
+            return
+        wanted = {a.key for a in gates.GATES[chosen].args} if chosen in gates.GATES else set()
+        for gate in gates.GATES.values():
+            for arg in gate.args:
+                self.query_one(f"#na-ck-row-{arg.key}").display = arg.key in wanted
+
+    def _checkin_values(self) -> dict:
+        """The Check-in fields as service.save_checkin takes them."""
+        from whyline.agents import gates
+
+        gate = self._choice("#na-gate")
+        args = {a.key: self.query_one(f"#na-ck-{a.key}", Input).value
+                for a in (gates.GATES[gate].args if gate in gates.GATES else ())}
+        raw = self.query_one("#na-ck-every", Input).value.strip()
+        if raw and not re.fullmatch(r"\d{1,6}", raw):
+            raise ValueError("Every (minutes) must be a whole number")
+        return {
+            "gate": gate, "gate_args": args,
+            "every_minutes": int(raw) if raw else None,
+            "active_hours": self.query_one("#na-ck-hours", Input).value,
+            "silent": self.query_one("#na-ck-silent", Checkbox).value,
+        }
+
+    def _test_gate(self) -> None:
+        result = self.query_one("#na-ck-result", Static)
+        try:
+            values = self._checkin_values()
+            if not values["gate"]:
+                raise ValueError("Choose a gate first")
+            from whyline.agents import gates
+
+            try:
+                args = gates.validate(values["gate"], values["gate_args"])
+            except gates.GateError as error:
+                raise ValueError(str(error)) from error
+        except ValueError as error:
+            result.update(str(error))
+            return
+        agent_id = self._existing.agent_id if (self._existing and self._is_edit) else None
+        result.update("Checking…")
+
+        def work() -> None:
+            try:
+                found = service.test_gate(agent_id, values["gate"], args)
+                lines = [item.line for item in found.items[:5]]
+                text = (f"{len(found.items)} found: " + "; ".join(lines)) if lines else "Nothing new."
+            except Exception as error:
+                text = str(error)
+            self.app.call_from_thread(result.update, text)
+
+        self.app.run_worker(work, thread=True)
+
     def on_mount(self) -> None:
         self._sync_kind()
         self._sync_when()
+        self._sync_gate()
         self._sync_backups()
         self.query_one("#na-error", Static).display = False
         if self._existing is None:
@@ -1707,7 +1816,9 @@ class NewAgentScreen(ModalScreen):
 
     def on_select_changed(self, event: "Select.Changed") -> None:
         select_id = event.select.id
-        if select_id == "na-kind":
+        if select_id == "na-gate":
+            self._sync_gate()
+        elif select_id == "na-kind":
             self._sync_kind()
             self._drop_repo_skills()
         elif select_id == "na-runner":
@@ -1726,6 +1837,8 @@ class NewAgentScreen(ModalScreen):
             self._submit()
         elif button_id == "na-send-test":
             self._send_test()
+        elif button_id == "na-ck-test":
+            self._test_gate()
         elif button_id == "na-telegram-setup":
             self._telegram_setup()
         elif button_id == "na-add-sources":
@@ -1984,7 +2097,10 @@ class NewAgentScreen(ModalScreen):
         at = self.query_one("#na-at", Input).value.strip()
         if when in ("daily", "weekdays") or at:
             lines.append(f"at = {_q(at)}")
-        if when == "every":
+        minutes = self._existing.trigger.every_minutes if self._existing else 0
+        if when == "every" and minutes and not self.query_one("#na-every", Input).value.strip():
+            lines.append(f"every_minutes = {minutes}")  # a check-in's schedule, kept as it was
+        elif when == "every":
             lines.append(f"every_hours = {self._int_token('#na-every', None)}")
         folder = self.query_one("#na-folder", Input).value.strip()
         if when == "folder" or folder:
@@ -2032,7 +2148,10 @@ class NewAgentScreen(ModalScreen):
                 path=path,
                 repo_root=self._root if kind == "repo" else None,
             )
-        except d.DefinitionError as error:
+            values = self._checkin_values()
+            if values["gate"]:
+                defn = service.checkin_defn(defn, **values)
+        except ValueError as error:  # DefinitionError is one; so is a gate's reason
             self._show_error(str(error))
             return
         if self._name_taken(defn):

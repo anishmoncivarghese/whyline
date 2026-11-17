@@ -538,6 +538,20 @@ def _add_agents(subparsers: "argparse._SubParsersAction") -> None:
     telegram_sub = telegram_parser.add_subparsers(dest="telegram_command", required=True)
     telegram_sub.add_parser("setup", help="Connect a bot (one-time) and find your chats")
     telegram_sub.add_parser("chats", help="Chats whyline can send to")
+    checkin = sub.add_parser("checkin", help="Run an agent only when a check finds something")
+    checkin_sub = checkin.add_subparsers(dest="checkin_command", required=True)
+    add = checkin_sub.add_parser("add", help="Give an agent a check-in (replaces its schedule)")
+    add.add_argument("agent")
+    add.add_argument("--gate", required=True, metavar="NAME")
+    add.add_argument("--arg", action="append", default=[], metavar="KEY=VALUE")
+    add.add_argument("--every", type=int, default=None, metavar="MINUTES")
+    add.add_argument("--hours", default="", metavar="RANGE", help="e.g. 09:00-17:00 mon-fri")
+    add.add_argument("--silent", action="store_true", help="stay quiet when there is nothing")
+    checkin_sub.add_parser("list", help="Agents with a check-in")
+    test = checkin_sub.add_parser("test", help="Run the gate now, without the agent")
+    test.add_argument("agent")
+    off = checkin_sub.add_parser("off", help="Remove an agent's check-in")
+    off.add_argument("agent")
     scheduler = sub.add_parser("scheduler", help="Turn the agents scheduler on or off")
     scheduler_sub = scheduler.add_subparsers(dest="scheduler_command", required=True)
     scheduler_sub.add_parser("on", help="Check for due agents every 2 minutes, and at login")
@@ -1917,6 +1931,47 @@ def _cmd_agents_approvals(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _cmd_agents_checkin(args, root) -> int:
+    from whyline.agents import definitions as d, service
+
+    command = args.checkin_command
+    if command == "list":
+        found = [r for r in service.rows(root) if isinstance(r.defn, d.AgentDef) and r.defn.gate]
+        if not found:
+            print("No agents have a check-in. Add one with `whyline agents checkin add`.")
+            return EXIT_OK
+        for row in found:
+            t = row.defn.trigger
+            every = f"{t.every_minutes} min" if t.every_minutes else row.when
+            hours = row.defn.active_hours or "any time"
+            print(f"{row.defn.label:<32} {row.defn.gate:<18} {every:<10} {hours:<22} "
+                  f"{service.checkin_last(row.defn) or 'not yet'}")
+        return EXIT_OK
+    if command == "add":
+        gate_args: dict[str, str] = {}
+        for item in args.arg:
+            key, sep, value = item.partition("=")
+            if not sep or not key:
+                print(f"--arg needs key=value, not {item!r}", file=sys.stderr)
+                return EXIT_USAGE
+            gate_args[key.strip()] = value
+        defn = service.save_checkin(
+            args.agent, gate=args.gate, gate_args=gate_args, every_minutes=args.every,
+            active_hours=args.hours, silent=args.silent, repo_root=root)
+        print(f"{defn.label} checks {defn.gate} every {defn.trigger.every_minutes} minutes.")
+        return EXIT_OK
+    if command == "test":
+        found = service.test_checkin(args.agent, root)
+        if not found.items:
+            print("Nothing new.")
+        for item in found.items:
+            print(item.line)
+        return EXIT_OK
+    defn = service.remove_checkin(args.agent, root)
+    print(f"{defn.label} has no check-in now.")
+    return EXIT_OK
+
+
 def cmd_agents(args: argparse.Namespace) -> int:
     from whyline.agents import definitions as d, records, service
 
@@ -1930,6 +1985,8 @@ def cmd_agents(args: argparse.Namespace) -> int:
         return _cmd_agents_approvals(args)
     root = _repo_root_or_none()
     try:
+        if args.agents_command == "checkin":
+            return _cmd_agents_checkin(args, root)
         if args.agents_command == "list":
             found = service.rows(root)
             if not found:

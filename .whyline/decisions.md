@@ -46336,3 +46336,47 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 71b0e9457e494bc19edde4e77a2cff81 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-17T13:48:35.106Z"} -->
+
+## 2026-11-17 — Check-in saves go through service.save_checkin; the console form validates with service.checkin_defn and tui calls save_checkin after saving
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CKN-4
+
+**Because:** the new-agent form has no file yet, so it builds the validated agent with the same checkin_defn that save_checkin uses, then tui re-saves through save_checkin; a check-in sets the trigger to every N minutes (default 60) and a previously accepted agent stays accepted
+
+**Rejected:**
+
+- separate console validation — could drift from the CLI
+- leave the agent needing re-accept after checkin add — console edits already auto-accept
+
+**Files:** src/whyline/agents/service.py
+
+<!-- whyline-event: f8a7851660524d31ae06cfe08794600d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T14:04:12.647Z"} -->
+
+## 2026-11-17 — Verify checkin CLI subcommands and console integration for CKN-4
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CKN-4
+
+**Because:** service.save_checkin validates and saves for both CLI and console without altering accepted status, test gate runs without mutating seen state, bad gate arguments surface reason on stderr and UI, checkin off clears table and gate state, and the full 5171-test suite passes clean
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: df8d16d74a2f4912a10c9d7d193a3287 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T14:24:19.322Z"} -->
+
+## 2026-11-17 — Approve CKN-4 check-in console and CLI integration
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CKN-4
+
+**Because:** The working-tree diff implements shared save_checkin validation and saving for CLI and console, non-mutating gate tests, check-in listing and removal, console configuration and status display, with focused tests covering every named acceptance case; git diff --check is clean and uv run pytest -q completed at 100 percent with exit code 0
+
+**Files:** src/whyline/agents/service.py, src/whyline/cli.py, src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 3105c38fbfec4d118002b0d188045c3f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T14:45:09.124Z"} -->

@@ -2976,6 +2976,13 @@ class WhylineConsoleApp(App):
                 else:
                     service.save_new(defn)
                     defn_out = defn
+                if defn_out.gate:  # the check-in goes through the call `agents checkin add` makes
+                    defn_out = service.save_checkin(
+                        f"{defn_out.kind}:{defn_out.name}", gate=defn_out.gate,
+                        gate_args=defn_out.gate_args,
+                        every_minutes=defn_out.trigger.every_minutes or None,
+                        active_hours=defn_out.active_hours, silent=defn_out.silent,
+                        repo_root=self.session.root)
                 deliveries.save(
                     defn_out.agent_id,
                     delivery,

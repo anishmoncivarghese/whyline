@@ -238,6 +238,10 @@ def save_gate_state(conn: sqlite3.Connection, agent_id: str, value: dict) -> Non
                  (agent_id, json.dumps(value)))
 
 
+def clear_gate_state(conn: sqlite3.Connection, agent_id: str) -> None:
+    conn.execute("DELETE FROM gate_state WHERE agent_id=?", (agent_id,))
+
+
 def check_hash(conn: sqlite3.Connection, defn) -> str:
     """Status after comparing the file to the accepted hash.
 
