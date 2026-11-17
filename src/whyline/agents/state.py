@@ -195,6 +195,22 @@ def set_status(conn: sqlite3.Connection, agent_id: str, status: str, reason: str
     update(conn, agent_id, status=status, paused_reason=reason)
 
 
+def finish(conn: sqlite3.Connection, agent_id: str, reason: str) -> None:
+    """The agent has done what its schedule allowed. The reason is shown to the user."""
+    set_status(conn, agent_id, "finished", reason)
+
+
+def run_count(conn: sqlite3.Connection, agent_id: str) -> int:
+    """Occurrences that started a run since the agent was last accepted or started again."""
+    act = get(conn, agent_id)
+    since = act.accepted_at if act else ""
+    return conn.execute(
+        "SELECT count(*) FROM occurrences WHERE agent_id=? AND due_at>=? "
+        "AND status IN ('running','done')",
+        (agent_id, since),
+    ).fetchone()[0]
+
+
 def remove(conn: sqlite3.Connection, agent_id: str) -> None:
     conn.execute("DELETE FROM activations WHERE agent_id=?", (agent_id,))
     conn.execute("DELETE FROM occurrences WHERE agent_id=?", (agent_id,))

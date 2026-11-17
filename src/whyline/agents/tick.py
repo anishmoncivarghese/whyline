@@ -61,6 +61,7 @@ def run_tick(*, now: datetime | None = None, spawn=None, alert=None, missed_aler
         alert = alert or deliver.start_failed
         missed_alert = missed_alert or deliver.missed
     report = TickReport()
+    finishing: list[d.AgentDef] = []
     with wstate.file_lock(paths.home() / "tick"):
         conn = state.connect()
         for act in state.all_activations(conn):
@@ -79,7 +80,7 @@ def run_tick(*, now: datetime | None = None, spawn=None, alert=None, missed_aler
                 continue
             if _in_backoff(act, now):
                 continue
-            if defn.trigger.kind in ("daily", "weekdays", "every"):
+            if defn.trigger.kind in ("daily", "weekdays", "weekly", "once", "every"):
                 last = datetime.fromisoformat(act.last_run_at) if act.last_run_at else None
                 accepted = datetime.fromisoformat(act.accepted_at) if act.accepted_at else now
                 due, stale = schedule.plan_tick(
@@ -105,6 +106,7 @@ def run_tick(*, now: datetime | None = None, spawn=None, alert=None, missed_aler
                     except Exception as error:
                         _start_failed(conn, defn, due.isoformat(), error, alert)
                 state.update(conn, act.agent_id, next_due_at=nxt.isoformat() if nxt else "")
+                finishing.append(defn)
             elif defn.trigger.kind == "folder":
                 # Task 13. A saved folder agent must not abort every other agent
                 # while that module is still absent.
@@ -117,9 +119,55 @@ def run_tick(*, now: datetime | None = None, spawn=None, alert=None, missed_aler
                     start=lambda occ: _start(conn, act.agent_id, occ, spawn, report, now),
                 )
         _start_waiting(conn, spawn, report, now, alert)
+        # After every direct and queued start, so only a run that really
+        # started counts toward finishing.
+        for defn in finishing:
+            _finish_if_done(conn, defn, now)
         _run_workflows(now)
         _run_inbox(now)
     return report
+
+
+def _finish_if_done(conn, defn: d.AgentDef, now: datetime) -> None:
+    """Finish an agent whose schedule has nothing left to give: its end date
+    passed, its once moment passed, or it reached max_runs. An occurrence
+    still waiting for a slot keeps the agent active until it starts."""
+    t = defn.trigger
+    ran = state.run_count(conn, defn.agent_id)
+    if t.max_runs and ran >= t.max_runs:
+        _cancel_waiting(conn, defn.agent_id)
+        state.finish(conn, defn.agent_id, f"ran {ran} times")
+        return
+    waiting = conn.execute(
+        "SELECT count(*) FROM occurrences WHERE agent_id=? AND status='claimed'",
+        (defn.agent_id,),
+    ).fetchone()[0]
+    if waiting:
+        return
+    reason = ""
+    if t.kind == "once" and t.on and schedule.ended(t, now=now):
+        if not ran and now - schedule._moment(t) <= schedule.freshness(t):
+            return  # a failed start may still be retried inside the 24-hour grace
+        reason = f"ran once on {t.on}" if ran else f"missed on {t.on}"
+    elif schedule.ended(t, now=now):
+        reason = f"ended on {t.ends}"
+    if reason:
+        state.finish(conn, defn.agent_id, reason)
+
+
+def _cancel_waiting(conn, agent_id: str) -> None:
+    """Drop claims that never started once max_runs is reached, so they cannot
+    run later. 'skipped' keeps the (agent, due time) key, so it is not claimed again."""
+    conn.execute(
+        "UPDATE occurrences SET status='skipped' WHERE agent_id=? AND status='claimed'",
+        (agent_id,),
+    )
+    conn.commit()
+
+
+def _at_max_runs(conn, defn: d.AgentDef) -> bool:
+    m = defn.trigger.max_runs
+    return bool(m) and state.run_count(conn, defn.agent_id) >= m
 
 
 def _start_failed(conn, defn, due_at: str, error: Exception, alert) -> None:
@@ -163,7 +211,11 @@ def _start(conn, agent_id: str, occurrence_id: int, spawn, report: TickReport,
            now: datetime) -> None:
     # The same gate as queued starts and the detached run. The tick loop
     # already checked, but the file can change between check_hash and here.
-    if _runnable(conn, agent_id, now) is None:
+    defn = _runnable(conn, agent_id, now)
+    if defn is None:
+        return
+    if _at_max_runs(conn, defn):
+        _cancel_waiting(conn, agent_id)
         return
     # running_count includes the row just claimed, so > 1 means another run
     # of this agent is already claimed or running.
@@ -195,15 +247,19 @@ def _in_backoff(act: state.Activation, now: datetime) -> bool:
     return bool(act.backoff_until) and datetime.fromisoformat(act.backoff_until) > now
 
 
-def _runnable(conn, agent_id: str, now: datetime) -> d.AgentDef | None:
+def _runnable(conn, agent_id: str, now: datetime, *, allow_finished: bool = False) -> d.AgentDef | None:
     """The one gate every start passes: a new claim, a queued claim, and the
     detached run itself. The definition still loads, still matches the
     accepted hash, the agent is active (not paused or needing review), and
     its backoff is over. A claim that fails it stays claimed, so it runs
-    once the reason is gone."""
+    once the reason is gone. A finished agent still runs an occurrence it
+    claimed before it finished: finishing is not a stop by the user."""
     act = state.get(conn, agent_id)
     defn = _definition(act) if act is not None else None
-    if defn is None or state.check_hash(conn, defn) != "active":
+    if defn is None:
+        return None
+    status = state.check_hash(conn, defn)
+    if status != "active" and not (allow_finished and status == "finished"):
         return None
     act = state.get(conn, agent_id)  # check_hash may have changed the status
     if act is None or _in_backoff(act, now):
@@ -221,12 +277,15 @@ def _start_waiting(conn, spawn, report: TickReport, now: datetime, alert=None) -
         # Skip before the capacity break, so a rejected claim does not
         # keep a later, still-accepted claim from taking a free slot.
         try:
-            defn = _runnable(conn, row["agent_id"], now)
+            defn = _runnable(conn, row["agent_id"], now, allow_finished=True)
         except Exception as error:
             alert = alert or _default_alert()
             _preparation_failed(conn, row, error, alert)
             continue
         if defn is None:
+            continue
+        if _at_max_runs(conn, defn):
+            _cancel_waiting(conn, row["agent_id"])
             continue
         if _running_total(conn) >= MAX_RUNNING:
             break
@@ -282,7 +341,7 @@ def run_occurrence(occurrence_id: int, *, now: datetime | None = None):
     # a pause or a backoff can land first: the same gate decides. The row
     # goes back to claimed: done or missed would keep the unique (agent, due
     # time) key and the due time could never run.
-    defn = _runnable(conn, occ["agent_id"], now)
+    defn = _runnable(conn, occ["agent_id"], now, allow_finished=True)
     if defn is None:
         state.set_occurrence(conn, occurrence_id, status="claimed")
         return None

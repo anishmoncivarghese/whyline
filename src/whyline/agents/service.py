@@ -27,6 +27,7 @@ class Row:
     last_run: str
     next_due: str
     when: str
+    reason: str = ""
 
 
 def _day(value: str) -> str:
@@ -94,7 +95,8 @@ def rows(repo_root: Path | None) -> list[Row]:
         out.append(Row(item, status, last[0].outcome if last else "",
                        last[0].started[:16].replace("T", " ") if last else "",
                        (act.next_due_at[:16].replace("T", " ") if act and act.next_due_at else ""),
-                       when_text(item.trigger)))
+                       when_text(item.trigger),
+                       act.paused_reason if act and status == "finished" else ""))
     return out
 
 
@@ -118,6 +120,22 @@ def resume(name: str, repo_root: Path | None) -> None:
     if state.check_hash(conn, defn) == "needs_review":
         raise ValueError(f"{defn.label} changed since you accepted it: accept it first")
     state.update(conn, defn.agent_id, status="active", paused_reason="", consecutive_failures=0)
+
+
+def start_again(name: str, repo_root: Path | None, *, now: datetime | None = None) -> None:
+    """Make a finished agent active again. Its run count starts at zero."""
+    from whyline.agents import schedule
+
+    defn = find(name, repo_root)
+    conn = state.connect()
+    act = state.get(conn, defn.agent_id)
+    if act is None or act.status != "finished":
+        raise ValueError(f"{defn.label} is not finished")
+    now = now or datetime.now().replace(microsecond=0)
+    if schedule.ended(defn.trigger, now=now):
+        raise ValueError("Change the date first.")
+    state.update(conn, defn.agent_id, status="active", paused_reason="",
+                 accepted_at=now.isoformat(timespec="seconds"), consecutive_failures=0)
 
 
 def delete(name: str, repo_root: Path | None) -> None:
@@ -223,7 +241,7 @@ def describe(defn: d.AgentDef) -> str:
     return text
 
 
-_SCHEDULED = ("daily", "weekdays", "every", "folder")
+_SCHEDULED = ("daily", "weekdays", "weekly", "once", "every", "folder")
 _WONT_RUN = {
     "paused": "you resume it",
     "needs_review": "you accept its changes",
@@ -264,7 +282,9 @@ def scheduler_summary(found: list[Row], *, on: bool, now: datetime | None = None
              "console is closed.", f"Scheduled agents ({len(scheduled)}):"]
     for row in scheduled:
         defn = row.defn
-        if row.status in _WONT_RUN:
+        if row.status == "finished":
+            tail = f"finished: {row.reason}"
+        elif row.status in _WONT_RUN:
             tail = f"won't run until {_WONT_RUN[row.status]}"
         elif defn.trigger.kind == "folder":
             tail = "watching the folder"

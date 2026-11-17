@@ -45832,3 +45832,187 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: eeb15e3474ce4e0faec7dbfb977735d7 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-17T04:27:47.032Z"} -->
+
+## 2026-11-17 — Finished agents still run occurrences they claimed before finishing (_runnable allow_finished)
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-2
+
+**Because:** tick finishes a once/max_runs agent right after spawning; the detached run re-checks _runnable and would otherwise bounce the run back to claimed
+
+**Rejected:**
+
+- finish only after the run completes — tick has no completion hook, and next tick would re-fire
+
+**Files:** src/whyline/agents/tick.py
+
+<!-- whyline-event: 73c175ced39142b3b341ba2951e6c1a7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T04:32:44.761Z"} -->
+
+## 2026-11-17 — Verify finished agent states, tick completion handling, start_again reset, and reporting
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-2
+
+**Because:** Full test suite passes (5078 passed, 1 skipped) and all WCH-2 requirements verified including finished state persistence, run counting, tick skipping, ended/once/max_runs finish reasons, missed once alerts, start_again date validation and run count resets, and scheduler summary output
+
+**Files:** src/whyline/agents/state.py, src/whyline/agents/tick.py, src/whyline/agents/service.py, tests/agents/test_finished.py
+
+<!-- whyline-event: bc6fce66c2b24ae39ef663862a32b533 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T05:16:07.337Z"} -->
+
+## 2026-11-17 — Request WCH-2 changes: finish only after an occurrence actually starts
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-2
+
+**Because:** tick.py passes started=due is not None before checking whether capacity allowed _start to spawn; a focused regression with both slots occupied left spawn untouched but marked a once agent finished as ran once, and queued starts are processed only afterward
+
+**Files:** src/whyline/agents/tick.py
+
+<!-- whyline-event: eb20011d4fe143719f77e674482c18b4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T05:38:41.649Z"} -->
+
+## 2026-11-17 — Finish agents after all starts, and not while a claimed occurrence waits
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-2
+
+**Because:** a capacity-queued once agent was marked ran once before spawn; finishing now runs after _start_waiting and run_count only counts started runs
+
+**Rejected:**
+
+- keep started=due flag — counts a claim that never spawned
+
+**Files:** src/whyline/agents/tick.py
+
+<!-- whyline-event: ec8e0017699844ffaa2442ac39725a0f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T05:40:14.560Z"} -->
+
+## 2026-11-17 — Verify slot-waiting finish deferral and full WCH-2 test suite
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-2
+
+**Because:** All 32 finished and tick tests and full project test suite pass; once agents waiting for capacity slots remain active until actually started, then finish properly
+
+**Files:** src/whyline/agents/tick.py
+
+<!-- whyline-event: f33e397243cc4855a2644311557674ad -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T06:05:15.080Z"} -->
+
+## 2026-11-17 — Reject WCH-2: failed starts and queued claims break run limits
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-2
+
+**Because:** run_count includes occurrence rows marked failed before a run starts, so spawn failure can finish an agent; _finish_if_done also defers max_runs while any claim waits, allowing an every agent to exceed max_runs (reproduced finishing at 3 when max_runs is 2)
+
+**Rejected:**
+
+- approve because the full suite passes — the suite lacks regressions for failed spawn counting and multiple queued max_runs claims
+
+**Files:** src/whyline/agents/state.py, src/whyline/agents/tick.py, tests/agents/test_finished.py
+
+<!-- whyline-event: 78f0e4d4e9d2408bb2f3a8471b63f519 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T06:27:27.635Z"} -->
+
+## 2026-11-17 — Count only started runs; enforce max_runs over queued claims by cancelling them
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-2
+
+**Because:** failed rows never started a run; a waiting claim must not let an every agent pass max_runs, so claims are marked skipped once the limit is reached
+
+**Rejected:**
+
+- keep deferring finish while claims wait — lets a third claim start
+
+**Files:** src/whyline/agents/tick.py, src/whyline/agents/state.py
+
+<!-- whyline-event: 5b8698d43ddb471a835cddd649f133d9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T06:39:44.988Z"} -->
+
+## 2026-11-17 — Verify run limit enforcement, failed spawn exclusion, and finished agent lifecycle
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-2
+
+**Because:** run_count correctly filters for started runs (status running/done) so failed spawns do not count; queued claims exceeding max_runs are cancelled as skipped; all 35 finished and tick tests and full project test suite pass
+
+**Files:** src/whyline/agents/state.py, src/whyline/agents/tick.py, tests/agents/test_finished.py
+
+<!-- whyline-event: 1628617d0d1a42fe83ab16ee67e58e23 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T07:13:08.174Z"} -->
+
+## 2026-11-17 — Reject WCH-2: a failed once spawn is marked missed before the 24-hour threshold
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-2
+
+**Because:** tick._finish_if_done treats every past once moment with zero started runs as missed; reproduced a 07:00 spawn failure becoming finished/missed at 07:01, while the task permits missed only after more than 24 hours, and the existing failed-spawn test checks only run_count
+
+**Rejected:**
+
+- approve because focused tests pass — they omit the activation status after a failed once spawn
+
+**Files:** src/whyline/agents/tick.py, tests/agents/test_finished.py
+
+<!-- whyline-event: be1099fa1b4e4105aa56dca8c8cf6e64 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T07:35:55.793Z"} -->
+
+## 2026-11-17 — Once agent with zero started runs is marked missed only after the 24-hour grace
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-2
+
+**Because:** a failed spawn at the once moment must stay active so it can be retried; schedule.freshness gives 24h for once
+
+**Rejected:**
+
+- finish as missed as soon as the moment passes — a spawn failure at 07:00 became missed at 07:01
+
+**Files:** src/whyline/agents/tick.py
+
+<!-- whyline-event: c81241f0fe6c456fb28715c450d71a13 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T07:37:12.125Z"} -->
+
+## 2026-11-17 — Verify 24-hour grace period for failed once agents before marking missed
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-2
+
+**Because:** A once agent with zero started runs stays active during its 24-hour freshness window and is only marked finished with missed after the grace period elapses; all finished tests and full suite of 5083 tests pass
+
+**Files:** src/whyline/agents/tick.py
+
+<!-- whyline-event: 18be4ca3d6ac462f9dd11f5514cca465 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T07:58:24.131Z"} -->
+
+## 2026-11-17 — Approve WCH-2 finished-agent lifecycle
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-2
+
+**Because:** The diff implements finished state and reasons, run counting from acceptance, once/ends/max-runs completion, 24-hour missed-once handling with one alert, guarded restart, and finished summaries; focused tests and the full uv run pytest -q suite pass
+
+**Rejected:**
+
+- Request more changes — the prior failed-once grace-period defect is fixed and no additional correctness or safety issue was found
+
+**Files:** src/whyline/agents/tick.py
+
+<!-- whyline-event: aa2a6ed4b43143548e05a0d6d5e655ff -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T08:19:16.065Z"} -->

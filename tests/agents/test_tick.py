@@ -92,10 +92,10 @@ def test_a_queued_preparation_error_alerts_once_and_not_other_agents(repo, home,
     good, good_id = _queued(repo, name="good")
     real = tick._runnable
 
-    def runnable(conn, agent_id, now):
+    def runnable(conn, agent_id, now, **kwargs):
         if agent_id == bad.agent_id:
             raise RuntimeError("store schema error")
-        return real(conn, agent_id, now)
+        return real(conn, agent_id, now, **kwargs)
 
     monkeypatch.setattr(tick, "_runnable", runnable)
     alerts, started = [], []
