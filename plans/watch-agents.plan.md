@@ -41,7 +41,7 @@ Rules every task keeps:
 - A check that finds nothing starts no CLI and sends nothing. WCH-6, `test_no_hit_runs_nothing`.
 - A finished agent is not run again until it is started again. WCH-2, `test_finished_agent_is_not_run_again`.
 
-- [ ] WCH-1: Schedule kinds: once, weekly, several times, From and Until
+- [x] WCH-1: Schedule kinds: once, weekly, several times, From and Until
   Edit `src/whyline/agents/definitions.py`, `src/whyline/agents/schedule.py`, `src/whyline/agents/service.py` (`when_text` and `_schedule_words` only) and their tests.
   1. `TRIGGER_KINDS` gains `once` and `weekly`. `Trigger` gains `on: str = ""` (`YYYY-MM-DD`), `days: tuple[str, ...] = ()` (`mon`..`sun`), `starts: str = ""`, `ends: str = ""` (dates) and `max_runs: int = 0` (0 means no limit, else 1 to 10000).
   2. `at` may hold one to six times separated by commas (`09:00, 13:00`). `definitions.times(t) -> tuple[str, ...]` returns them sorted, each once. More than six, or a bad time, is refused.
