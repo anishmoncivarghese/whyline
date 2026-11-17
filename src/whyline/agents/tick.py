@@ -53,15 +53,18 @@ def _definition(act: state.Activation) -> d.AgentDef | None:
         return None
 
 
-def run_tick(*, now: datetime | None = None, spawn=None, alert=None, missed_alert=None) -> TickReport:
+def run_tick(*, now: datetime | None = None, spawn=None, alert=None, missed_alert=None,
+             flush=None) -> TickReport:
     now = now or datetime.now().replace(microsecond=0)
     spawn = spawn or _spawn
-    if alert is None or missed_alert is None:
+    if alert is None or missed_alert is None or flush is None:
         from whyline.agents import deliver
+        flush = flush or deliver.flush_held
         alert = alert or deliver.start_failed
         missed_alert = missed_alert or deliver.missed
     report = TickReport()
     finishing: list[d.AgentDef] = []
+    checkins: dict[str, d.AgentDef] = {}
     with wstate.file_lock(paths.home() / "tick"):
         conn = state.connect()
         for act in state.all_activations(conn):
@@ -78,6 +81,8 @@ def run_tick(*, now: datetime | None = None, spawn=None, alert=None, missed_aler
                 continue
             if status != "active":
                 continue
+            if defn.gate:
+                checkins[act.agent_id] = defn
             if _in_backoff(act, now):
                 continue
             if defn.trigger.kind in ("daily", "weekdays", "weekly", "once", "every"):
@@ -119,6 +124,7 @@ def run_tick(*, now: datetime | None = None, spawn=None, alert=None, missed_aler
                     start=lambda occ: _start(conn, act.agent_id, occ, spawn, report, now),
                 )
         _start_waiting(conn, spawn, report, now, alert)
+        flush(now, checkins)  # held check-in messages, once hours are active
         # After every direct and queued start, so only a run that really
         # started counts toward finishing.
         for defn in finishing:

@@ -386,3 +386,19 @@ def test_every_reason_not_to_run_blocks_both_starting_and_running(repo, home, mo
     assert tick.run_occurrence(running_id, now=datetime(2026, 10, 5, 7, 5)) is None
     assert calls == []
     assert state.occurrence(conn, running_id)["status"] == "claimed"
+
+
+def test_tick_flushes_held_check_ins_for_active_gated_agents(repo, home):
+    folder = home / ".whyline/agents"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "w.toml").write_text(
+        'name="w"\ninstructions="x"\nrunner="codex"\n'
+        f'workdir="{repo}"\n[checkin]\ngate = "event-soon"\n'
+        '[checkin.gate_args]\nminutes = "15"\n')
+    defn = d.load(folder / "w.toml", kind="personal")
+    state.accept(state.connect(), defn)
+    calls = []
+    tick.run_tick(now=datetime(2026, 11, 17, 10, 0), spawn=lambda occ: None,
+                  alert=lambda *a: None, missed_alert=lambda *a: None,
+                  flush=lambda now, known: calls.append((now, sorted(known))))
+    assert calls == [(datetime(2026, 11, 17, 10, 0), [defn.agent_id])]

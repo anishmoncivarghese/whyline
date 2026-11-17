@@ -2,19 +2,25 @@
 (deliveries spec 2, 7, 8). Never raises; never changes the run's outcome."""
 from __future__ import annotations
 
+import contextlib
+import json
 import logging
 import os
 import platform
 import subprocess
-from datetime import datetime
+import threading
+from datetime import datetime, timedelta
 from pathlib import Path
 
-from whyline.agents import convert, deliveries, mail_send, paths, records
+from whyline.agents import convert, deliveries, mail_send, paths, quiet, records
 
 COMMAND_TIMEOUT = 120
 _SUCCEEDED = ("succeeded", "succeeded_with_denials")
 _NO_RUN = ("nothing_new", "cancelled")
 _NOT_STARTED = ("skipped", "missed")
+MAX_HELD = 20
+HOURLY = timedelta(hours=1)
+NOTHING_NOTE = "nothing to report"
 _NO_WORD = "(Word conversion isn't available on this computer, so the Markdown file is attached.)"
 
 
@@ -149,7 +155,188 @@ def send(delivery, subject, body, attachment=None, *, mail=None, tg=None) -> lis
     return results
 
 
-def after_run(defn, record, *, delivery=None, mail=None, tg=None, run=subprocess.run) -> list[dict]:
+def _held_file() -> Path:
+    return paths.settings_file("held.json")
+
+
+def _load_held() -> dict:
+    try:
+        data = json.loads(_held_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    held, last = data.get("held"), data.get("last")
+    return {"held": held if isinstance(held, dict) else {},
+            "last": last if isinstance(last, dict) else {}}
+
+
+def _save_held(data: dict) -> None:
+    target = _held_file()
+    temporary = target.with_name(target.name + f".{os.getpid()}.tmp")
+    try:
+        temporary.write_text(json.dumps(data), encoding="utf-8")
+        os.replace(temporary, target)
+    except OSError:
+        logging.getLogger(__name__).warning("could not save held deliveries")
+        with contextlib.suppress(OSError):
+            temporary.unlink()
+
+
+_THREAD_LOCK = threading.RLock()
+
+
+@contextlib.contextmanager
+def _held_lock():
+    """One writer at a time across threads and agent processes, held over the
+    whole read, decide, send and write of the held list."""
+    with _THREAD_LOCK:
+        handle = None
+        try:
+            handle = open(_held_file().with_name("held.lock"), "a+b")
+            if os.name == "nt":
+                import msvcrt
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        except OSError:
+            logging.getLogger(__name__).warning("could not lock held deliveries")
+        try:
+            yield
+        finally:
+            if handle is not None:
+                handle.close()  # closing releases the lock
+
+
+def _within_hour(data: dict, chat: int, now: datetime) -> bool:
+    try:
+        last = datetime.fromisoformat(str(data["last"][str(chat)]))
+    except (KeyError, TypeError, ValueError):
+        return False
+    return timedelta(0) <= now - last < HOURLY
+
+
+def _hold(data: dict, defn, delivery, subject, body, answer, attachment=None, *, email: bool,
+          chat: bool, now: datetime) -> None:
+    items = data["held"].setdefault(defn.agent_id, [])
+    items.append({
+        "name": defn.name, "label": defn.label, "subject": subject, "body": body,
+        "answer": answer, "email": list(delivery.email) if email else [],
+        "chat": delivery.telegram_chat if chat else 0,
+        "chat_label": delivery.telegram_label, "at": now.isoformat(),
+        "attachment": str(attachment) if attachment and email else "",
+    })
+    data["held"][defn.agent_id] = items[-MAX_HELD:]
+
+
+def _route(defn, delivery, subject, body, attachment, answer, *, mail, tg, now) -> list[dict]:
+    """Send now, or for a check-in agent hold by active hours and the hourly
+    Telegram limit."""
+    if not defn.gate:
+        return send(delivery, subject, body, attachment, mail=mail, tg=tg)
+    with _held_lock():
+        return _route_gated(defn, delivery, subject, body, attachment, answer, mail=mail,
+                            tg=tg, now=now)
+
+
+def _route_gated(defn, delivery, subject, body, attachment, answer, *, mail, tg, now) -> list[dict]:
+    data = _load_held()
+    mail_fn = mail or mail_send.send
+    tg = tg or _telegram()
+    results = []
+    if not quiet.active(defn.active_hours, now):
+        _hold(data, defn, delivery, subject, body, answer, attachment, email=bool(delivery.email),
+              chat=bool(delivery.telegram_chat), now=now)
+        _save_held(data)
+        at = quiet.next_start(defn.active_hours, now).strftime("%a %H:%M")
+        return [_result("held", True, f"held until {at}")]
+    if delivery.email:
+        results.append(_email(delivery, subject, body, attachment, mail_fn))
+    if delivery.telegram_chat:
+        if _within_hour(data, delivery.telegram_chat, now):
+            _hold(data, defn, delivery, subject, body, answer, email=False, chat=True, now=now)
+            _save_held(data)
+            results.append(_result("held", True, "held: one check-in message an hour"))
+        else:
+            sent = _send_telegram(delivery, subject, body, attachment, tg)
+            results.append(sent)
+            if sent["ok"]:
+                data["last"][str(delivery.telegram_chat)] = now.isoformat()
+                _save_held(data)
+    for result in results:
+        if not result["ok"]:
+            logging.getLogger(__name__).warning("%s delivery failed: %s", result["to"], result["detail"])
+    return results
+
+
+def _first_lines(text: str, count: int = 5) -> str:
+    return "\n".join(text.strip().splitlines()[:count])
+
+
+def flush_held(now: datetime, known: dict, *, mail=None, tg=None) -> list[dict]:
+    """Send held deliveries whose agent is inside active hours. Held items for
+    one chat go as one message once the hour since its last check-in has
+    passed. `known` maps agent_id to its definition. Never raises."""
+    try:
+        with _held_lock():
+            return _flush_held(now, known, mail, tg)
+    except Exception:
+        logging.getLogger(__name__).exception("held deliveries failed")
+        return []
+
+
+def _flush_held(now, known, mail, tg) -> list[dict]:
+    data = _load_held()
+    if not data["held"]:
+        return []
+    mail_fn = mail or mail_send.send
+    tg = tg or _telegram()
+    results, chats = [], {}
+    for agent_id, items in list(data["held"].items()):
+        defn = known.get(agent_id)
+        if defn is None or not quiet.active(defn.active_hours, now):
+            continue
+        keep = []
+        for item in items:
+            if item.get("email"):
+                delivery = deliveries.Delivery(email=tuple(item["email"]))
+                saved = Path(item["attachment"]) if item.get("attachment") else None
+                if saved is not None and not saved.is_file():
+                    saved = None
+                result = _email(delivery, item["subject"], item["body"], saved, mail_fn)
+                results.append(result)
+                if not result["ok"]:
+                    keep.append({**item, "chat": item.get("chat", 0)})
+                    continue
+            if item.get("chat"):
+                chats.setdefault(item["chat"], []).append((agent_id, item))
+        data["held"][agent_id] = keep
+    for chat, entries in chats.items():
+        if _within_hour(data, chat, now):
+            for agent_id, item in entries:
+                data["held"][agent_id].append({**item, "email": []})
+            continue
+        body = "\n\n".join(f"{item['label']}\n{_first_lines(item['answer'])}"
+                            for _, item in entries)
+        delivery = deliveries.Delivery(telegram_chat=chat,
+                                       telegram_label=entries[0][1].get("chat_label", ""))
+        result = _send_telegram(delivery, "While you were away:", body, None, tg)
+        results.append(result)
+        if result["ok"]:
+            data["last"][str(chat)] = now.isoformat()
+        else:
+            for agent_id, item in entries:
+                data["held"][agent_id].append({**item, "email": []})
+    data["held"] = {k: v[-MAX_HELD:] for k, v in data["held"].items() if v}
+    _save_held(data)
+    return results
+
+
+def after_run(defn, record, *, delivery=None, mail=None, tg=None, run=subprocess.run,
+              now: datetime | None = None) -> list[dict]:
+    now = now or datetime.now().replace(microsecond=0)
     if delivery is None:
         try:
             delivery = deliveries.get(defn.agent_id)
@@ -159,13 +346,21 @@ def after_run(defn, record, *, delivery=None, mail=None, tg=None, run=subprocess
         return []
     succeeded = record.outcome in _SUCCEEDED
     not_started = record.outcome in _NOT_STARTED
-    attachment, report_path = None, ""
+    attachment, report_path, text = None, "", ""
     if succeeded:
-        attachment, note = _attachment(defn, record, delivery)
         try:
             text = records.read_final(record.run_id)
         except OSError:
             text = ""
+        if defn.gate and defn.silent and quiet.is_nothing(text):
+            record.deliveries = []
+            record.reason = NOTHING_NOTE
+            try:
+                records.save_metadata(record)
+            except OSError:
+                pass
+            return []
+        attachment, note = _attachment(defn, record, delivery)
         if _is_brief(defn):
             from whyline.ideas import brief
             text = brief.split_actions(text)[0]
@@ -180,7 +375,8 @@ def after_run(defn, record, *, delivery=None, mail=None, tg=None, run=subprocess
         subject = subject_line(defn, delivery, record, failed=True)
     results = []
     if succeeded or delivery.on_failure == "alert":
-        results += send(delivery, subject, body, attachment, mail=mail, tg=tg)
+        results += _route(defn, delivery, subject, body, attachment,
+                          text if succeeded else body, mail=mail, tg=tg, now=now)
     if delivery.command:
         env_values = {
             "WHYLINE_AGENT": defn.name,
@@ -210,7 +406,8 @@ def after_run(defn, record, *, delivery=None, mail=None, tg=None, run=subprocess
     return results
 
 
-def missed(defn, due_at, next_run=None, *, delivery=None, mail=None, tg=None) -> list[dict]:
+def missed(defn, due_at, next_run=None, *, delivery=None, mail=None, tg=None,
+           now: datetime | None = None) -> list[dict]:
     """Alert that the scheduler recorded a missed occurrence. Never raises."""
     try:
         if delivery is None:
@@ -225,13 +422,15 @@ def missed(defn, due_at, next_run=None, *, delivery=None, mail=None, tg=None) ->
         if next_run is not None:
             body += f" The next run is {next_run.strftime('%a %d %b %H:%M')}."
         base = delivery.subject.strip() or defn.label
-        return send(delivery, f"{base} missed", body, mail=mail, tg=tg)
+        return _route(defn, delivery, f"{base} missed", body, None, body, mail=mail, tg=tg,
+                      now=now or datetime.now().replace(microsecond=0))
     except Exception:
         logging.getLogger(__name__).exception("missed-run alert failed")
         return []
 
 
-def start_failed(defn, error, *, delivery=None, mail=None, tg=None) -> list[dict]:
+def start_failed(defn, error, *, delivery=None, mail=None, tg=None,
+                 now: datetime | None = None) -> list[dict]:
     """Alert that a due agent could not start. Never raises."""
     try:
         if delivery is None:
@@ -242,7 +441,8 @@ def start_failed(defn, error, *, delivery=None, mail=None, tg=None) -> list[dict
         body = (f"{defn.label} could not start: {text}. "
                 "Run whyline doctor or open the console's Check.")
         base = delivery.subject.strip() or defn.label
-        return send(delivery, f"{base} could not start", body, mail=mail, tg=tg)
+        return _route(defn, delivery, f"{base} could not start", body, None, body, mail=mail,
+                      tg=tg, now=now or datetime.now().replace(microsecond=0))
     except Exception:
         logging.getLogger(__name__).exception("start-failure alert failed")
         return []

@@ -46245,3 +46245,94 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 8d48ba07363c483f82b8bb6f4369e4fc -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-17T12:17:51.125Z"} -->
+
+## 2026-11-17 — Held check-in deliveries and per-chat last-sent time live in settings/held.json; flush runs once per tick over all active gated agents
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CKN-3
+
+**Because:** one message per chat needs a cross-agent view, and deliver/tick are the only files in scope; items keep their own answer text so the flush needs no run lookup
+
+**Rejected:**
+
+- per-agent sqlite table — needs a state.py schema change outside the task
+- hold only whole deliveries — the hourly limit only applies to Telegram, so email is sent and just the Telegram part is held
+
+**Files:** src/whyline/agents/deliver.py
+
+<!-- whyline-event: 407cd5b4dc6e426ba91f0eeeaf8afdf6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T12:20:40.178Z"} -->
+
+## 2026-11-17 — Verify active hours, silence handling, and Telegram hourly rate limits for check-in agents
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CKN-3
+
+**Because:** All quiet time windows, silence checks, delivery hold/flush logic, 20-item caps, and non-gated agent passthroughs pass unit tests and the full test suite
+
+**Files:** src/whyline/agents/quiet.py
+
+<!-- whyline-event: ca697274a07148ffb4c18b481b6ab560 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T12:43:47.010Z"} -->
+
+## 2026-11-17 — Reject CKN-3 pending safe held-state serialization and attachment preservation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CKN-3
+
+**Because:** Unlocked held.json read/modify/write lets concurrent agent completions exceed the one-Telegram-per-hour limit or lose queued items, and held email flushes omit the original attachment; the full suite had one unrelated TUI timing failure that passed in isolation
+
+**Rejected:**
+
+- Approve — serial unit tests pass but do not exercise the concurrent production path or assert held email attachment fidelity
+
+**Files:** src/whyline/agents/deliver.py
+
+<!-- whyline-event: 76fdbb139e47478088b86b6e7e367717 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T13:05:13.448Z"} -->
+
+## 2026-11-17 — Serialize held.json with a lock file held across decide, send and write; atomic replace; held email keeps its attachment path
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CKN-3
+
+**Because:** two agent processes could both pass the hourly check or overwrite each other's queue; flush sent held email with no attachment
+
+**Rejected:**
+
+- lock only the file write — the hourly check and send would still race
+
+**Files:** src/whyline/agents/deliver.py
+
+<!-- whyline-event: 1cda853251bd4676a0c2f4446a728eff -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T13:06:44.578Z"} -->
+
+## 2026-11-17 — Verify concurrency safety and attachment preservation in held check-in deliveries
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CKN-3
+
+**Because:** Held deliveries serialize read-decide-send-write under a file and thread lock to prevent rate limit races and queue loss, email attachments are preserved across flushes, and both focused tests and the full test suite pass clean
+
+**Files:** src/whyline/agents/deliver.py
+
+<!-- whyline-event: 87cf08e6ea0c42aaa2fb9663999803fe -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T13:27:46.192Z"} -->
+
+## 2026-11-17 — Approve CKN-3 active hours, silence and hourly delivery controls
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CKN-3
+
+**Because:** The implementation satisfies the pinned active-hours flush, NOTHING silence, per-chat hourly cap, weekday and overnight windows, 20-item cap, failure-alert gating, and non-gated compatibility; held-state access is serialized, attachments survive flushes, targeted tests cover the prior blockers, and uv run pytest -q passed at 100 percent
+
+**Files:** src/whyline/agents/deliver.py
+
+<!-- whyline-event: 71b0e9457e494bc19edde4e77a2cff81 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T13:48:35.106Z"} -->

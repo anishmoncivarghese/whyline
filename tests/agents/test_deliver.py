@@ -284,3 +284,154 @@ def test_describe():
     text = deliver.describe(DELIVERY)
     assert "a@example.com" in text and "Telegram 'Family (group)'" in text
     assert "Word file attached" in text and "short alert" in text
+
+
+# --- check-in agents: active hours, silence and the hourly limit (CKN-3) ---
+
+def _checkin(home, tmp_path, hours="", silent=False, name="watch"):
+    work = tmp_path / "work"
+    work.mkdir(exist_ok=True)
+    folder = home / ".whyline/agents"
+    folder.mkdir(parents=True, exist_ok=True)
+    extra = f'active_hours = "{hours}"\n' if hours else ""
+    (folder / f"{name}.toml").write_text(
+        f'name="{name}"\ninstructions="x"\nrunner="codex"\nworkdir={json.dumps(str(work))}\n'
+        f'[checkin]\ngate = "event-soon"\nsilent = {str(silent).lower()}\n{extra}'
+        '[checkin.gate_args]\nminutes = "15"\n')
+    defn = d.load(folder / f"{name}.toml", kind="personal")
+    state.accept(state.connect(), defn)
+    return defn
+
+
+CHAT = dl.Delivery(telegram_chat=-100, telegram_label="Me")
+NIGHT = datetime(2026, 11, 17, 2, 0)
+DAY = datetime(2026, 11, 17, 10, 0)
+
+
+def test_held_until_active_hours(home, tmp_path, monkeypatch):
+    _no_docx(monkeypatch)
+    defn = _checkin(home, tmp_path, hours="09:00-17:00")
+    tg = FakeTelegram()
+    results = deliver.after_run(defn, _run(defn), delivery=CHAT, tg=tg, now=NIGHT)
+    assert tg.sent == [] and results[0]["to"] == "held"
+    assert deliver.flush_held(NIGHT, {defn.agent_id: defn}, tg=tg) == []
+    assert tg.sent == []
+    out = deliver.flush_held(DAY, {defn.agent_id: defn}, tg=tg)
+    assert [r["ok"] for r in out] == [True]
+    assert tg.sent[0][0] == "msg" and tg.sent[0][2].startswith("While you were away:")
+    assert "Current search date" in tg.sent[0][2]
+    assert deliver.flush_held(DAY, {defn.agent_id: defn}, tg=tg) == []
+    assert len(tg.sent) == 1
+
+
+def test_nothing_answer_is_silent(home, tmp_path, monkeypatch):
+    _no_docx(monkeypatch)
+    defn = _checkin(home, tmp_path, silent=True)
+    tg = FakeTelegram()
+    record = _run(defn, text="Nothing.\n")
+    assert deliver.after_run(defn, record, delivery=CHAT, tg=tg, now=DAY) == []
+    assert tg.sent == [] and record.reason == "nothing to report"
+    # a real answer from the same agent still goes out
+    assert deliver.after_run(defn, _run(defn), delivery=CHAT, tg=tg, now=DAY)[0]["ok"]
+    assert len(tg.sent) == 1
+    # a non-silent gate agent sends even NOTHING
+    loud = _checkin(home, tmp_path, name="loud")
+    deliver.after_run(loud, _run(loud, text="NOTHING"), delivery=CHAT, tg=FakeTelegram(),
+                      now=DAY.replace(hour=12))
+
+
+def test_one_checkin_message_per_hour(home, tmp_path, monkeypatch):
+    _no_docx(monkeypatch)
+    a, b = _checkin(home, tmp_path, name="a"), _checkin(home, tmp_path, name="b")
+    tg = FakeTelegram()
+    deliver.after_run(a, _run(a), delivery=CHAT, tg=tg, now=DAY)
+    second = deliver.after_run(b, _run(b, text="Line one\nLine two"), delivery=CHAT, tg=tg,
+                               now=DAY.replace(minute=30))
+    assert len(tg.sent) == 1 and second[0]["to"] == "held"
+    known = {a.agent_id: a, b.agent_id: b}
+    assert deliver.flush_held(DAY.replace(minute=45), known, tg=tg) == []
+    later = deliver.flush_held(DAY.replace(hour=11, minute=1), known, tg=tg)
+    assert len(later) == 1 and len(tg.sent) == 2
+    assert "While you were away:" in tg.sent[1][2] and "Line two" in tg.sent[1][2]
+
+
+def test_held_items_for_one_chat_go_as_one_message_with_five_lines(home, tmp_path, monkeypatch):
+    _no_docx(monkeypatch)
+    a, b = _checkin(home, tmp_path, hours="09:00-17:00", name="a"), \
+        _checkin(home, tmp_path, hours="09:00-17:00", name="b")
+    tg = FakeTelegram()
+    many = "\n".join(f"row {n}" for n in range(1, 9))
+    deliver.after_run(a, _run(a, text=many), delivery=CHAT, tg=tg, now=NIGHT)
+    deliver.after_run(b, _run(b, text="short"), delivery=CHAT, tg=tg, now=NIGHT)
+    deliver.flush_held(DAY, {a.agent_id: a, b.agent_id: b}, tg=tg)
+    assert len(tg.sent) == 1
+    text = tg.sent[0][2]
+    assert "row 5" in text and "row 6" not in text and "short" in text
+
+
+def test_a_failure_alert_follows_the_hours(home, tmp_path, monkeypatch):
+    _no_docx(monkeypatch)
+    defn = _checkin(home, tmp_path, hours="09:00-17:00")
+    tg = FakeTelegram()
+    out = deliver.after_run(defn, _run(defn, "failed", "boom", ""), delivery=CHAT, tg=tg, now=NIGHT)
+    assert tg.sent == [] and out[0]["to"] == "held"
+
+
+def test_held_list_keeps_the_newest_twenty(home, tmp_path, monkeypatch):
+    _no_docx(monkeypatch)
+    defn = _checkin(home, tmp_path, hours="09:00-17:00")
+    tg = FakeTelegram()
+    for n in range(25):
+        deliver.after_run(defn, _run(defn, text=f"item {n}"), delivery=CHAT, tg=tg, now=NIGHT)
+    held = deliver._load_held()["held"][defn.agent_id]
+    assert len(held) == 20 and held[0]["answer"].strip() == "item 5" and held[-1]["answer"].strip() == "item 24"
+
+
+def test_email_is_held_outside_hours_but_not_limited_hourly(home, tmp_path, monkeypatch):
+    _no_docx(monkeypatch)
+    defn = _checkin(home, tmp_path, hours="09:00-17:00")
+    mails = []
+    both = dl.Delivery(email=("a@example.com",), telegram_chat=-100)
+    deliver.after_run(defn, _run(defn), delivery=both, mail=lambda *a, **k: mails.append(a),
+                      tg=FakeTelegram(), now=NIGHT)
+    assert mails == []
+    deliver.flush_held(DAY, {defn.agent_id: defn}, mail=lambda *a, **k: mails.append(a),
+                       tg=FakeTelegram())
+    assert len(mails) == 1
+    assert [p.name for p in mails[0][3]] == ["watch-2026-10-09.md"]
+
+
+def test_concurrent_deliveries_send_one_telegram_an_hour(home, tmp_path, monkeypatch):
+    import threading
+    import time
+    _no_docx(monkeypatch)
+    a, b = _checkin(home, tmp_path, name="a"), _checkin(home, tmp_path, name="b")
+
+    class Slow(FakeTelegram):
+        def send_message(self, *args, **kwargs):
+            time.sleep(0.2)
+            return super().send_message(*args, **kwargs)
+
+        def send_document(self, *args, **kwargs):
+            time.sleep(0.2)
+            return super().send_document(*args, **kwargs)
+
+    tg = Slow()
+    threads = [threading.Thread(target=deliver.after_run, args=(x, _run(x)),
+                                kwargs={"delivery": CHAT, "tg": tg, "now": DAY}) for x in (a, b)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(tg.sent) == 1
+    assert sum(len(v) for v in deliver._load_held()["held"].values()) == 1
+
+
+def test_an_agent_with_no_gate_delivers_as_before(agent, monkeypatch):
+    _no_docx(monkeypatch)
+    tg = FakeTelegram()
+    results = deliver.after_run(agent, _run(agent, text="NOTHING"), delivery=CHAT, tg=tg,
+                                now=NIGHT)
+    deliver.after_run(agent, _run(agent), delivery=CHAT, tg=tg, now=NIGHT)
+    assert [r["to"] for r in results] == ["telegram"]
+    assert len(tg.sent) == 2 and deliver._load_held()["held"] == {}
