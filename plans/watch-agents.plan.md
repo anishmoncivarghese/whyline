@@ -164,7 +164,7 @@ Rules every task keeps:
   8. `watch.own_message(defn, found) -> str` for an agent with no instructions: the agent's name, one line for the rule (`The text "Round 2 result" is now on the page.`, `… is no longer on the page.`, `The page changed.`), up to 10 item lines, and each address.
   Tests: `test_whyline_compares_the_value` (an answer that says the price is below the limit with `VALUE:` above it is no hit, and the reverse is a hit), `read_value` on six formats, the reset after going back over the limit, a further drop being a hit and a small rise not, the 200-value cap, `note` and `strip`, `own_message` for each rule, each validation refusal, and an agent file without `[watch]` loading as before.
 
-- [ ] WCH-6: Running a watch and sending its message
+- [x] WCH-6: Running a watch and sending its message
   Edit `src/whyline/agents/runner.py`, `src/whyline/agents/deliver.py`, `src/whyline/agents/tick.py` and their tests.
   1. `deliver.notice(defn, text, *, now, urgent=False, held_ok=True) -> list[dict]` sends plain text through the agent's delivery (email, Telegram, command), with the subject `<agent>: <first line>`. It is outside CKN-3's hourly limit. Outside active hours it is held unless `urgent`.
   2. For an agent with a `[watch]` table the runner, after the gate step:
