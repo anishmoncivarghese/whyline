@@ -152,7 +152,7 @@ Rules every task keeps:
   6. `write` also writes `page.md` (the current text) and `before.md` (the last text) for a `page` gate, beside `found.md`.
   Tests: `test_blocked_is_not_a_change`, `test_three_failures_one_message` (the notice on the third, none on the fourth, the recovery notice once), each rule on a first and a later check, the between-texts cut and its failure, three addresses with one failing, and the two extra files.
 
-- [ ] WCH-5: The watch table, the value and the memory
+- [x] WCH-5: The watch table, the value and the memory
   Create `src/whyline/agents/watch.py` and `tests/agents/test_watch.py`. Edit `src/whyline/agents/definitions.py`, `src/whyline/agents/state.py` and their tests.
   1. `AgentDef` gains `watch: Watch | None = None`, read from and written to a `[watch]` table. `Watch`: `stop: str = "never"` (`first` or `never`), `value: str = ""` (`below <number>` or `above <number>`), `urgent: bool = False`, `daily_cap: int = 24` (1 to 200). A `[watch]` table needs the `page` gate. `value` needs instructions and a rule other than `gone`.
   2. Instructions may be empty only when the agent has a `[watch]` table with rule `changed`, `appears` or `gone` and no `value`.
