@@ -87,7 +87,7 @@ Rules every task keeps:
   3. A small cache per address under `cache_dir` (default `~/.whyline/agents/pages/`, files private): the last `Page` and when it was fetched. A second `fetch` of the same address within 5 minutes, or before `retry_at`, returns the cached `Page` and makes no request.
   Tests: `test_private_address_is_refused_after_redirect` (a public address redirecting to `127.0.0.1`, to `169.254.169.254` and to a name resolving to `10.0.0.5`), each blocked status and phrase, `Retry-After` in both forms, the 5-minute cache making no second request, the redirect limit, a non-text page, and that no exception escapes.
 
-- [ ] CKN-1: Gates
+- [x] CKN-1: Gates
   Create `src/whyline/agents/gates.py` and `tests/agents/test_gates.py` only.
   1. `@dataclass(frozen=True) class Gate`: `name`, `label`, `args: tuple[Arg, ...]`, `run`. `Arg` has `key`, `label`, `kind` (`text`, `minutes`, `repo`, `path`) and `default`.
   2. `GATES`, with these five:
