@@ -46416,3 +46416,97 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f170749adaf44082a7850501c8785f47 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-17T15:48:15.132Z"} -->
+
+## 2026-11-17 — page gate passes notice and page/before text out through Found (notice, files) via a transient state key
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-4
+
+**Because:** Gate.run returns only items and write() gets no gate name, so Found carries the extra files
+
+**Rejected:**
+
+- new run signature — would touch every gate
+
+**Files:** src/whyline/agents/gates.py
+
+<!-- whyline-event: be028c33d6dc44a1b06eb90f62d6b4e4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T15:49:28.959Z"} -->
+
+## 2026-11-17 — Pass WCH-4 page gate implementation and test coverage
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-4
+
+**Because:** All 32 gate tests and the test suite pass, covering choice/urls arg kinds, changed/appears/gone/always rules, start/end cuts, failure notices, and page.md/before.md output
+
+**Files:** src/whyline/agents/gates.py
+
+<!-- whyline-event: e584298ff3c54385bf0d27bfc6b49f1b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T16:12:39.352Z"} -->
+
+## 2026-11-17 — Reject WCH-4 until repeated page changes are not deduplicated
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-4
+
+**Because:** The changed rule keys items only by URL, destination hash, and diff index, so after A to B to A to B the fourth successful check differs from the last successful fetch but yields no items; the full uv run pytest -q suite still exits 0 because tests do not cover a repeated transition
+
+**Rejected:**
+
+- Approve the passing suite — the required changed-rule behavior is still violated
+
+**Files:** src/whyline/agents/gates.py, tests/agents/test_gates.py
+
+<!-- whyline-event: 9565e74be2884af7a4c5e1cf432e197c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T16:33:14.819Z"} -->
+
+## 2026-11-17 — page changed keys include a per-address change counter so cycling content (A to B to A to B) reports every transition
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-4
+
+**Because:** keys of URL, digest and diff index were deduplicated by seen when a page returned to an earlier hash; a counter stored in the page state makes each transition distinct
+
+**Rejected:**
+
+- timestamp in key — tests and fast checks can share the same now, and it is not deterministic
+
+**Files:** src/whyline/agents/gates.py
+
+<!-- whyline-event: 35d4b81079414f3b852673917716887f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T16:33:47.727Z"} -->
+
+## 2026-11-17 — Pass WCH-4 page gate implementation including cycling content deduplication fix
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-4
+
+**Because:** Item keys for changed rule now include per-address changes counter preventing suppression of repeated content cycles (e.g. A->B->A->B); all 33 gate tests and the full 5185-test suite pass
+
+**Files:** src/whyline/agents/gates.py
+
+<!-- whyline-event: 8ac3469754154914872981591118413f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T16:54:08.760Z"} -->
+
+## 2026-11-17 — Approve WCH-4 page gate after cyclic change fix
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-4
+
+**Because:** The per-address changes counter prevents seen-key suppression when content cycles, the required page behaviors and regression cases are covered, and the plain full pytest suite exits 0
+
+**Rejected:**
+
+- Request further changes — no actionable correctness, safety, or coverage defect remains
+
+**Files:** src/whyline/agents/gates.py, tests/agents/test_gates.py
+
+<!-- whyline-event: 917d483d9d0b4d2e8f01b7cfc8157145 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T17:14:26.672Z"} -->

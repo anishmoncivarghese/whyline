@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from whyline.agents import gates
+from whyline.agents import gates, pagefetch
 from whyline.ideas.brief import Event, Message
 
 NOW = datetime(2026, 11, 17, 10, 0)
@@ -168,7 +168,9 @@ def test_validate_returns_cleaned_arguments(home):
 
 
 def test_gates_list():
-    assert list(gates.GATES) == ["mail-from", "event-soon", "ci-failed", "reminder-overdue", "changed"]
+    assert list(gates.GATES) == [
+        "mail-from", "event-soon", "ci-failed", "reminder-overdue", "changed", "page",
+    ]
     assert gates.GATES["event-soon"].args[0].default == "15"
 
 
@@ -242,3 +244,182 @@ def test_calendar_reader_reports_denied():
 
     with pytest.raises(gates.GateError):
         gates.read_events(run)
+
+
+URL = "https://example.com/a"
+
+
+def fake_pages(monkeypatch, pages):
+    """pages maps a url to text, or to a (state, reason) pair."""
+
+    def fetch(url, *, now, **kw):
+        got = pages[url]
+        if isinstance(got, tuple):
+            return pagefetch.Page(url, got[0], reason=got[1])
+        return pagefetch.Page(url, "ok", text=got)
+
+    monkeypatch.setattr(pagefetch, "fetch", fetch)
+
+
+def look(args, state, **kw):
+    return gates.check("page", {"rule": "changed", **args}, state, now=NOW, readers=readers(), **kw)
+
+
+def test_page_changed_first_then_diff(monkeypatch):
+    pages = {URL: "one\ntwo"}
+    fake_pages(monkeypatch, pages)
+    first = look({"url": URL}, {})
+    assert first.items == []
+    pages[URL] = "one\nthree"
+    second = look({"url": URL}, first.state)
+    assert [i.line for i in second.items] == ["-two", "+three"]
+    assert look({"url": URL}, second.state).items == []
+
+
+def test_page_changed_reports_cycling_content_every_time(monkeypatch):
+    pages = {URL: "a"}
+    fake_pages(monkeypatch, pages)
+    state = look({"url": URL}, {}).state
+    for text, line in [("b", "+b"), ("a", "+a"), ("b", "+b"), ("a", "+a")]:
+        pages[URL] = text
+        got = look({"url": URL}, state)
+        assert line in [i.line for i in got.items]
+        state = got.state
+
+
+def test_page_changed_caps_items_and_lines(monkeypatch):
+    pages = {URL: "x"}
+    fake_pages(monkeypatch, pages)
+    first = look({"url": URL}, {})
+    pages[URL] = "\n".join(["y" * 500] * 60)
+    second = look({"url": URL}, first.state)
+    assert len(second.items) == 40
+    assert all(len(i.line) <= 300 for i in second.items)
+
+
+def test_page_appears(monkeypatch):
+    pages = {URL: "Sold   OUT"}
+    fake_pages(monkeypatch, pages)
+    args = {"url": URL, "rule": "appears", "text": "in stock"}
+    first = look(args, {})
+    assert first.items == []
+    pages[URL] = "now IN  stock!"
+    second = look(args, first.state)
+    assert len(second.items) == 1
+    assert look(args, second.state).items == []
+
+
+def test_page_appears_already_there_on_first_check(monkeypatch):
+    fake_pages(monkeypatch, {URL: "In stock"})
+    found = look({"url": URL, "rule": "appears", "text": "in stock"}, {})
+    assert len(found.items) == 1
+
+
+def test_page_gone(monkeypatch):
+    pages = {URL: "Sale on"}
+    fake_pages(monkeypatch, pages)
+    args = {"url": URL, "rule": "gone", "text": "sale on"}
+    first = look(args, {})
+    assert first.items == []
+    assert look(args, first.state).items == []
+    pages[URL] = "nothing"
+    second = look(args, first.state)
+    assert len(second.items) == 1
+    assert look(args, second.state).items == []
+
+
+def test_page_always_reports_every_check(monkeypatch):
+    fake_pages(monkeypatch, {URL: "same"})
+    args = {"url": URL, "rule": "always"}
+    first = look(args, {})
+    assert [i.line for i in first.items] == [f"checked {URL}"]
+    later = gates.check("page", args, first.state, now=NOW + timedelta(hours=1), readers=readers())
+    assert [i.line for i in later.items] == [f"checked {URL}"]
+
+
+def test_page_needs_text_for_appears_and_gone():
+    for rule in ("appears", "gone"):
+        with pytest.raises(gates.GateError, match="Text to look for"):
+            gates.validate("page", {"url": URL, "rule": rule})
+        with pytest.raises(gates.GateError, match="Text to look for"):
+            gates.validate("page", {"url": URL, "rule": rule, "text": "x"})
+    with pytest.raises(gates.GateError, match="one of"):
+        gates.validate("page", {"url": URL, "rule": "sometimes"})
+    with pytest.raises(gates.GateError, match="at most 3"):
+        gates.validate("page", {"url": " ".join([URL] * 4)})
+    assert gates.validate("page", {"url": URL}) == {"url": URL, "rule": "changed"}
+
+
+def test_page_between_texts(monkeypatch):
+    pages = {URL: "head [start]price 5[end] tail 1"}
+    fake_pages(monkeypatch, pages)
+    args = {"url": URL, "start": "[start]", "end": "[end]"}
+    first = look(args, {})
+    assert first.state["pages"][URL]["text"] == "price 5"
+    pages[URL] = "head [start]price 6[end] tail 2"
+    assert [i.line for i in look(args, first.state).items] == ["-price 5", "+price 6"]
+
+
+def test_page_between_texts_missing_fails(monkeypatch):
+    fake_pages(monkeypatch, {URL: "no markers"})
+    state = {}
+    for _ in range(3):
+        found = look({"url": URL, "start": "[a]", "end": "[b]"}, state)
+        state = found.state
+    assert found.notice == f"couldn't read {URL}: the start or end text isn't on the page"
+    assert "hash" not in state["pages"][URL]
+
+
+def test_blocked_is_not_a_change(monkeypatch):
+    pages = {URL: "one"}
+    fake_pages(monkeypatch, pages)
+    first = look({"url": URL}, {})
+    pages[URL] = ("blocked", "the site is blocking automated checks")
+    blocked = look({"url": URL}, first.state)
+    assert blocked.items == []
+    assert blocked.state["pages"][URL]["text"] == "one"
+    assert blocked.state["pages"][URL]["hash"] == first.state["pages"][URL]["hash"]
+    assert blocked.state["pages"][URL]["failures"] == 1
+
+
+def test_three_failures_one_message(monkeypatch):
+    pages = {URL: "one"}
+    fake_pages(monkeypatch, pages)
+    state = look({"url": URL}, {}).state
+    pages[URL] = ("failed", "timed out")
+    notices = []
+    for _ in range(4):
+        found = look({"url": URL}, state)
+        state = found.state
+        notices.append(found.notice)
+    assert notices == ["", "", f"couldn't read {URL}: timed out", ""]
+    pages[URL] = "one"
+    back = look({"url": URL}, state)
+    assert back.notice == f"{URL} can be read again"
+    assert back.items == []
+    assert look({"url": URL}, back.state).notice == ""
+
+
+def test_page_three_addresses_one_failing(monkeypatch):
+    a, b, c = (f"https://example.com/{n}" for n in "abc")
+    pages = {a: "1", b: ("failed", "boom"), c: "3"}
+    fake_pages(monkeypatch, pages)
+    args = {"url": f"{a} {b} {c}", "rule": "always"}
+    found = look(args, {})
+    assert [i.line for i in found.items] == [f"checked {a}", f"checked {c}"]
+    assert found.state["pages"][b]["failures"] == 1
+
+
+def test_write_page_files(tmp_path, monkeypatch):
+    pages = {URL: "old"}
+    fake_pages(monkeypatch, pages)
+    first = look({"url": URL}, {})
+    pages[URL] = "new"
+    second = look({"url": URL}, first.state)
+    gates.write(second, tmp_path)
+    assert (tmp_path / "page.md").read_text() == "new"
+    assert (tmp_path / "before.md").read_text() == "old"
+    assert (tmp_path / "found.md").exists()
+    other = tmp_path / "other"
+    gates.write(gates.Found([], {}), other)
+    assert not (other / "page.md").exists()

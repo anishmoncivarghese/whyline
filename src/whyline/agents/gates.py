@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import difflib
+import hashlib
 import os
 import re
 import subprocess
@@ -10,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from whyline.agents import pagefetch
 from whyline.ideas import guard
 
 MAX_SEEN = 500
@@ -18,7 +21,10 @@ MAX_LINE = 300
 MAX_TEXT = 200
 MAX_MINUTES = 1440
 GH_TIMEOUT = 30
-KINDS = ("text", "minutes", "repo", "path")
+KINDS = ("text", "minutes", "repo", "path", "urls", "choice")
+MAX_URLS = 3
+MAX_DIFF = 40
+FAIL_NOTICE = 3
 
 
 class GateError(ValueError):
@@ -31,6 +37,8 @@ class Arg:
     label: str
     kind: str
     default: str = ""
+    choices: tuple[str, ...] = ()
+    required: bool = True
 
 
 @dataclass(frozen=True)
@@ -43,6 +51,8 @@ class Item:
 class Found:
     items: list[Item]
     state: dict
+    notice: str = ""
+    files: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -306,6 +316,66 @@ def _walk(root: Path):
             yield Path(base) / name
 
 
+def _normal(text: str) -> str:
+    return " ".join(text.casefold().split())
+
+
+def _page(args, state, now, run, readers):
+    rule = args["rule"]
+    needle = _normal(args.get("text", ""))
+    pages = state.setdefault("pages", {})
+    items: list[Item] = []
+    notices: list[str] = []
+    current: list[str] = []
+    before: list[str] = []
+    for url in args["url"].split():
+        entry = dict(pages.get(url) or {})
+        failures = int(entry.get("failures", 0))
+        page = pagefetch.fetch(url, now=now)
+        text, reason = page.text, page.reason
+        if page.state == "ok" and args.get("start") and args.get("end"):
+            a = text.find(args["start"])
+            b = text.find(args["end"], a + len(args["start"])) if a >= 0 else -1
+            if a < 0 or b < 0:
+                page, reason = None, "the start or end text isn't on the page"
+            else:
+                text = text[a + len(args["start"]) : b]
+        if page is None or page.state != "ok":
+            failures += 1
+            entry["failures"] = failures
+            pages[url] = entry
+            if failures == FAIL_NOTICE:
+                notices.append(f"couldn't read {url}: {reason or 'unknown reason'}")
+            continue
+        if failures >= FAIL_NOTICE:
+            notices.append(f"{url} can be read again")
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        first = "hash" not in entry
+        old = entry.get("text", "")
+        stamp = now.isoformat()
+        changes = int(entry.get("changes", 0))
+        if rule == "always":
+            items.append(Item(f"page|{url}|always|{stamp}", f"checked {url}"))
+        elif rule == "changed":
+            if not first and digest != entry["hash"]:
+                changes += 1
+                diff = difflib.unified_diff(old.splitlines(), text.splitlines(), lineterm="", n=0)
+                lines = [d for d in diff if d[:1] in "+-" and not d.startswith(("+++", "---"))]
+                for n, line in enumerate(lines[:MAX_DIFF]):
+                    items.append(Item(f"page|{url}|{digest}|{changes}|{n}", _clean(line)[:MAX_LINE]))
+        elif rule == "appears":
+            if needle in _normal(text) and (first or needle not in _normal(old)):
+                items.append(Item(f"page|{url}|appears|{stamp}", f"{args['text']} appeared on {url}"))
+        elif rule == "gone":
+            if not first and needle in _normal(old) and needle not in _normal(text):
+                items.append(Item(f"page|{url}|gone|{stamp}", f"{args['text']} is gone from {url}"))
+        current.append(text)
+        before.append(old)
+        pages[url] = {"hash": digest, "text": text, "failures": 0, "changes": changes}
+    state["_out"] = {"notice": "; ".join(notices), "page": "\n".join(current), "before": "\n".join(before)}
+    return items
+
+
 GATES: dict[str, Gate] = {
     g.name: g
     for g in (
@@ -324,6 +394,19 @@ GATES: dict[str, Gate] = {
         Gate("ci-failed", "Failed CI on a repo", (Arg("repo", "Repository", "repo"),), _ci_failed),
         Gate("reminder-overdue", "An overdue reminder", (), _reminder_overdue),
         Gate("changed", "A file or folder changed", (Arg("path", "Path", "path"),), _changed),
+        Gate(
+            "page",
+            "A web page",
+            (
+                Arg("url", "Addresses", "urls"),
+                Arg("rule", "Tell me when", "choice", "changed",
+                    ("changed", "appears", "gone", "always")),
+                Arg("text", "Text to look for", "text", required=False),
+                Arg("start", "Start text", "text", required=False),
+                Arg("end", "End text", "text", required=False),
+            ),
+            _page,
+        ),
     )
 }
 
@@ -353,6 +436,8 @@ def validate(name: str, args: dict, readers: Readers | None = None) -> dict:
         raw = args.get(arg.key, arg.default)
         value = str(raw if raw is not None else "").strip()
         if not value:
+            if not arg.required:
+                continue
             raise GateError(f"{arg.label} is needed")
         if arg.kind == "text":
             if len(value) > MAX_TEXT or re.search(r"[\x00-\x1f\x7f]", value):
@@ -371,7 +456,23 @@ def validate(name: str, args: dict, readers: Readers | None = None) -> dict:
             if not path.exists():
                 raise GateError(f"{value} does not exist")
             value = str(path)
+        elif arg.kind == "choice":
+            if value not in arg.choices:
+                raise GateError(f"{arg.label} must be one of {', '.join(arg.choices)}")
+        elif arg.kind == "urls":
+            urls = value.split()
+            if len(urls) > MAX_URLS:
+                raise GateError(f"{arg.label} can hold at most {MAX_URLS} addresses")
+            for u in urls:
+                if not re.fullmatch(r"https?://[^\s\x00-\x1f\x7f]+", u):
+                    raise GateError(f"{u} is not a web address starting with http:// or https://")
+            value = " ".join(urls)
         cleaned[arg.key] = value
+    if name == "page":
+        if cleaned["rule"] in ("appears", "gone") and not 2 <= len(cleaned.get("text", "")) <= MAX_TEXT:
+            raise GateError(f"Text to look for is needed (2 to {MAX_TEXT} characters)")
+        if bool(cleaned.get("start")) != bool(cleaned.get("end")):
+            raise GateError("Start text and End text must be set together")
     return cleaned
 
 
@@ -397,7 +498,11 @@ def check(
         seen.append(item.key)
         items.append(item)
     new_state["seen"] = seen[-MAX_SEEN:]
-    return Found(items, new_state)
+    out = new_state.pop("_out", None) or {}
+    files = {}
+    if name == "page":
+        files = {"page.md": out.get("page", ""), "before.md": out.get("before", "")}
+    return Found(items, new_state, out.get("notice", ""), files)
 
 
 def write(found: Found, run_dir: Path) -> int:
@@ -405,4 +510,6 @@ def write(found: Found, run_dir: Path) -> int:
     run_dir.mkdir(parents=True, exist_ok=True)
     lines = [" ".join(i.line.split())[:MAX_LINE] for i in found.items]
     (run_dir / "found.md").write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
+    for filename, body in found.files.items():
+        (run_dir / filename).write_text(body, encoding="utf-8")
     return len(lines)
