@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from whyline.agents import after, definitions as d, records, runner, state
@@ -29,14 +29,42 @@ class Row:
     when: str
 
 
+def _day(value: str) -> str:
+    parsed = date.fromisoformat(value)
+    return f"{parsed.day} {parsed:%b}"
+
+
+def _every_words(t: d.Trigger) -> str:
+    if t.every_minutes:
+        return f"every {t.every_minutes} minutes"
+    if t.every_hours % 24 == 0:
+        days = t.every_hours // 24
+        return "every day" if days == 1 else f"every {days} days"
+    return f"every {t.every_hours} hours"
+
+
+def _range_text(t: d.Trigger) -> str:
+    if t.starts and t.ends:
+        return f" from {_day(t.starts)} to {_day(t.ends)}"
+    if t.starts:
+        return f" from {_day(t.starts)}"
+    if t.ends:
+        return f" until {_day(t.ends)}"
+    return ""
+
+
 def when_text(t: d.Trigger) -> str:
-    return {
+    at = ", ".join(d.times(t))
+    base = {
         "manual": "on demand",
-        "daily": f"daily at {t.at}",
-        "weekdays": f"weekdays at {t.at}",
-        "every": f"every {t.every_hours} hours",
+        "daily": f"daily at {at}",
+        "weekdays": f"weekdays at {at}",
+        "weekly": f"{', '.join(day.capitalize() for day in t.days)} at {at}",
+        "once": f"once on {_day(t.on)} at {at}" if t.on else f"once at {at}",
+        "every": _every_words(t),
         "folder": f"when files appear in {t.folder}",
     }[t.kind]
+    return base + _range_text(t)
 
 
 def find(name: str, repo_root: Path | None) -> d.AgentDef:
@@ -205,12 +233,16 @@ _WONT_RUN = {
 
 
 def _schedule_words(t: d.Trigger) -> str:
-    return {
-        "daily": f"every day at {t.at}",
-        "weekdays": f"every weekday at {t.at}",
-        "every": f"every {t.every_hours} hours",
+    at = ", ".join(d.times(t))
+    words = {
+        "daily": f"every day at {at}",
+        "weekdays": f"every weekday at {at}",
+        "weekly": f"{', '.join(day.capitalize() for day in t.days)} at {at}",
+        "once": f"once on {_day(t.on)} at {at}" if t.on else f"once at {at}",
+        "every": _every_words(t),
         "folder": f"when files appear in {t.folder}",
     }[t.kind]
+    return words + _range_text(t)
 
 
 def scheduler_summary(found: list[Row], *, on: bool, now: datetime | None = None) -> str:

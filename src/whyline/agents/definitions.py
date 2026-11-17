@@ -8,15 +8,21 @@ import json
 import re
 import tomllib
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
 from whyline.agents import before as before_steps, paths
 
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 CLIS = ("claude", "codex", "grok", "antigravity")
-TRIGGER_KINDS = ("manual", "daily", "weekdays", "every", "folder")
+TRIGGER_KINDS = ("manual", "daily", "weekdays", "every", "folder", "once", "weekly")
+DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+MAX_TIMES = 6
+EVERY_MINUTES_RANGE = (5, 10080)
+MAX_RUNS_LIMIT = 10000
 TOOL_PERMISSIONS = ("allowed", "ask")
 _TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 class DefinitionError(ValueError):
@@ -30,6 +36,12 @@ class Trigger:
     every_hours: int = 0
     folder: str = ""
     min_gap_minutes: int = 10
+    every_minutes: int = 0
+    on: str = ""  # YYYY-MM-DD, for once
+    days: tuple[str, ...] = ()  # mon..sun, for weekly
+    starts: str = ""  # YYYY-MM-DD
+    ends: str = ""  # YYYY-MM-DD
+    max_runs: int = 0  # 0 = no limit
 
 
 @dataclass(frozen=True)
@@ -92,6 +104,29 @@ def _int(raw: dict, key: str, default: int) -> int:
     return value
 
 
+def times(t: Trigger) -> tuple[str, ...]:
+    """The times in t.at, sorted, each once. A bad or surplus time is refused."""
+    if not t.at.strip():
+        return ()
+    found = [part.strip() for part in t.at.split(",")]
+    if len(found) > MAX_TIMES:
+        raise DefinitionError(f'trigger "at" may list at most {MAX_TIMES} times')
+    if not all(_TIME.match(part) for part in found):
+        raise DefinitionError('trigger "at" must be 24-hour times like 07:00, separated by commas')
+    return tuple(sorted(set(found)))
+
+
+def _date(value: str, label: str) -> None:
+    if not value:
+        return
+    if not _DATE.match(value):
+        raise DefinitionError(f"trigger {label} must be a date like 2026-11-17")
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        raise DefinitionError(f"trigger {label} must be a date like 2026-11-17") from None
+
+
 def _trigger(raw: object) -> Trigger:
     if not isinstance(raw, dict):
         raise DefinitionError("trigger must be a table")
@@ -101,13 +136,42 @@ def _trigger(raw: object) -> Trigger:
         every_hours=_int(raw, "every_hours", 0),
         folder=_str(raw, "folder"),
         min_gap_minutes=_int(raw, "min_gap_minutes", 10),
+        every_minutes=_int(raw, "every_minutes", 0),
+        on=_str(raw, "on"),
+        days=_strs(raw, "days"),
+        starts=_str(raw, "starts"),
+        ends=_str(raw, "ends"),
+        max_runs=_int(raw, "max_runs", 0),
     )
     if t.kind not in TRIGGER_KINDS:
         raise DefinitionError(f"trigger kind must be one of {', '.join(TRIGGER_KINDS)}")
-    if t.kind in ("daily", "weekdays") and not _TIME.match(t.at):
+    listed = times(t)
+    if t.kind in ("daily", "weekdays", "weekly", "once") and not listed:
         raise DefinitionError('trigger "at" must be a 24-hour time like 07:00')
-    if t.kind == "every" and not 1 <= t.every_hours <= 168:
-        raise DefinitionError("trigger every_hours must be between 1 and 168")
+    if t.kind == "once":
+        if not t.on:
+            raise DefinitionError("a once trigger needs a date (on)")
+        if len(listed) != 1:
+            raise DefinitionError("a once trigger needs exactly one time")
+    if t.kind == "weekly":
+        if not t.days:
+            raise DefinitionError("a weekly trigger needs at least one day")
+        if not set(t.days) <= set(DAYS) or len(set(t.days)) != len(t.days):
+            raise DefinitionError(f"trigger days must be from {', '.join(DAYS)}, each once")
+    _date(t.on, "on")
+    _date(t.starts, "starts")
+    _date(t.ends, "ends")
+    if t.starts and t.ends and t.ends < t.starts:
+        raise DefinitionError("trigger ends is before starts")
+    if not 0 <= t.max_runs <= MAX_RUNS_LIMIT:
+        raise DefinitionError(f"trigger max_runs must be between 1 and {MAX_RUNS_LIMIT}")
+    if t.kind == "every":
+        low, high = EVERY_MINUTES_RANGE
+        if t.every_minutes:
+            if not low <= t.every_minutes <= high:
+                raise DefinitionError(f"trigger every_minutes must be between {low} and {high}")
+        elif not 1 <= t.every_hours <= 168:
+            raise DefinitionError("trigger every_hours must be between 1 and 168")
     if t.kind == "folder" and not t.folder:
         raise DefinitionError("a folder trigger needs a folder")
     if t.min_gap_minutes < 1:
@@ -261,6 +325,18 @@ def render(defn: AgentDef) -> str:
         lines.append(f"at = {_q(t.at)}")
     if t.every_hours:
         lines.append(f"every_hours = {t.every_hours}")
+    if t.every_minutes:
+        lines.append(f"every_minutes = {t.every_minutes}")
+    if t.on:
+        lines.append(f"on = {_q(t.on)}")
+    if t.days:
+        lines.append("days = [" + ", ".join(_q(day) for day in t.days) + "]")
+    if t.starts:
+        lines.append(f"starts = {_q(t.starts)}")
+    if t.ends:
+        lines.append(f"ends = {_q(t.ends)}")
+    if t.max_runs:
+        lines.append(f"max_runs = {t.max_runs}")
     if t.folder:
         lines.append(f"folder = {_q(t.folder)}")
     lines.append(f"min_gap_minutes = {t.min_gap_minutes}")

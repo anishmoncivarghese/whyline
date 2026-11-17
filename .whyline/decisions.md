@@ -45771,3 +45771,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f3d6cd5b203b4474bb35ebf933ac2921 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-16T21:39:34.107Z"} -->
+
+## 2026-11-17 — Added every_minutes (5..10080) to Trigger in WCH-1 because CKN-2 has not landed
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-1
+
+**Because:** WCH-1 needs 'every 30 minutes' text and the 10080 ceiling; field absent in tree
+
+**Rejected:**
+
+- skip every_minutes — when_text and ceiling could not be implemented or tested
+
+**Files:** src/whyline/agents/definitions.py
+
+<!-- whyline-event: c07b85d28b484345a731631eabde6005 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T03:28:45.203Z"} -->
+
+## 2026-11-17 — WCH-1 passes behavioral testing in round 2: new schedule kinds, constraints, times parsing, round-trip rendering, and text generation fully verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-1
+
+**Because:** All 352 agent tests and the full test suite (5069 passed, 1 skipped) pass; once/weekly kinds, comma-separated at times, date bounds, ends detection, every_minutes ceiling, and when_text formatting behave as specified
+
+**Files:** src/whyline/agents/definitions.py, src/whyline/agents/schedule.py, src/whyline/agents/service.py, tests/agents/test_schedule_kinds.py
+
+<!-- whyline-event: 57f98f69265448e7ab4b3bf23c93e8de -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T03:49:04.759Z"} -->
+
+## 2026-11-17 — Approve WCH-1 schedule kinds and date bounds
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-1
+
+**Because:** The diff implements once and weekly schedules, normalized multiple times, date and limit validation, bounded due times, ended detection, compatible conditional rendering, and required schedule text; the full plain test suite passes at 100 percent with exit 0
+
+**Files:** src/whyline/agents/definitions.py, src/whyline/agents/schedule.py, src/whyline/agents/service.py, tests/agents/test_schedule_kinds.py
+
+<!-- whyline-event: ae3a88537f3a4531a65af17e58c41889 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T04:10:18.577Z"} -->
