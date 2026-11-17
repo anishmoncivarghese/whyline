@@ -75,7 +75,7 @@ Rules every task keeps:
   5. `service.rows` and `scheduler_summary` show `finished: <reason>`.
   Tests: `test_finished_agent_is_not_run_again`, finishing on `once`, on `ends` and on `max_runs`, the missed `once`, `start_again` and its refusal, and the summary text.
 
-- [ ] WCH-3: A careful page fetch
+- [x] WCH-3: A careful page fetch
   Create `src/whyline/agents/pagefetch.py` and `tests/agents/test_pagefetch.py` only.
   1. `@dataclass(frozen=True) class Page`: `url`, `state` (`ok`, `blocked`, `failed`), `text`, `reason`, `retry_at: datetime | None`.
   2. `fetch(url, *, now, opener=None, resolve=None, cache_dir=None) -> Page`. It never raises.
