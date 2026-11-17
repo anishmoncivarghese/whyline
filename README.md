@@ -170,6 +170,13 @@ main CLI, backups and timeout:
   first**; Ask first calls wait up to 10 minutes for **Approve** or **Deny**,
   and every call is logged. See [Tools for agents](docs/agent-tools.md).
 
+- **Check-ins:** give an Agent a gate (`mail-from`, `event-soon`,
+  `ci-failed`, `reminder-overdue` or `changed`) and it runs only when the
+  check finds something. Set **Active hours** (held messages arrive when they
+  begin), let it answer `NOTHING` to stay silent, and expect at most one
+  message per chat per hour. **Test gate now** shows what the gate finds.
+  See [check-ins](docs/agents-capabilities.md#check-ins).
+
 Examples: a weekday dependency and security watch, a nightly summary of what
 changed in a repository, or a weekly review of open issues.
 

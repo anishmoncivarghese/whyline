@@ -46380,3 +46380,39 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 3105c38fbfec4d118002b0d188045c3f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-17T14:45:09.124Z"} -->
+
+## 2026-11-17 — Pass CKN-5 testing: documentation for check-ins is complete and test suite passes
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CKN-5
+
+**Because:** docs/agents-capabilities.md, docs/assistant.md, and README.md cover what a check-in is, the five gates and arguments, active hours and held messages, NOTHING response, hourly limits, and Test gate now; git diff --check is clean; uv run pytest -q passes fully
+
+**Rejected:**
+
+- Fail CKN-5 — all required topics are documented accurately and full pytest suite completed cleanly with exit code 0
+
+**Test:** uv run pytest -q: 100% passed (exit code 0)
+
+**Files:** README.md, docs/agents-capabilities.md, docs/assistant.md
+
+<!-- whyline-event: 0d3596695d684bb0be1a9cc027cf22f9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T15:27:25.267Z"} -->
+
+## 2026-11-17 — Approve CKN-5 Round 3 documentation review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CKN-5
+
+**Because:** README.md, docs/agents-capabilities.md, and docs/assistant.md accurately cover what a check-in is, all five gates and arguments, active hours and held delivery, NOTHING silence, the Telegram hourly limit, and Test gate now; git diff --check is clean; the full suite had one unrelated relay-console popup timing failure that passed immediately in isolation
+
+**Rejected:**
+
+- Request changes — the documentation matches the implementation and the only test failure is an unrelated non-reproducible UI timing flake
+
+**Files:** README.md, docs/agents-capabilities.md, docs/assistant.md
+
+<!-- whyline-event: f170749adaf44082a7850501c8785f47 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T15:48:15.132Z"} -->

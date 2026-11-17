@@ -53,3 +53,60 @@ backup rules, the same order used for quota and login failure. If no enabled
 backup is usable, the run fails before a provider subprocess and says to
 enable the CLI in Settings or choose another provider. Turning the provider
 back on restores the saved runner; the definition stays as it was.
+
+## Check-ins
+
+A **check-in** is a saved agent that runs a fixed check first and starts its
+CLI only when the check finds something. The check is a **gate**. It reads
+Mail, Calendar, GitHub or a file with no model and no cost. If it finds
+nothing, no agent starts and nothing is sent. The agent is still read-only
+and still needs acceptance on this computer.
+
+The five gates and their arguments:
+
+| Gate | Finds | Argument |
+|------|-------|----------|
+| `mail-from` | Unread mail from a sender | `sender`: text the sender contains |
+| `event-soon` | A calendar event starting soon (today and tomorrow) | `minutes`: minutes ahead, default 15 |
+| `ci-failed` | A failed CI run on the repo's default branch | `repo`: the repository |
+| `reminder-overdue` | An overdue reminder | none |
+| `changed` | A file or folder that changed | `path`: the path |
+
+The same item never fires a gate twice. whyline remembers what it has seen
+(the last 500 items per agent), and the gate reports only new items. They are
+passed to the agent as its input.
+
+A check-in runs every N minutes, from 5 to 10080 (default 60). Saving a
+check-in replaces the agent's schedule.
+
+**Active hours** are written `HH:MM-HH:MM`, then optional days: `09:00-17:00`
+or `09:00-17:00 mon-fri` or `08:00-12:00 mon,wed`. A range may cross
+midnight, and its days are the days it starts on. Outside active hours
+nothing is delivered. The message is held and goes out as one message when
+the hours begin. The run is still recorded in history as `held until <time>`.
+
+**Stay silent when there's nothing** (`--silent`): if the agent answers just
+`NOTHING` (any case, with or without a full stop), nothing is delivered. The
+run is still recorded, with the note "nothing to report".
+
+**Hourly limit:** at most one check-in message per Telegram chat per hour.
+Further messages in that hour are held and go out together as one message
+after the hour. Email is not limited.
+
+Set up in `whyline console`: Agents, New agent (or Edit agent), **Check-in**
+section: choose the gate, fill its arguments, then **Every (minutes)**,
+**Active hours** and **Stay silent when there's nothing**. Press **Test gate
+now** to run the gate without the agent. It shows what the gate found, or
+the reason it cannot run (for example a refused Calendar permission). It does
+not change what whyline has seen, so a test never uses up an item. The Agents
+list shows `check-in: <gate>, last: <n found | nothing | held until HH:MM>`.
+
+The command line does the same:
+
+```bash
+whyline agents checkin add inbox-watch --gate mail-from --arg sender=boss@example.com \
+  --every 15 --hours "09:00-17:00 mon-fri" --silent
+whyline agents checkin list
+whyline agents checkin test inbox-watch
+whyline agents checkin off inbox-watch
+```

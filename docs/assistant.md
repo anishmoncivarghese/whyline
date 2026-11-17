@@ -185,6 +185,27 @@ yourself, a few minutes before the brief time:
 
 This is your choice. whyline never runs it.
 
+## Check-ins
+
+A saved agent can be a **check-in**: whyline runs a fixed check (a gate) on a
+timer and starts the agent only when it finds something, so a quiet inbox
+costs nothing. Gates: `mail-from` (sender), `event-soon` (minutes ahead),
+`ci-failed` (repo), `reminder-overdue` and `changed` (path). Results come to
+your Telegram chat or email like any agent's.
+
+- **Active hours** (for example `09:00-17:00 mon-fri`): outside them nothing
+  is sent. What the agent found is held and arrives as one message when the
+  hours begin.
+- **Stay silent when there's nothing:** an answer of `NOTHING` sends nothing,
+  and the run is still recorded.
+- **Hourly limit:** at most one check-in message per chat per hour; extra
+  ones are held and sent together.
+
+Console: Agents, New agent or Edit agent, Check-in section, then **Test gate
+now** to see what the gate finds without running the agent. Command line:
+`whyline agents checkin add|list|test|off`. See
+[Agent CLI capabilities](agents-capabilities.md#check-ins) for the details.
+
 ## Limits
 
 - The Mac must be on and awake. A brief or reminder due while it sleeps runs
