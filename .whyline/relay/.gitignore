@@ -16,3 +16,5 @@ recovery.json
 resolve-mode.json
 model-overrides.json
 cache/
+# added by whyline-relay
+run-settings.json
