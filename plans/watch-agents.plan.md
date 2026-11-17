@@ -101,7 +101,7 @@ Rules every task keeps:
   5. `write(found, run_dir: Path) -> int` writes `found.md` (one line per item, each cut to 300 characters) and returns the item count.
   Tests: `test_gate_reports_an_item_once`, each gate with fake readers, the `gh` argv, the 200-file cap, a path outside home refused, an unknown gate and a bad argument refused, and `write`'s file.
 
-- [ ] CKN-2: Check-in fields on a saved agent, and running the gate
+- [x] CKN-2: Check-in fields on a saved agent, and running the gate
   Edit `src/whyline/agents/definitions.py`, `src/whyline/agents/before.py`, `src/whyline/agents/runner.py`, `src/whyline/agents/state.py` and their tests.
   1. `AgentDef` gets `gate: str = ""`, `gate_args: dict[str, str]`, `active_hours: str = ""` (`HH:MM-HH:MM` with optional days such as `mon-fri`), `silent: bool = False`. `parse` and `render` read and write them under a `[checkin]` table. An agent file without that table loads as before. `parse` validates the gate through `gates.validate` and the hours format.
   2. `before.py`: a step `gate` with `skip_when_empty=True`. It loads the agent's gate state (`state.py`, per agent), calls `gates.check`, saves the new state, and returns `gates.write(...)`. `found.md` is shown to the agent.
