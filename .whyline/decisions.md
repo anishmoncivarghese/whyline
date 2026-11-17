@@ -46110,3 +46110,95 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b0ca01634ec649f9b3ec99efe78267c6 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-17T09:44:26.184Z"} -->
+
+## 2026-11-17 — Gates read data through a Readers dataclass of plain callables; changed gate sets a baseline on its first look
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CKN-1
+
+**Because:** tests fake readers without patching, and a first run reporting every file would flood the agent
+
+**Rejected:**
+
+- report all files on first run — noisy
+- pass brief module functions directly — hard to fake
+
+**Files:** src/whyline/agents/gates.py
+
+<!-- whyline-event: 4d2382d78df24bd8aef40f6cb477f7fe -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T09:46:28.241Z"} -->
+
+## 2026-11-17 — Pass gate checks, validation, state deduplication, and file outputs
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CKN-1
+
+**Because:** All 15 gate tests and the full 5131-test test suite passed with correct Gate/Arg schema, deduplication, and bounds checking
+
+**Files:** src/whyline/agents/gates.py
+
+<!-- whyline-event: 3265131343f244208ae9ef5cc914af6e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T10:06:50.596Z"} -->
+
+## 2026-11-17 — Request CKN-1 changes for production mail and calendar reader semantics
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CKN-1
+
+**Because:** The full suite passes, but the default mail reader includes flagged read messages despite the unread-only requirement, and the default calendar reader fetches only today's events so event-soon misses qualifying events after midnight; fake-reader tests do not cover either integration
+
+**Rejected:**
+
+- Approve based on fake-reader tests — production defaults violate two required gate behaviors
+
+**Files:** src/whyline/agents/gates.py, tests/agents/test_gates.py
+
+<!-- whyline-event: d3d965ae08fb484998fd3bb9e9b5b828 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T10:27:16.780Z"} -->
+
+## 2026-11-17 — Gate readers build their own osascript sources from the brief's: mail narrowed to unread, calendar widened to today+tomorrow
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CKN-1
+
+**Because:** MAIL_SCRIPT also returns flagged read mail and calendar_today.js stops at midnight; brief.py is out of task scope so gates.py patches the source text and refuses if the expected text is gone
+
+**Rejected:**
+
+- edit brief.py — outside the task's two files
+- filter by read status after fetching — the script does not return it
+
+**Files:** src/whyline/agents/gates.py
+
+<!-- whyline-event: 4f81ef49f58f4a4b90255d2dbfcc3b69 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T10:38:28.072Z"} -->
+
+## 2026-11-17 — Pass CKN-1 unread-only mail reader and multi-day calendar reader integration
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CKN-1
+
+**Because:** All 19 gate tests and full 5135-test suite passed, verifying unread-only mail filtering, midnight boundary calendar handling, deduplication, and bounds checking
+
+**Files:** src/whyline/agents/gates.py
+
+<!-- whyline-event: 86aae13679ae4130b9b0671f98e3e6b6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T10:58:57.253Z"} -->
+
+## 2026-11-17 — Approve CKN-1 gate implementation and production reader fixes
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** CKN-1
+
+**Because:** The implementation satisfies the five gate schemas and behaviors, validation, bounded deduplication, safe changed-path handling, exact GitHub argv, and found.md output; production Mail is unread-only, Calendar spans midnight, targeted tests cover the requirements, and uv run pytest -q exited 0
+
+**Files:** src/whyline/agents/gates.py, tests/agents/test_gates.py
+
+<!-- whyline-event: c44de66ce14a4df8a5fd9e7dee06b5da -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T11:19:15.793Z"} -->
