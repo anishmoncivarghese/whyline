@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass, fields
 from datetime import datetime
 from pathlib import Path
 
-from whyline.agents import definitions, paths
+from whyline.agents import definitions, paths, watch
 
 # Two statements, not executescript. Python 3.11's executescript always
 # issues COMMIT first, and autocommit has no transaction for that COMMIT.
@@ -36,6 +36,11 @@ _SCHEMA = (
     """
     CREATE TABLE IF NOT EXISTS gate_state (
       agent_id TEXT PRIMARY KEY, state TEXT DEFAULT '{}'
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS watch_memory (
+      agent_id TEXT PRIMARY KEY, memory TEXT DEFAULT '{}'
     )
     """,
     """
@@ -221,6 +226,7 @@ def remove(conn: sqlite3.Connection, agent_id: str) -> None:
     conn.execute("DELETE FROM activations WHERE agent_id=?", (agent_id,))
     conn.execute("DELETE FROM occurrences WHERE agent_id=?", (agent_id,))
     conn.execute("DELETE FROM gate_state WHERE agent_id=?", (agent_id,))
+    conn.execute("DELETE FROM watch_memory WHERE agent_id=?", (agent_id,))
 
 
 def get_gate_state(conn: sqlite3.Connection, agent_id: str) -> dict:
@@ -236,6 +242,29 @@ def get_gate_state(conn: sqlite3.Connection, agent_id: str) -> dict:
 def save_gate_state(conn: sqlite3.Connection, agent_id: str, value: dict) -> None:
     conn.execute("INSERT OR REPLACE INTO gate_state (agent_id, state) VALUES (?, ?)",
                  (agent_id, json.dumps(value)))
+
+
+def watch_memory(conn: sqlite3.Connection, agent_id: str) -> watch.Memory:
+    """What a watch agent has seen and told; empty when new or unreadable."""
+    row = conn.execute("SELECT memory FROM watch_memory WHERE agent_id=?", (agent_id,)).fetchone()
+    try:
+        raw = json.loads(row["memory"]) if row else {}
+        if not isinstance(raw, dict):
+            raise ValueError
+        values = [(str(t), float(v)) for t, v in raw.get("values", [])][-watch.MAX_VALUES:]
+        told = raw.get("told")
+        return watch.Memory(
+            values=values, told=None if told is None else float(told),
+            last_message=str(raw.get("last_message", "")), note=str(raw.get("note", "")))
+    except (ValueError, TypeError):
+        return watch.Memory()
+
+
+def save_watch_memory(conn: sqlite3.Connection, agent_id: str, memory: watch.Memory) -> None:
+    body = {"values": memory.values[-watch.MAX_VALUES:], "told": memory.told,
+            "last_message": memory.last_message, "note": memory.note}
+    conn.execute("INSERT OR REPLACE INTO watch_memory (agent_id, memory) VALUES (?, ?)",
+                 (agent_id, json.dumps(body)))
 
 
 def clear_gate_state(conn: sqlite3.Connection, agent_id: str) -> None:

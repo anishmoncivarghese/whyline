@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from whyline.agents import before as before_steps, paths
+from whyline.agents import before as before_steps, paths, watch as watch_rules
 
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 CLIS = ("claude", "codex", "grok", "antigravity")
@@ -72,6 +72,7 @@ class AgentDef:
     gate_args: dict[str, str] = field(default_factory=dict)
     active_hours: str = ""  # HH:MM-HH:MM, then optional days: mon-fri or mon,wed
     silent: bool = False
+    watch: watch_rules.Watch | None = None
 
     @property
     def agent_id(self) -> str:
@@ -215,6 +216,29 @@ def _checkin(raw: object) -> tuple[str, dict[str, str], str, bool]:
     return gate, dict(args), hours, silent
 
 
+def _watch(raw: object) -> watch_rules.Watch | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise DefinitionError("watch must be a table")
+    stop = _str(raw, "stop", "never")
+    if stop not in watch_rules.STOPS:
+        raise DefinitionError(f"watch stop must be one of {', '.join(watch_rules.STOPS)}")
+    value = _str(raw, "value").strip()
+    try:
+        watch_rules.check_value_rule(value)
+    except ValueError as error:
+        raise DefinitionError(str(error)) from error
+    urgent = raw.get("urgent", False)
+    if not isinstance(urgent, bool):
+        raise DefinitionError("watch urgent must be true or false")
+    low, high = watch_rules.DAILY_CAP_RANGE
+    cap = _int(raw, "daily_cap", 24)
+    if not low <= cap <= high:
+        raise DefinitionError(f"watch daily_cap must be between {low} and {high}")
+    return watch_rules.Watch(stop=stop, value=value, urgent=urgent, daily_cap=cap)
+
+
 def _expand(value: str, base: Path) -> Path:
     path = Path(value).expanduser()
     return path if path.is_absolute() else base / path
@@ -229,7 +253,18 @@ def parse(text: str, *, kind: str, path: Path, repo_root: Path | None = None) ->
     if not NAME.match(name):
         raise DefinitionError("name must be lower-case letters, digits and -, at most 40")
     instructions = _str(raw, "instructions").strip()
-    if not instructions:
+    gate, gate_args, active_hours, silent = _checkin(raw.get("checkin", {}))
+    watch = _watch(raw.get("watch"))
+    if watch is not None and gate != "page":
+        raise DefinitionError("a watch needs the page gate")
+    if watch is not None and watch.value:
+        if not instructions:
+            raise DefinitionError("a watch value needs instructions")
+        if gate_args.get("rule") == "gone":
+            raise DefinitionError("a watch value cannot go with the gone rule")
+    if not instructions and not (
+            watch is not None and not watch.value
+            and gate_args.get("rule") in ("changed", "appears", "gone")):
         raise DefinitionError("instructions are empty")
     runner = _str(raw, "runner")
     if runner not in CLIS:
@@ -255,7 +290,6 @@ def parse(text: str, *, kind: str, path: Path, repo_root: Path | None = None) ->
         raise DefinitionError(f"before must be one of {allowed}")
     sources = _strs(raw, "sources")
     knowledge = tuple(dict.fromkeys((*_strs(raw, "knowledge"), *sources)))
-    gate, gate_args, active_hours, silent = _checkin(raw.get("checkin", {}))
     defn = AgentDef(
         name=name, kind=kind, path=path, root=root, instructions=instructions,
         runner=runner, backup=backup, model=_str(raw, "model"), sources=sources,
@@ -263,6 +297,7 @@ def parse(text: str, *, kind: str, path: Path, repo_root: Path | None = None) ->
         workdir=workdir, report_folder=_str(raw, "report_folder"),
         timeout_minutes=timeout, before=before, trigger=_trigger(raw.get("trigger", {})),
         gate=gate, gate_args=gate_args, active_hours=active_hours, silent=silent,
+        watch=watch,
     )
     resolve_sources(defn)  # validates repo containment
     _check_tools(defn)
@@ -389,6 +424,14 @@ def render(defn: AgentDef) -> str:
         if defn.gate_args:
             lines += ["", "[checkin.gate_args]"]
             lines += [f"{_q(k)} = {_q(v)}" for k, v in sorted(defn.gate_args.items())]
+    if defn.watch is not None:
+        w = defn.watch
+        lines += ["", "[watch]", f"stop = {_q(w.stop)}"]
+        if w.value:
+            lines.append(f"value = {_q(w.value)}")
+        if w.urgent:
+            lines.append("urgent = true")
+        lines.append(f"daily_cap = {w.daily_cap}")
     return "\n".join(lines) + "\n"
 
 

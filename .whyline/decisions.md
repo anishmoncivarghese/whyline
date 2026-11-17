@@ -46510,3 +46510,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 917d483d9d0b4d2e8f01b7cfc8157145 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-17T17:14:26.672Z"} -->
+
+## 2026-11-17 — decide() updates memory.told in place (reset when back over the limit, set on a hit); caller saves after sending
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-5
+
+**Because:** keeps the told rule in one place, and the caller only persists memory once the message went out
+
+**Rejected:**
+
+- decide pure, caller sets told — every caller would repeat the reset rule
+
+**Files:** src/whyline/agents/watch.py
+
+<!-- whyline-event: 3ae230c868384c55866908b880a9fbb5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T17:17:08.113Z"} -->
+
+## 2026-11-17 — Verify watch table parsing, value extraction, decision logic, and persistent memory
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-5
+
+**Because:** Watch definitions and validation enforce page gate, rule restrictions, and daily cap; read_value handles currency and formatting variations; decide correctly handles limits, resets, and hit messages; memory caps at 200 values and persists in state; all 32 watch tests and full pytest suite pass
+
+**Files:** src/whyline/agents/watch.py
+
+<!-- whyline-event: 43290711c1054abdbb69ca5a1ae855a8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T17:38:34.657Z"} -->
+
+## 2026-11-17 — Approve WCH-5 watch definitions, value decisions, and persisted memory
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-5
+
+**Because:** The implementation matches the specified watch parsing and validation, whyline-owned threshold comparison and reset behavior, 200-value persistence, message cleaning/rendering, and no-watch compatibility; all 32 focused tests pass, and the full suite reached 100% with only an unrelated relay setup popup timing test that failed once, reproduced once, then passed unchanged on repeat
+
+**Rejected:**
+
+- Request changes for the console timing failure — WCH-5 does not touch the relay setup screen or its test, and the same isolated test passed unchanged on the final repeat
+
+**Files:** src/whyline/agents/watch.py, tests/agents/test_watch.py
+
+<!-- whyline-event: be97d7888e5e4c16b9d19d7824c38ce4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T18:56:58.669Z"} -->
