@@ -47068,3 +47068,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 918e46b8735145c8abff0026ea048362 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-18T09:51:38.567Z"} -->
+
+## 2026-11-18 — Page templates build with stand-in address/text, then blank them; create refuses an unfilled gate
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-10
+
+**Because:** console calls templates.build(name) with no address to open New agent; parse needs a valid url and text, so stand-ins are swapped in and stripped
+
+**Rejected:**
+
+- Skip validation for templates — AgentDef must stay valid on every other path
+
+**Files:** src/whyline/agents/templates.py
+
+<!-- whyline-event: f5c011c6a9b24b3f92daf9d3b38ffdc9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T09:54:07.485Z"} -->
+
+## 2026-11-18 — Pass WCH-10 watch-page and watch-number templates
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-10
+
+**Because:** Templates watch-page and watch-number meet all title, trigger, gate, watch, and limit-description specifications; templates.py opens them with blank addresses while refusing creation until filled; agent suite (535 passed), template tests (28 passed), console watch tests (29 passed), and wheel packaging all succeed
+
+**Rejected:**
+
+- Fail task — no behavioral defects observed
+
+**Files:** tests/agents/test_templates.py
+
+<!-- whyline-event: 627f4166b3114f949fb32421626942e4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T10:20:55.987Z"} -->
+
+## 2026-11-18 — Approve WCH-10 watch templates
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-10
+
+**Because:** Both templates match the requested titles, schedules, page-gate rules, stop behavior, instructions, limitations, and personal console creation flow; incomplete page fields are limited to the New agent form and revalidated before save; the independent full suite uv run pytest -q completed successfully
+
+**Rejected:**
+
+- Request changes — no task defect or unsafe behavior found
+
+**Files:** src/whyline/agents/templates.py, src/whyline/agents/templates/watch-page/agent.toml, src/whyline/agents/templates/watch-number/agent.toml, tests/agents/test_templates.py
+
+<!-- whyline-event: dc2e3b531bb34badab475d55e660cf7d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T10:42:17.041Z"} -->

@@ -1,0 +1,18 @@
+name = "watch-number"
+title = "Tell me when a number goes below or above a limit"
+about = "Reads one number from a web page every 6 hours and tells you when it goes below or above your limit. Pages that need a login or a browser can't be read, and large shops often block automated checks. Reading one page is a small job. A small model is enough."
+runner = "claude"
+timeout_minutes = 5
+
+[trigger]
+kind = "every"
+every_hours = 6
+
+[checkin]
+gate = "page"
+
+[checkin.gate_args]
+rule = "always"
+
+[watch]
+stop = "never"

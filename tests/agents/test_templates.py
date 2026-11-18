@@ -250,3 +250,61 @@ def test_name_clash_is_refused_without_touching_existing_agent(tmp_path, home):
     )
     with pytest.raises(d.DefinitionError, match="already exists"):
         templates.create("example-digest", "other-name", tmp_path / "third")
+
+
+def test_watch_templates_are_listed_with_their_limits():
+    by_name = {item.name: item for item in templates.list_templates()}
+    page, number = by_name["watch-page"], by_name["watch-number"]
+    assert page.title == "Tell me when a page changes or says something"
+    assert number.title == "Tell me when a number goes below or above a limit"
+    for item in (page, number):
+        assert "need a login or a browser can't be read" in item.about
+        assert "large shops often block automated checks" in item.about
+    assert "Reading one page is a small job. A small model is enough." in number.about
+    assert "small model" not in page.about
+
+
+def test_watch_page_builds_once_an_address_and_text_are_given(home):
+    defn = templates.build("watch-page", address="https://example.com/a", text="in stock")
+    assert defn.kind == "personal"
+    assert defn.trigger == d.Trigger(kind="every", every_minutes=60)
+    assert defn.gate == "page"
+    assert defn.gate_args == {"url": "https://example.com/a", "rule": "appears", "text": "in stock"}
+    assert defn.watch is not None and defn.watch.stop == "first"
+    assert defn.instructions == ""
+
+
+def test_watch_number_builds_once_an_address_is_given(home):
+    defn = templates.build("watch-number", address="https://example.com/price")
+    assert defn.trigger == d.Trigger(kind="every", every_hours=6)
+    assert defn.gate_args == {"url": "https://example.com/price", "rule": "always"}
+    assert defn.watch is not None
+    assert (defn.watch.stop, defn.watch.value) == ("never", "")
+    assert "page.md" in defn.instructions and "VALUE: <number>" in defn.instructions
+
+
+@pytest.mark.parametrize("name", ["watch-page", "watch-number"])
+def test_watch_template_opens_with_the_address_empty(home, name):
+    defn = templates.build(name)
+    assert defn.kind == "personal"
+    assert defn.watch is not None
+    assert defn.gate == "page"
+    assert not defn.gate_args.get("url")
+    assert not defn.gate_args.get("text")
+
+
+@pytest.mark.parametrize("name", ["watch-page", "watch-number"])
+def test_creating_a_watch_agent_without_an_address_is_refused(tmp_path, home, name):
+    with pytest.raises(d.DefinitionError):
+        templates.create(name, name, tmp_path / "w")
+    assert not (home / ".whyline/agents").exists()
+
+
+def test_created_watch_agent_is_personal_with_its_watch_section(tmp_path, home):
+    defn = templates.create(
+        "watch-page", "my-watch", tmp_path / "w", address="https://example.com", text="sale")
+    assert defn.kind == "personal"
+    loaded = d.load(defn.path, kind="personal")
+    assert loaded == defn
+    assert loaded.watch is not None and loaded.watch.stop == "first"
+    assert loaded.gate_args["url"] == "https://example.com"

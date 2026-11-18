@@ -1,0 +1,18 @@
+name = "watch-page"
+title = "Tell me when a page changes or says something"
+about = "Checks a web page every hour and tells you the first time a word or phrase you chose appears on it. Pages that need a login or a browser can't be read, and large shops often block automated checks."
+runner = "claude"
+timeout_minutes = 5
+
+[trigger]
+kind = "every"
+every_minutes = 60
+
+[checkin]
+gate = "page"
+
+[checkin.gate_args]
+rule = "appears"
+
+[watch]
+stop = "first"

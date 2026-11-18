@@ -1,6 +1,7 @@
 """Built-in personal agent templates (`templates/<name>/`)."""
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import errno
 import json
@@ -160,9 +161,15 @@ def build(
     agent_name: str | None = None,
     workdir: str | Path | None = None,
     *,
+    address: str = "",
+    text: str = "",
     templates_dir: Path | None = None,
 ) -> d.AgentDef:
-    """Build and validate a template's AgentDef in memory without writing files."""
+    """Build and validate a template's AgentDef in memory without writing files.
+
+    A page template leaves the address (and the text to look for) to the user.
+    Without them the definition is built with stand-ins and returned with those
+    fields empty, so New agent can open on it; `create` refuses it until filled."""
     folder = _template_folder(name, templates_dir)
     raw = _read_agent_toml(folder, name)
     instructions = _read_instructions(folder, name)
@@ -174,8 +181,23 @@ def build(
     merged["name"] = chosen_name
     merged["instructions"] = instructions
     merged["workdir"] = chosen_workdir
+    blank: list[str] = []
+    checkin = merged.get("checkin")
+    if isinstance(checkin, dict) and checkin.get("gate") == "page":
+        args = dict(checkin.get("gate_args") or {})
+        for key, given, stand_in in (("url", address, "https://example.com"), ("text", text, "text")):
+            if given.strip():
+                args[key] = given.strip()
+            elif key == "url" or args.get("rule") in ("appears", "gone"):
+                args[key] = stand_in
+                blank.append(key)
+        merged["checkin"] = {**checkin, "gate_args": args}
     def_path = Path.home() / ".whyline" / "agents" / f"{chosen_name}.toml"
-    return d.parse(_dump_toml(merged), kind="personal", path=def_path)
+    built = d.parse(_dump_toml(merged), kind="personal", path=def_path)
+    if blank:
+        args = {k: v for k, v in built.gate_args.items() if k not in blank}
+        built = dataclasses.replace(built, gate_args=args)
+    return built
 
 
 def _name_taken(defn: d.AgentDef) -> bool:
@@ -277,17 +299,27 @@ def create(
     workdir: str | Path | None = None,
     *,
     defn: d.AgentDef | None = None,
+    address: str = "",
+    text: str = "",
     templates_dir: Path | None = None,
 ) -> d.AgentDef:
     """Create a personal agent from template `name`, leaving it not accepted yet."""
     folder = _template_folder(name, templates_dir)
     if defn is None:
-        built = build(name, agent_name, workdir, templates_dir=templates_dir)
+        built = build(
+            name, agent_name, workdir, address=address, text=text, templates_dir=templates_dir)
     else:
         _read_agent_toml(folder, name)
         _read_instructions(folder, name)
         repo_root = defn.root if defn.kind == "repo" else None
         built = d.parse(d.render(defn), kind=defn.kind, path=defn.path, repo_root=repo_root)
+    if built.gate:
+        from whyline.agents import gates
+
+        try:
+            gates.validate(built.gate, built.gate_args)
+        except gates.GateError as error:
+            raise d.DefinitionError(f"checkin gate: {error}") from error
     if _name_taken(built):
         raise d.DefinitionError(f"an agent named {built.name} already exists")
     target_dir = Path(built.workdir).expanduser() if built.kind == "personal" else built.root
