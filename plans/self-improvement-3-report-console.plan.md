@@ -48,7 +48,7 @@ Rules every task keeps:
 
 
 **Reuse what exists now (decided 2026-11-15; this wins over the task text below).** This plan was written on 2026-11-02, before these existed:
-- **IMP-25 and IMP-26, when messages go out:** digests, alerts and missed-run notices honour the active hours and the one-message-per-hour limit in `whyline.agents.quiet` (`plans/assistant-checkins.plan.md`, CKN-3). A held message goes out when the hours begin. Alerts for a new high or critical vulnerability are not held.
+- **IMP-25 and IMP-26, when messages go out:** digests, alerts and missed-run notices honour the active hours and the one-message-per-hour limit in `whyline.agents.quiet` (`plans/watch-agents.plan.md`, CKN-3). A held message goes out when the hours begin. Alerts for a new high or critical vulnerability are not held.
 - **IMP-27, approval cards:** send the cards through the waiting-on-you card mechanism (`whyline.ideas.waiting`: one card per item, edited to done, `confirm.issue` codes), so an approval card that was handled in the console is marked done in Telegram. Keep the `improve_change` action and its always-tap policy as written.
 - **IMP-28, `pause improvement` and `resume improvement`:** register them as commands in `ideas/intent.py`, so they never go through the router.
 - **IMP-33 and IMP-24, the change summary:** when the repository's flow is Pull request, show the Done checklist (`whyline.sdlc.done.checklist`) in the review of a change and in the PR body.
