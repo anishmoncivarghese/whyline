@@ -106,9 +106,9 @@ Rules every task keeps:
 
 - [ ] JAA-8: A company brief in the apply pack
   Create `src/whyline/jobs/brief.py` and `tests/jobs/test_company_brief.py`. Edit `src/whyline/jobs/apply.py` (the pack), `src/whyline/jobs/cli.py`, the Results screen and their tests.
-  1. `brief.available() -> tuple[bool, str]`: true when `whyline.ideas.research` is importable and an agent that can search the web in read-only mode is enabled; else the reason.
-  2. `brief.start(row) -> int` starts a research job (`ideas.research.start`) with a fixed question built from the company name and the role title only: what the company does, its size and stage, news from the last 12 months, the tech or tools named in its public job posts, and likely interview topics for the role. The posting's own text is not put in the question.
-  3. When the research finishes, the report is copied into the job's application folder as `company-brief.md` (and PDF when the research made one), and the apply pack lists it. A brief for the same company made in the last 30 days is reused.
+  1. `brief.available() -> tuple[bool, str]`: true when `whyline.research` is importable and an agent in `research.agents.order()` can search (`agents.can_search`); else the reason.
+  2. `brief.start(row) -> int` starts a Quick research job (`whyline.research.jobs.create` and the detached child from RSR-6) with a fixed question built from the company name and the role title only: what the company does, its size and stage, news from the last 12 months, the tech or tools named in its public job posts, and likely interview topics for the role. The posting's own text is not put in the question.
+  3. When the job is `done` (checked with `jobs.load`), the report is copied into the job's application folder as `company-brief.md` (and PDF when the research made one), and the apply pack lists it. A brief for the same company made in the last 30 days is reused.
   4. Results and the apply pack: **Company brief** (or its reason when unavailable), showing `Researching…`, then the brief's first lines with **Open**. CLI: `whyline jobs brief <row>`. A per-search setting `auto_brief` (default off) starts one for each auto-tailored job (JRUN-3), at most 3 per run.
   Tests: the question holding only the company and title, reuse within 30 days, the unavailable reasons, the file in the pack, the cap of 3, and a failed research job leaving the pack usable.
 
