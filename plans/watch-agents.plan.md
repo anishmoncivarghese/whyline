@@ -216,7 +216,7 @@ Rules every task keeps:
   5. The Agents list shows, for a watch: next check, and last check as `no change`, `sent`, `blocked`, `couldn't read` or the last value.
   Tests: the section's fields for each rule, the empty-instructions hint, Test calling `test_watch` and showing each state, Save and untick calling their functions, and the list's last-check text for each case.
 
-- [ ] WCH-10: Two templates
+- [x] WCH-10: Two templates
   Create `src/whyline/agents/templates/watch-page/` and `src/whyline/agents/templates/watch-number/` in the form the existing templates use. Edit `src/whyline/agents/templates.py` only if a template needs a field it can't yet carry, and `tests/agents/test_templates.py`.
   1. `watch-page`, titled `Tell me when a page changes or says something`: trigger every 60 minutes, the `page` gate with rule `appears`, `stop = "first"`, and empty instructions.
   2. `watch-number`, titled `Tell me when a number goes below or above a limit`: trigger every 6 hours, rule `always`, `stop = "never"`, `value` left for the user, and instructions that tell the agent to find the one number the user named in `page.md`, say in one line what it is, and end with `VALUE: <number>`.
