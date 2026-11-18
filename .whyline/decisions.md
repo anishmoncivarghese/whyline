@@ -46930,3 +46930,141 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b270b5d137664e4893abb1dcab650f76 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-18T03:13:01.018Z"} -->
+
+## 2026-11-18 — Watch section edits saved agents through pending Review steps (save_watch / watch_off), new agents carry the watch in the AgentForm defn
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-9
+
+**Because:** tui.py is outside WCH-9's files and writes a new agent from the defn, so the form puts the watch tables in the defn and, for an existing file, runs save_watch or watch_off on Review's Save like the schedule step
+
+**Rejected:**
+
+- Calling save_watch at form submit — would write before the user confirms Review
+- Editing tui._new_agent_done — outside the task's files
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 1ee2e0348ad045aa850f6773667ad08b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T03:20:49.299Z"} -->
+
+## 2026-11-18 — Approve watch block, test, and agents list display
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-9
+
+**Because:** Verified all Watch section fields and visibility rules, instructions hint, Test worker invocation with markup=False formatting, save_watch and watch_off persistence on Review Save, and Agents list next/last check status; all 25 new tests, 1913 console tests, and full test suite pass
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 816ed837c3844de2a29d46c478930742 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T06:40:13.019Z"} -->
+
+## 2026-11-18 — Request correction of Watch last-check status reporting
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-9
+
+**Because:** The Watch form, Test worker, save paths, and full suite pass, but watch_last_text labels any non-held delivery as sent even when ok is false, and actual blocked fetch reasons are not retained in the persisted state it inspects, so normal blocked checks display as couldn't read; the synthetic unit cases do not exercise those real persistence shapes
+
+**Rejected:**
+
+- Approve as-is — the Agents list would report inaccurate last-check outcomes despite WCH-9 explicitly requiring sent and blocked states
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 84f069d9f497431b907eabd7b2b95a3c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T07:02:24.270Z"} -->
+
+## 2026-11-18 — Last check reads the cached page state for failing addresses and counts only ok deliveries as sent
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-9
+
+**Because:** gate state keeps only a failure count, not the reason; pagefetch's persisted cache keeps state=blocked, so it tells blocked from failed without editing gates.py (outside WCH-9)
+
+**Rejected:**
+
+- Storing reasons in gates.py page entries — outside the task's files
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 64a22f6fa2124c65abf04d837d47c9ab -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T07:13:53.598Z"} -->
+
+## 2026-11-18 — Approve watch last-check status reporting and cached page state lookup
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-9
+
+**Because:** Verified watch_last_text checks pagefetch cached state for failing addresses to accurately distinguish blocked from failed fetches, and requires ok=True for deliveries to count as sent; all 28 watch tests pass
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 5d5fd4d9fab84e7bb6188149d3608021 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T07:47:38.712Z"} -->
+
+## 2026-11-18 — Request correction of Watch hint after rule transition
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-9
+
+**Because:** The full suite passes and the blocked/sent status fix matches real persisted shapes, but switching from a numeric threshold to the gone rule leaves the hidden direction selected; _watch_values discards it while _sync_watch still suppresses the empty-instructions hint, violating the rule-allowed hint requirement and escaping the default-state-only tests
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 59bca6ab9cd6477fa1765fcf4da3857a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T08:09:36.595Z"} -->
+
+## 2026-11-18 — Hint ignores the hidden direction when the rule is gone
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-9
+
+**Because:** _watch_values discards direction for gone, so _sync_watch must too or the empty-instructions hint stays hidden after switching from below/above
+
+**Rejected:**
+
+- Reset the direction select to blank on rule change — extra widget churn and loses the user's choice if they switch back
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 722b9493fe694908a284310471b01500 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T08:40:00.321Z"} -->
+
+## 2026-11-18 — Approve watch hint visibility when switching rule to gone
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-9
+
+**Because:** Verified that _sync_watch correctly shows the empty-instructions hint for the gone rule even if a hidden direction was previously selected; all 29 watch tests and the full test suites pass
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 92fde72339174e36b6b4b55f9bfcdbc5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T09:08:21.275Z"} -->
+
+## 2026-11-18 — Approve Watch console section, Test, save paths, and list status
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-9
+
+**Because:** The corrected hint handles a stale hidden numeric direction when switching to the gone rule; the form, worker output, save_watch/watch_off paths, and persisted last-check states match the task; all 29 focused tests pass and a second plain full pytest run passes after one unrelated relay-setup timing flake passed in isolation
+
+**Rejected:**
+
+- Request further changes — no task defect remains after the gone-rule hint regression was corrected
+
+**Files:** src/whyline/console/agents_screens.py, tests/console/test_new_agent_watch.py
+
+<!-- whyline-event: 918e46b8735145c8abff0026ea048362 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T09:51:38.567Z"} -->

@@ -84,7 +84,9 @@ class AgentsListScreen(ModalScreen):
                 cli = row.defn.runner + (f" → {', '.join(row.defn.backup)}" if row.defn.backup else "")
                 table.add_row(
                     self._label(row.defn), cli, row.when, row.next_due or "—",
-                    row.last_outcome or "—", self._status_text(row), service.checkin_line(row.defn) or "—",
+                    row.last_outcome or "—", self._status_text(row),
+                    (_watch_line(row) if getattr(row.defn, "watch", None) is not None
+                     else service.checkin_line(row.defn)) or "—",
                     key=f"{row.defn.kind}:{row.defn.name}",
                 )
             body.append(table)
@@ -1054,6 +1056,87 @@ _WHEN = (
 _EVERY_UNITS = (("minutes", "minutes"), ("hours", "hours"), ("days", "days"))
 _UNIT_MINUTES = {"minutes": 1, "hours": 60, "days": 1440}
 _EVERY_HELP = "Every N hours starts at midnight: 00:00, 05:00, 10:00, …"
+_WATCH_HINT = "Leave this empty and whyline sends the message itself. No agent runs."
+_WATCH_RULES = [("the page changes", "changed"), ("this text appears", "appears"),
+                ("this text is gone", "gone"), ("let the agent decide", "always")]
+_WATCH_DIRECTIONS = [("—", ""), ("below", "below"), ("above", "above")]
+_WATCH_SLOW_PAGE = "This page shows almost nothing to a plain fetch. It may need a browser."
+_WATCH_URLS = 3
+_WATCH_IDS = frozenset(("na-w-on", "na-w-rule", "na-w-dir"))
+
+
+def _cached_page_state(url: str, cache_dir=None) -> str:
+    """The last fetch state whyline cached for an address ('' when unknown), fresh or not."""
+    import json
+    from pathlib import Path
+
+    from whyline.agents import pagefetch
+
+    directory = cache_dir if cache_dir is not None else Path.home() / ".whyline" / "agents" / "pages"
+    try:
+        data = json.loads(pagefetch._cache_file(Path(directory), url).read_text(encoding="utf-8"))
+        return str(data["page"]["state"])
+    except Exception:
+        return ""
+
+
+def watch_last_text(defn, run, gate_state: dict, memory, cache_dir=None) -> str:
+    """The last check of a watch: 'no change', 'sent', 'blocked', "couldn't read", the last
+    number it read, or 'not yet'."""
+    from whyline.agents import pagefetch, watch as watch_rules
+
+    pages = gate_state.get("pages") or {}
+    failing = [url for url, page in pages.items() if int(page.get("failures", 0) or 0) > 0]
+    if failing:
+        if any(_cached_page_state(url, cache_dir) == "blocked" for url in failing):
+            return "blocked"
+        said = " ".join(((run.reason if run else ""), str((gate_state.get("_out") or {}).get("notice", ""))))
+        return "blocked" if any(why in said for why in pagefetch.REASONS.values()) else "couldn't read"
+    if defn.watch.value and memory.values:
+        return watch_rules._fmt(memory.values[-1][1])
+    if run is None and not pages:
+        return "not yet"
+    if run is not None and any(item.get("ok") and item.get("to") != "held" for item in run.deliveries or []):
+        return "sent"
+    return "no change"
+
+
+def _watch_kwargs(watch) -> dict:
+    return {"stop": watch.stop, "value": watch.value, "urgent": watch.urgent,
+            "daily_cap": watch.daily_cap}
+
+
+def _watch_line(row) -> str:
+    from whyline.agents import state
+
+    defn = row.defn
+    conn = state.connect()
+    try:
+        gate_state = state.get_gate_state(conn, defn.agent_id)
+        memory = state.watch_memory(conn, defn.agent_id)
+    finally:
+        conn.close()
+    runs = records.list_runs(defn.agent_id, limit=1)
+    last = watch_last_text(defn, runs[0] if runs else None, gate_state, memory)
+    return f"next check {row.next_due or '—'} · last check {last}"
+
+
+def watch_test_text(result) -> str:
+    """What Test shows: each address, what whyline read, whether it would fire, the message."""
+    lines = []
+    for page in result.pages:
+        shown = {"ok": "read"}.get(page.state, page.state)
+        lines.append(f"{page.address}: {shown}" + (f" ({page.reason})" if page.reason else ""))
+        if page.text.strip():
+            lines.append(f"Text: {' '.join(page.text.split())[:300]}")
+        if page.state == "ok" and len(page.text.strip()) < 200:
+            lines.append(_WATCH_SLOW_PAGE)
+    lines.append(f"Would send: {'yes' if result.would_fire else 'no'}. {result.why}")
+    if result.message:
+        lines.append(f"Message: {result.message}")
+    return "\n".join(lines)
+
+
 _SCHEDULE_IDS = frozenset((
     "na-when", "na-at", "na-on", "na-every", "na-every-unit", "na-from", "na-until",
     "na-max-runs", "na-folder",
@@ -1694,6 +1777,7 @@ class NewAgentScreen(ModalScreen):
             ),
             Label("Instructions"),
             TextArea(existing.instructions if existing else "", id="na-instructions"),
+            Static(_WATCH_HINT, id="na-w-hint", markup=False),
             HorizontalGroup(
                 Label("Main CLI", classes="field-label"),
                 Select(
@@ -1765,6 +1849,7 @@ class NewAgentScreen(ModalScreen):
                 Button("Test gate now", id="na-ck-test"),
                 Static("", id="na-ck-result", markup=False),
             ),
+            *self._watch_rows(),
             HorizontalGroup(
                 Label("Report", classes="field-label"),
                 Input(
@@ -1843,6 +1928,134 @@ class NewAgentScreen(ModalScreen):
                 ))
         return rows
 
+    def _watch_rows(self) -> list:
+        saved = self._existing
+        watch = saved.watch if saved is not None else None
+        args = saved.gate_args if watch is not None else {}
+        urls = (args.get("url") or "").split()[:_WATCH_URLS]
+        direction, _, limit = (watch.value if watch else "").partition(" ")
+        address_rows = [
+            HorizontalGroup(
+                Label("Address" if n == 0 else "", classes="field-label"),
+                Input(urls[n] if n < len(urls) else "", id=f"na-w-url-{n}",
+                      placeholder="https://example.com/page" if n == 0 else "optional"),
+            )
+            for n in range(_WATCH_URLS)
+        ]
+        body = VerticalGroup(
+            *address_rows,
+            HorizontalGroup(
+                Label("Tell me when", classes="field-label"),
+                Select(_WATCH_RULES, value=args.get("rule", "changed"), allow_blank=False,
+                       id="na-w-rule"),
+            ),
+            HorizontalGroup(
+                Label("Text", classes="field-label"),
+                Input(args.get("text", ""), id="na-w-text"),
+                id="na-w-text-row",
+            ),
+            HorizontalGroup(
+                Label("Only between", classes="field-label"),
+                Input(args.get("start", ""), id="na-w-start", placeholder="start text"),
+                Input(args.get("end", ""), id="na-w-end", placeholder="end text"),
+            ),
+            HorizontalGroup(
+                Label("A number goes", classes="field-label"),
+                Select(_WATCH_DIRECTIONS, value=direction, allow_blank=False, id="na-w-dir"),
+                Input(limit, id="na-w-limit", placeholder="limit"),
+                id="na-w-number-row",
+            ),
+            Checkbox("Stop after the first time", value=bool(watch and watch.stop == "first"),
+                     id="na-w-first"),
+            Checkbox("Tell me even outside active hours", value=bool(watch and watch.urgent),
+                     id="na-w-urgent"),
+            HorizontalGroup(
+                Label("Agent runs per day, at most", classes="field-label"),
+                Input(str(watch.daily_cap) if watch else "24", id="na-w-cap"),
+            ),
+            HorizontalGroup(
+                Button("Test", id="na-w-test"),
+                Static("", id="na-w-result", markup=False),
+            ),
+            id="na-w-body",
+        )
+        return [Label("Watch"),
+                Checkbox("Watch a web page", value=watch is not None, id="na-w-on"), body]
+
+    def _watch_on(self) -> bool:
+        return self.query_one("#na-w-on", Checkbox).value
+
+    def _sync_watch(self) -> None:
+        try:
+            on = self._watch_on()
+            rule = self._choice("#na-w-rule")
+            direction = self._choice("#na-w-dir")
+        except NoMatches:
+            return
+        self.query_one("#na-w-body").display = on
+        self.query_one("#na-w-text-row").display = rule in ("appears", "gone")
+        self.query_one("#na-w-number-row").display = rule != "gone"
+        # The hint shows only while whyline can send the message itself.
+        self.query_one("#na-w-hint").display = (
+            on and rule in ("changed", "appears", "gone")
+            and (rule == "gone" or not direction))
+
+    def _watch_values(self) -> dict:
+        """The Watch fields as {gate_args, watch}; ValueError says what is wrong."""
+        from whyline.agents import watch as watch_rules
+
+        text = lambda widget_id: self.query_one(widget_id, Input).value.strip()  # noqa: E731
+        urls = [u for u in (text(f"#na-w-url-{n}") for n in range(_WATCH_URLS)) if u]
+        if not urls:
+            raise ValueError("Give at least one address to watch")
+        rule = self._choice("#na-w-rule") or "changed"
+        start, end = text("#na-w-start"), text("#na-w-end")
+        if bool(start) != bool(end):
+            raise ValueError("Only between needs both the start and the end text")
+        direction, limit = self._choice("#na-w-dir"), text("#na-w-limit")
+        value = ""
+        if direction and rule != "gone":
+            if not limit:
+                raise ValueError(f"A number goes {direction}: give the limit")
+            value = f"{direction} {limit}"
+        cap = text("#na-w-cap")
+        if not re.fullmatch(r"\d{1,6}", cap):
+            raise ValueError("Agent runs per day, at most must be a whole number")
+        watch = watch_rules.Watch(
+            stop="first" if self.query_one("#na-w-first", Checkbox).value else "never",
+            value=value, urgent=self.query_one("#na-w-urgent", Checkbox).value, daily_cap=int(cap))
+        return {
+            "gate_args": {"url": " ".join(urls), "rule": rule,
+                          "text": text("#na-w-text") if rule in ("appears", "gone") else "",
+                          "start": start, "end": end},
+            "watch": watch,
+        }
+
+    def _test_watch(self) -> None:
+        result = self.query_one("#na-w-result", Static)
+        saved = self._existing
+        try:
+            values = self._watch_values()
+            if saved is None or not self._is_edit or saved.watch is None:
+                raise ValueError("Save the agent first, then open it to Test the watch.")
+            if values["watch"] != saved.watch or values["gate_args"] != {
+                    k: saved.gate_args.get(k, "") for k in values["gate_args"]}:
+                raise ValueError("Test checks the saved watch. Save your changes first.")
+        except ValueError as error:
+            result.update(str(error))
+            return
+        name, root = f"{saved.kind}:{saved.name}", self._root
+        result.update("Checking…")
+
+        def work() -> None:
+            try:
+                text = watch_test_text(service.test_watch(name, root))
+            except Exception as error:
+                text = str(error)
+            self.app.call_from_thread(result.update, text)
+
+        self.app.run_worker(work, thread=True)
+
     def _ck_every_text(self) -> str:
         trigger = self._existing.trigger if self._existing else None
         if trigger is not None and trigger.kind == "every" and trigger.every_minutes:
@@ -1868,6 +2081,10 @@ class NewAgentScreen(ModalScreen):
         gate = self._choice("#na-gate")
         args = {a.key: self.query_one(f"#na-ck-{a.key}", Input).value
                 for a in (gates.GATES[gate].args if gate in gates.GATES else ())}
+        if self._watch_on():  # a watch is the page gate; its own fields say which page
+            gate, args = "page", self._watch_values()["gate_args"]
+        elif self._existing is not None and self._existing.watch is not None:
+            gate, args = "", {}  # unticked: a plain agent again, watch_off clears the gate
         raw = self.query_one("#na-ck-every", Input).value.strip()
         if raw and not re.fullmatch(r"\d{1,6}", raw):
             raise ValueError("Every (minutes) must be a whole number")
@@ -1911,6 +2128,7 @@ class NewAgentScreen(ModalScreen):
         self._sync_kind()
         self._sync_when()
         self._sync_gate()
+        self._sync_watch()
         self._sync_backups()
         self.query_one("#na-error", Static).display = False
         if self._existing is None:
@@ -1929,6 +2147,8 @@ class NewAgentScreen(ModalScreen):
             self._sync_when()
         elif select_id == "na-every-unit":
             self._sync_when()
+        if select_id in _WATCH_IDS:
+            self._sync_watch()
         if select_id in _SCHEDULE_IDS:
             self._refresh_schedule_line()
 
@@ -1937,6 +2157,8 @@ class NewAgentScreen(ModalScreen):
             self._refresh_schedule_line()
 
     def on_checkbox_changed(self, event: "Checkbox.Changed") -> None:
+        if event.checkbox.id in _WATCH_IDS:
+            self._sync_watch()
         if (event.checkbox.id or "").startswith("na-day-"):
             self._refresh_schedule_line()
 
@@ -1953,6 +2175,8 @@ class NewAgentScreen(ModalScreen):
             self._send_test()
         elif button_id == "na-ck-test":
             self._test_gate()
+        elif button_id == "na-w-test":
+            self._test_watch()
         elif button_id == "na-telegram-setup":
             self._telegram_setup()
         elif button_id == "na-add-sources":
@@ -2287,6 +2511,18 @@ class NewAgentScreen(ModalScreen):
         if self._tools:
             lines += ["", "[tools]"]
             lines += [f"{_q(key)} = {_q(value)}" for key, value in sorted(self._tools.items())]
+        if self._watch_on():
+            # The tables a watch needs to load; _submit's checkin_defn then adds hours and silence.
+            found = self._watch_values()
+            watch = found["watch"]
+            lines += ["", "[checkin]", 'gate = "page"', "", "[checkin.gate_args]"]
+            lines += [f"{_q(k)} = {_q(v)}" for k, v in sorted(found["gate_args"].items())]
+            lines += ["", "[watch]", f"stop = {_q(watch.stop)}"]
+            if watch.value:
+                lines.append(f"value = {_q(watch.value)}")
+            if watch.urgent:
+                lines.append("urgent = true")
+            lines.append(f"daily_cap = {watch.daily_cap}")
         # Edit writes back to the file that was opened. A new agent, or an
         # edit that changed kind, uses <name>.toml in that kind's directory.
         same = (
@@ -2351,11 +2587,37 @@ class NewAgentScreen(ModalScreen):
         global _pending_schedule
         _pending_schedule = None
         saved = self._existing
-        if (
+        steps: list = []
+        watch_on = defn.watch is not None
+        if watch_on and defn.kind == "repo":
+            self._show_error("A watch must be a personal agent")
+            return
+        stored = (
             self._is_edit and saved is not None and saved.path.is_file()
             and (defn.kind, defn.name) == (saved.kind, saved.name)
-            and defn.trigger != saved.trigger
-        ):
+        )
+        if stored and watch_on and (defn.watch, defn.gate_args) != (saved.watch, saved.gate_args):
+            # The same call `agents watch` makes, run when Review's Save is pressed.
+            watch_values = self._watch_values()
+            name, root = f"{defn.kind}:{defn.name}", self._root
+
+            def save_the_watch() -> None:
+                service.save_watch(name, **watch_values["gate_args"], **_watch_kwargs(defn.watch),
+                                   repo_root=root)
+
+            steps.append(save_the_watch)
+        elif stored and not watch_on and saved.watch is not None:
+            name, root, words = f"{defn.kind}:{defn.name}", self._root, defn.instructions
+
+            def stop_watching() -> None:
+                before = service.find(name, root)
+                if before.instructions != words:
+                    # A watch may have none; a plain agent needs them before watch_off checks it.
+                    service._write_changed(before, replace(before, instructions=words))
+                service.watch_off(name, root)
+
+            steps.append(stop_watching)
+        if stored and not watch_on and defn.trigger != saved.trigger:
             # The same call `agents schedule` makes, run when Review's Save is pressed (a new
             # agent has no file to save to yet). Back or cancel writes nothing.
             values, root, folder = self._schedule_values(), self._root, defn.trigger.folder
@@ -2370,7 +2632,13 @@ class NewAgentScreen(ModalScreen):
                             before, trigger=replace(before.trigger, folder=folder)))
                 service.save_schedule(name, **values, repo_root=root)
 
-            _pending_schedule = (defn, save_trigger)
+            steps.insert(0, save_trigger)
+        if steps:
+            def run_steps() -> None:
+                for step in steps:
+                    step()
+
+            _pending_schedule = (defn, run_steps)
         self.dismiss(AgentForm(defn, delivery))
 
     def _delivery(self) -> dl.Delivery:
