@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -552,6 +553,35 @@ def _add_agents(subparsers: "argparse._SubParsersAction") -> None:
     test.add_argument("agent")
     off = checkin_sub.add_parser("off", help="Remove an agent's check-in")
     off.add_argument("agent")
+    schedule = sub.add_parser("schedule", help="Set when an agent runs")
+    schedule.add_argument("name")
+    when = schedule.add_mutually_exclusive_group(required=True)
+    when.add_argument("--once", metavar="DATE", help="one run on a date like 2026-11-20 (with --at)")
+    when.add_argument("--daily", action="store_true")
+    when.add_argument("--weekdays", action="store_true")
+    when.add_argument("--weekly", metavar="DAYS", help="days like mon,thu (with --at)")
+    when.add_argument("--every", metavar="N[m|h|d]", help="for example 30m, 2h or 3d")
+    when.add_argument("--manual", action="store_true", help="only when you run it")
+    schedule.add_argument("--at", default="", metavar="TIME", help="24-hour times like 07:00 or 07:00,18:00")
+    schedule.add_argument("--from", dest="starts", default="", metavar="DATE")
+    schedule.add_argument("--until", default="", metavar="DATE")
+    schedule.add_argument("--max-runs", dest="max_runs", type=int, default=0, metavar="N")
+    watch = sub.add_parser(
+        "watch", help="Watch a web page: watch <name> --url ..., watch test <name>, watch off <name>")
+    watch.add_argument("words", nargs="+", metavar="NAME", help="an agent name, or test/off then a name")
+    watch.add_argument("--url", action="append", default=[], metavar="ADDRESS")
+    watch.add_argument("--rule", choices=("changed", "appears", "gone", "always"))
+    watch.add_argument("--text", default="")
+    watch.add_argument("--between", nargs=2, metavar=("START", "END"),
+                       help="only the part of the page between these two texts")
+    limit = watch.add_mutually_exclusive_group()
+    limit.add_argument("--below", type=float, metavar="N")
+    limit.add_argument("--above", type=float, metavar="N")
+    watch.add_argument("--stop-first", dest="stop_first", action="store_true",
+                       help="stop watching after the first message")
+    watch.add_argument("--urgent", action="store_true")
+    watch.add_argument("--cap", type=int, default=24, metavar="N", help="most messages a day")
+    sub.add_parser("start-again", help="Start a finished agent again").add_argument("name")
     scheduler = sub.add_parser("scheduler", help="Turn the agents scheduler on or off")
     scheduler_sub = scheduler.add_subparsers(dest="scheduler_command", required=True)
     scheduler_sub.add_parser("on", help="Check for due agents every 2 minutes, and at login")
@@ -1972,6 +2002,87 @@ def _cmd_agents_checkin(args, root) -> int:
     return EXIT_OK
 
 
+_EVERY_UNITS = {"m": 1, "h": 60, "d": 1440}
+
+
+def _every_minutes(text: str) -> int:
+    found = re.fullmatch(r"(\d+)\s*([a-z])", text.strip().lower())
+    if found is None:
+        raise ValueError("--every needs a number and m, h or d, like 30m, 2h or 3d")
+    unit = found[2]
+    if unit not in _EVERY_UNITS:
+        if unit == "s":
+            raise ValueError("the shortest interval is 5 minutes")
+        raise ValueError("--every needs a number and m, h or d, like 30m, 2h or 3d")
+    minutes = int(found[1]) * _EVERY_UNITS[unit]
+    if minutes < 5:
+        raise ValueError("the shortest interval is 5 minutes")
+    return minutes
+
+
+def _cmd_agents_schedule(args, root) -> int:
+    from whyline.agents import service
+
+    fields: dict = {"at": args.at, "starts": args.starts, "ends": args.until,
+                    "max_runs": args.max_runs}
+    if args.once:
+        fields.update(kind="once", on=args.once)
+    elif args.daily:
+        fields.update(kind="daily")
+    elif args.weekdays:
+        fields.update(kind="weekdays")
+    elif args.weekly:
+        fields.update(kind="weekly",
+                      days=tuple(p.strip().lower() for p in args.weekly.split(",") if p.strip()))
+    elif args.every:
+        fields.update(kind="every", every_minutes=_every_minutes(args.every), at="")
+    else:
+        fields.update(kind="manual", at="")
+    defn = service.save_schedule(args.name, repo_root=root, **fields)
+    print(f"{defn.label} runs {service.when_text(defn.trigger)}.")
+    return EXIT_OK
+
+
+def _cmd_agents_watch(args, root) -> int:
+    from whyline.agents import service
+
+    words = args.words
+    if words[0] in ("test", "off") and len(words) == 2:
+        command, name = words
+    elif len(words) == 1:
+        command, name = "save", words[0]
+    else:
+        raise ValueError("watch takes one agent name, or test or off and then a name")
+    if command == "off":
+        defn = service.watch_off(name, root)
+        print(f"{defn.label} is not a watch now.")
+        return EXIT_OK
+    if command == "test":
+        result = service.test_watch(name, root)
+        for page in result.pages:
+            print(f"{page.address}: {page.state}" + (f" ({page.reason})" if page.reason else ""))
+            if page.text:
+                print(page.text)
+        print(f"Would send: {'yes' if result.would_fire else 'no'}. {result.why}")
+        if result.message:
+            print(result.message)
+        return EXIT_OK
+    if not args.url or not args.rule:
+        raise ValueError("watch needs --url and --rule")
+    value = ""
+    if args.below is not None:
+        value = f"below {args.below:g}"
+    elif args.above is not None:
+        value = f"above {args.above:g}"
+    between = args.between or ("", "")
+    defn = service.save_watch(
+        name, url=" ".join(args.url), rule=args.rule, text=args.text, start=between[0],
+        end=between[1], stop="first" if args.stop_first else "never", value=value,
+        urgent=args.urgent, daily_cap=args.cap, repo_root=root)
+    print(f"{defn.label} watches {defn.gate_args['url']}.")
+    return EXIT_OK
+
+
 def cmd_agents(args: argparse.Namespace) -> int:
     from whyline.agents import definitions as d, records, service
 
@@ -1987,6 +2098,17 @@ def cmd_agents(args: argparse.Namespace) -> int:
     try:
         if args.agents_command == "checkin":
             return _cmd_agents_checkin(args, root)
+        if args.agents_command in ("schedule", "watch", "start-again"):
+            try:
+                if args.agents_command == "schedule":
+                    return _cmd_agents_schedule(args, root)
+                if args.agents_command == "watch":
+                    return _cmd_agents_watch(args, root)
+                service.start_again(args.name, root)
+                return EXIT_OK
+            except (service.AgentNotFound, service.Ambiguous, ValueError) as error:
+                print(str(error).strip("'\""), file=sys.stderr)
+                return EXIT_USAGE
         if args.agents_command == "list":
             found = service.rows(root)
             if not found:

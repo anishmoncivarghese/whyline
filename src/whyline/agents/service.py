@@ -1,7 +1,7 @@
 """The one API the console and `whyline agents` share."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from pathlib import Path
 
@@ -214,6 +214,135 @@ def test_checkin(name: str, repo_root: Path | None = None, **kwargs):
     if not defn.gate:
         raise ValueError(f"{defn.name} has no check-in")
     return test_gate(defn.agent_id, defn.gate, defn.gate_args, **kwargs)
+
+
+def _validated(out: d.AgentDef) -> d.AgentDef:
+    """The checks a saved file gets; raises when the definition would not load."""
+    d.parse(d.render(out), kind=out.kind, path=out.path,
+            repo_root=out.root if out.kind == "repo" else None)
+    return out
+
+
+def save_schedule(name: str, *, kind: str, at: str = "", on: str = "", days=(),
+                  every_minutes: int = 0, starts: str = "", ends: str = "", max_runs: int = 0,
+                  repo_root: Path | None = None) -> d.AgentDef:
+    """Validate and save the [trigger] table only. The CLI and the console both come here."""
+    before = find(name, repo_root)
+    trigger = replace(
+        before.trigger, kind=kind, at=(at or "").strip(), on=on or "", days=tuple(days or ()),
+        every_minutes=every_minutes or 0, every_hours=0, starts=starts or "", ends=ends or "",
+        max_runs=max_runs or 0, folder=before.trigger.folder if kind == "folder" else "")
+    out = _validated(replace(before, trigger=trigger))
+    _write_changed(before, out)
+    return out
+
+
+def save_watch(name: str, *, url: str, rule: str, text: str = "", start: str = "", end: str = "",
+               stop: str = "never", value: str = "", urgent: bool = False, daily_cap: int = 24,
+               repo_root: Path | None = None) -> d.AgentDef:
+    """Save the page gate (through save_checkin) and the [watch] table."""
+    from whyline.agents import watch as watch_rules
+
+    before = find(name, repo_root)
+    if before.kind == "repo":
+        raise ValueError(f"{before.name} is a repository agent; a watch must be a personal agent")
+    if rule in ("appears", "gone") and not (text or "").strip():
+        raise ValueError(f"the {rule} rule needs the text to look for")
+    if bool(start) != bool(end):
+        raise ValueError("give both the start and the end text, or neither")
+    gate_args = {"url": url, "rule": rule, "text": text, "start": start, "end": end}
+    watch = watch_rules.Watch(stop=stop, value=(value or "").strip(), urgent=bool(urgent),
+                              daily_cap=daily_cap)
+    # Check everything before anything is written.
+    _validated(checkin_defn(replace(before, watch=watch), gate="page", gate_args=gate_args))
+    saved = save_checkin(name, gate="page", gate_args=gate_args, repo_root=repo_root)
+    out = replace(saved, watch=watch)
+    _write_changed(saved, out)
+    return out
+
+
+def watch_off(name: str, repo_root: Path | None = None) -> d.AgentDef:
+    """Remove the [checkin] and [watch] tables and what the watch remembered: a plain agent."""
+    before = find(name, repo_root)
+    out = _validated(replace(before, gate="", gate_args={}, active_hours="", silent=False,
+                             watch=None))
+    _write_changed(before, out)
+    conn = state.connect()
+    try:
+        state.clear_gate_state(conn, out.agent_id)
+        state.clear_watch_memory(conn, out.agent_id)
+    finally:
+        conn.close()
+    return out
+
+
+@dataclass(frozen=True)
+class WatchPage:
+    address: str
+    state: str
+    reason: str
+    text: str
+
+
+@dataclass(frozen=True)
+class WatchTest:
+    pages: list[WatchPage] = field(default_factory=list)
+    would_fire: bool = False
+    why: str = ""
+    message: str = ""
+
+
+def test_watch(name: str, repo_root: Path | None = None, *, now: datetime | None = None) -> WatchTest:
+    """Look at the pages now and say what a run would do. Nothing is saved, written or sent."""
+    import copy
+
+    from whyline.agents import gates, pagefetch, watch as watch_rules
+
+    defn = find(name, repo_root)
+    if defn.watch is None:
+        raise ValueError(f"{defn.name} is not a watch")
+    conn = state.connect()
+    try:
+        old = copy.deepcopy(state.get_gate_state(conn, defn.agent_id))
+    finally:
+        conn.close()
+    try:
+        with pagefetch.uncached() as seen:
+            found = gates.check(defn.gate, defn.gate_args, old, now=now or datetime.now())
+    except gates.GateError as error:
+        raise ValueError(str(error)) from error
+    kept = found.state.get("pages") or {}
+    fetched = {p.url: p for p in seen}
+    pages = []
+    for url in defn.gate_args.get("url", "").split():
+        entry = kept.get(url) or {}
+        page = fetched.get(url)
+        if "hash" in entry and int(entry.get("failures", 0)) == 0:
+            # the gate read it: show the part between the start and end text
+            pages.append(WatchPage(url, "ok", "", entry.get("text", "")[:2000]))
+            continue
+        # the gate counted a failure: keep its reason, never fall back to old data
+        if page is not None and page.state != "ok":
+            reason = page.reason
+        elif page is not None:
+            reason = "the start or end text isn't on the page"
+        else:
+            reason = "couldn't read the page"
+        state_name = page.state if page is not None and page.state != "ok" else "failed"
+        pages.append(WatchPage(url, state_name, reason, (page.text if page else "")[:2000]))
+    fire = bool(found.items)
+    bad = next((p for p in pages if p.state != "ok"), None)
+    if fire:
+        why = "The page matches your rule."
+    elif bad is not None:
+        why = f"Couldn't read {bad.address}: {bad.reason or 'unknown reason'}."
+    else:
+        why = "Nothing matches your rule right now."
+    message = ""
+    if fire:
+        message = (watch_rules.own_message(defn, found) if not defn.instructions
+                   else "The agent would run and write the message.")
+    return WatchTest(pages=pages, would_fire=fire, why=why, message=message)
 
 
 def checkin_last(defn) -> str:

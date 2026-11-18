@@ -46698,3 +46698,97 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: fc6f09b9585240a1a07803c0e526a222 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-17T22:26:21.133Z"} -->
+
+## 2026-11-17 — test_watch fetches through a pagefetch.uncached() context instead of a cache_dir argument
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-7
+
+**Because:** gates._page calls pagefetch.fetch itself; a context var skips both cache read and write without changing the gate API, and collects the pages for the report
+
+**Rejected:**
+
+- temp cache_dir — still reads a fresh cache and leaves files behind
+
+**Files:** src/whyline/agents/service.py
+
+<!-- whyline-event: 38a896d58cba456a813325f2aa1c3455 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T22:29:39.073Z"} -->
+
+## 2026-11-17 — Verify service save/test/off and CLI subcommands for WCH-7
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-7
+
+**Because:** service.save_schedule validates through definitions and rewrites only the trigger table, save_watch saves page gate and watch table validating before writing, watch_off clears gate and watch state, test_watch performs uncached dry run without mutating state/memory/cache/records, all CLI subcommands and error behaviors exit appropriately, git diff --check is clean, and test suites pass
+
+**Files:** src/whyline/agents/service.py, src/whyline/cli.py, tests/agents/test_watch_cli.py
+
+<!-- whyline-event: f7be59f0fe4b4cd4a5ee41afdcb8aecf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T22:54:00.398Z"} -->
+
+## 2026-11-17 — Reject WCH-7 until watch dry-runs report real read failures and watches stay personal
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-7
+
+**Because:** service.test_watch reconstructs status from the raw uncached fetch and saved gate entry, so missing between markers are reported ok and exceptions can fall back to stale ok data; save_watch also accepts repo definitions despite the plan's personal-only watch rule. The 13 focused tests pass, while the plain full suite completed with two unrelated relay setup UI timeouts.
+
+**Rejected:**
+
+- approve on current tests — they do not cover marker extraction failure, uncached fetch exceptions with prior state, or repository-agent refusal
+
+**Files:** src/whyline/agents/service.py, src/whyline/agents/pagefetch.py, tests/agents/test_watch_cli.py
+
+<!-- whyline-event: 66bfb3acc302449e8bc8e299ae609ee6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T23:16:15.674Z"} -->
+
+## 2026-11-17 — test_watch derives page status from the gate's own saved entry (failures count), not the raw fetch
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-7
+
+**Because:** gates._page is the only place that knows a missing start/end marker is a failed read; reading its resulting state keeps the dry run identical to a real run and cannot fall back to old ok data
+
+**Rejected:**
+
+- re-run marker extraction in test_watch — duplicates gate logic and can drift
+
+**Files:** src/whyline/agents/service.py
+
+<!-- whyline-event: feba4f419db14522864da0aa1ce60bcd -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-17T23:18:05.335Z"} -->
+
+## 2026-11-18 — Pass WCH-7 after verifying all 3 review fixes, watch CLI suite, and full test suite
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-7
+
+**Because:** test_watch derives page status from the gate result reporting marker extraction failures as failed, uncached fetch exceptions do not fall back to stale data, save_watch refuses repository agents before writing, test_watch_cli passes (16/16), and full test suite passes (5248 passed)
+
+**Files:** src/whyline/agents/service.py, src/whyline/agents/pagefetch.py, tests/agents/test_watch_cli.py
+
+<!-- whyline-event: 9f9ef662c13a40b9b799ec227a95d824 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T00:00:01.536Z"} -->
+
+## 2026-11-18 — Approve WCH-7 after final review of watch saving, dry-run isolation, and CLI behavior
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-7
+
+**Because:** The service validates schedule and watch edits through definitions, watch tests fetch uncached without mutating gate state, memory, cache, records, or invoking a provider, repository watches are refused before writes, CLI parsing and exit behavior match the task, focused coverage exercises the required paths, and the independent plain full suite passed with 5248 passed and 1 skipped
+
+**Rejected:**
+
+- Request further changes — the three prior review defects are fixed and no additional in-scope defect was found
+
+**Files:** src/whyline/agents/service.py, src/whyline/agents/pagefetch.py, src/whyline/cli.py, tests/agents/test_watch_cli.py
+
+<!-- whyline-event: 4e6ce5cdc5434967ba82aaa9b0d90cd5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T00:21:30.638Z"} -->

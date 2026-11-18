@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import hashlib
 import ipaddress
 import json
@@ -238,10 +240,29 @@ def _get(url: str, now: datetime, opener: Callable, resolve: Callable) -> Page:
     return Page(url, "ok", text=text)
 
 
+_UNCACHED: contextvars.ContextVar[list | None] = contextvars.ContextVar("uncached", default=None)
+
+
+@contextlib.contextmanager
+def uncached():
+    """Fetch fresh and write no cache inside this block. Yields the pages fetched."""
+    seen: list[Page] = []
+    token = _UNCACHED.set(seen)
+    try:
+        yield seen
+    finally:
+        _UNCACHED.reset(token)
+
+
 def fetch(url: str, *, now: datetime, opener: Callable | None = None,
           resolve: Callable | None = None, cache_dir: Path | None = None) -> Page:
     """Fetch one page and say what happened. Never raises."""
     try:
+        seen = _UNCACHED.get()
+        if seen is not None:
+            page = _get(url, now, opener or _default_opener, resolve or _default_resolve)
+            seen.append(page)
+            return page
         directory = cache_dir if cache_dir is not None else Path.home() / ".whyline" / "agents" / "pages"
         path = _cache_file(directory, url)
         cached = _load_cache(path, now)
@@ -251,4 +272,8 @@ def fetch(url: str, *, now: datetime, opener: Callable | None = None,
         _save_cache(path, page, now)
         return page
     except Exception as err:  # the caller must always get a Page
-        return Page(url, "failed", reason=str(err) or err.__class__.__name__)
+        page = Page(url, "failed", reason=str(err) or err.__class__.__name__)
+        seen = _UNCACHED.get()
+        if seen is not None:
+            seen.append(page)
+        return page
