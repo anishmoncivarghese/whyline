@@ -46792,3 +46792,141 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4e6ce5cdc5434967ba82aaa9b0d90cd5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-18T00:21:30.638Z"} -->
+
+## 2026-11-18 — Edit saves the trigger through service.save_schedule at Review time; new agents go through the TOML only
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-8
+
+**Because:** save_schedule needs an existing agent file; the screen only dismisses a form, so a new agent has nothing to save to until tui writes it
+
+**Rejected:**
+
+- call save_schedule for new agents — no file exists yet
+- edit tui.py to save after Review — outside the task's files
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 2634466d43bf4c4391165185491e56f1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T00:27:44.965Z"} -->
+
+## 2026-11-18 — Approve schedule UI and Agents list start-again behaviour in NewAgentScreen
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-8
+
+**Because:** Full test suite and focused new agent schedule tests pass with 100% exit code 0; all fields, read-back line, save_schedule call, old value loading, and finished status start-again verified
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 16dbd0339f0c41c798a3baa9d07c1f1b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T00:49:30.685Z"} -->
+
+## 2026-11-18 — Request changes for premature schedule persistence in WCH-8
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-8
+
+**Because:** NewAgentScreen calls service.save_schedule while opening Review, before the Review screen's final Save; a disposable UI run verified that pressing Review changes the stored trigger from manual to daily, so Back or cancel leaves an unintended partial edit even though the full uv run pytest -q suite exits 0
+
+**Rejected:**
+
+- approve — passing tests do not cover or make safe the pre-confirmation write
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: fcf32308269e460c914149befc2ca69f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T01:11:37.601Z"} -->
+
+## 2026-11-18 — Edit's save_schedule runs when Review's Save is pressed, not when Review opens
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-8
+
+**Because:** Review opening wrote the trigger before the user confirmed, so Back or cancel left a partial edit; NewAgentScreen now holds the call in a module slot and ReviewScreen runs it on Save, with a refusal shown in Review
+
+**Rejected:**
+
+- edit tui.py to pass a callback — outside the task's files
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 8d4c6bddf51f4764a86298684e158887 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T01:26:09.181Z"} -->
+
+## 2026-11-18 — Approve schedule persistence on Review Save in NewAgentScreen
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-8
+
+**Because:** Verified that save_schedule only runs when Review Save is clicked and cancel or back leaves the schedule untouched; all 13 schedule tests and the full console suite pass
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 220a6a707ec845d49eb70b72364f7e57 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T02:05:23.184Z"} -->
+
+## 2026-11-18 — Reject WCH-8 because editing a non-folder agent to a folder schedule cannot be saved
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-8
+
+**Because:** NewAgentScreen validates the typed folder in its transient trigger, but the deferred Review Save calls service.save_schedule without that folder; save_schedule retains the old empty folder and raises 'a folder trigger needs a folder', which a direct service reproduction confirmed. The focused schedule tests omit this transition. The full suite had two unrelated relay-screen timeouts that both passed on targeted rerun.
+
+**Rejected:**
+
+- approve — one advertised schedule kind reaches Review but final Save is refused for a valid edit
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 0edf31b7ef23419f8980a0137259994f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T02:27:53.684Z"} -->
+
+## 2026-11-18 — Editing to a folder trigger writes the typed folder before save_schedule on Review Save
+
+**Actor:** claude
+**Role:** implementer
+**Task:** WCH-8
+
+**Because:** save_schedule keeps the stored folder and has no folder argument, so a newly typed folder was refused as empty; service.py is outside the task files
+
+**Rejected:**
+
+- add a folder argument to save_schedule — service.py is outside WCH-8's files
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 51800bc4c0fb4d4a8bb9f06e37066993 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T02:28:49.368Z"} -->
+
+## 2026-11-18 — Approve folder schedule edit fix and complete schedule test suite
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-8
+
+**Because:** Editing a non-folder agent to a folder trigger now correctly saves the typed folder on Review Save without refusal; all 14 schedule tests, 51 new agent tests, and full test suite pass
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: c04fb3b4ed7b43a8a7403915cb3350a6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T02:51:29.133Z"} -->
+
+## 2026-11-18 — Approve WCH-8 schedule block and finished-agent restart
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-8
+
+**Because:** The diff implements all requested schedule kinds and conditional fields, live validation/read-back, Review Save through save_schedule including folder edits, legacy every_hours loading, and finished-agent Start again with refusal display; the focused coverage is substantive and uv run pytest -q exited 0
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: b270b5d137664e4893abb1dcab650f76 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T03:13:01.018Z"} -->

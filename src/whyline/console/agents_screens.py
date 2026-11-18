@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 import re
 import webbrowser
+from datetime import datetime
 from types import SimpleNamespace
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from rich.text import Text
@@ -17,7 +18,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Collapsible, DataTable, Input, Label, Select, Static, TextArea
 
 from whyline.agents import capabilities, definitions as d, deliveries as dl, paths, records, templates
-from whyline.agents import service
+from whyline.agents import schedule, service
 from whyline.agents.service import NO_AGENTS
 
 
@@ -25,6 +26,9 @@ from whyline.agents.service import NO_AGENTS
 class AgentForm:
     defn: d.AgentDef
     delivery: dl.Delivery
+
+# The schedule save NewAgentScreen holds for Review's Save: (the defn it was made for, the call).
+_pending_schedule: tuple | None = None
 
 _CSS = """
 {name} {{ align: center middle; }}
@@ -57,6 +61,12 @@ class AgentsListScreen(ModalScreen):
             return f"{defn.name} · this repository only"
         return defn.name
 
+    @staticmethod
+    def _status_text(row) -> str:
+        if row.status == "finished":
+            return f"finished: {row.reason}" if row.reason else "finished"
+        return row.status
+
     def compose(self) -> ComposeResult:
         body: list = [Label("Agents" if self._rows else NO_AGENTS)]
         if self._rows:
@@ -74,14 +84,16 @@ class AgentsListScreen(ModalScreen):
                 cli = row.defn.runner + (f" → {', '.join(row.defn.backup)}" if row.defn.backup else "")
                 table.add_row(
                     self._label(row.defn), cli, row.when, row.next_due or "—",
-                    row.last_outcome or "—", row.status, service.checkin_line(row.defn) or "—",
+                    row.last_outcome or "—", self._status_text(row), service.checkin_line(row.defn) or "—",
                     key=f"{row.defn.kind}:{row.defn.name}",
                 )
             body.append(table)
         body.append(Static("", id="al-broken", markup=False))
+        body.append(Static("", id="al-result", markup=False))
         body.append(
             Horizontal(
                 Button("Open", id="al-open", variant="primary"),
+                Button("Start again", id="al-start-again"),
                 Button("Delete file…", id="al-delete-broken", variant="error"),
                 Button("Close", id="al-close"),
             ),
@@ -91,6 +103,42 @@ class AgentsListScreen(ModalScreen):
     def on_mount(self) -> None:
         self.query_one("#al-broken", Static).display = False
         self.query_one("#al-delete-broken", Button).display = False
+        self.query_one("#al-result", Static).display = False
+        self._sync_start_again()
+
+    def _finished_row(self):
+        key = self._chosen()
+        for row in self._rows:
+            if (not isinstance(row.defn, d.Broken) and row.status == "finished"
+                    and key == f"{row.defn.kind}:{row.defn.name}"):
+                return row
+        return None
+
+    def _sync_start_again(self) -> None:
+        self.query_one("#al-start-again", Button).display = self._finished_row() is not None
+
+    def on_data_table_row_highlighted(self, event) -> None:
+        self._sync_start_again()
+
+    def _start_again(self) -> None:
+        row = self._finished_row()
+        if row is None:
+            return
+        result = self.query_one("#al-result", Static)
+        root = getattr(getattr(self.app, "session", None), "root", None)
+        try:
+            service.start_again(f"{row.defn.kind}:{row.defn.name}", root)
+        except ValueError as error:
+            result.update(str(error))
+            result.display = True
+            return
+        row.status = "active"
+        row.reason = ""
+        table = self.query_one("#al-table", DataTable)
+        table.update_cell_at((table.cursor_row, 5), "active")
+        result.update(f"{row.defn.name} will run again.")
+        result.display = True
+        self._sync_start_again()
 
     def _key(self) -> str | None:
         if not self._rows:
@@ -131,6 +179,8 @@ class AgentsListScreen(ModalScreen):
         event.stop()
         if event.button.id == "al-open":
             self._open()
+        elif event.button.id == "al-start-again":
+            self._start_again()
         elif event.button.id == "al-delete-broken":
             if getattr(self, "_broken_path", None):
                 self.dismiss(f"delete-file:{self._broken_path}")
@@ -993,13 +1043,40 @@ _KIND = (
 )
 _REPO_SKILL_ORIGINS = ("whyline-repo", "claude-project")
 _WHEN = (
-    ("When I run it", "manual"),
-    ("Every day", "daily"),
+    ("Manual", "manual"),
+    ("Once", "once"),
+    ("Daily", "daily"),
     ("Weekdays", "weekdays"),
-    ("Every N hours", "every"),
-    ("When files appear in a folder", "folder"),
+    ("Weekly", "weekly"),
+    ("Every", "every"),
+    ("When a folder changes", "folder"),
 )
+_EVERY_UNITS = (("minutes", "minutes"), ("hours", "hours"), ("days", "days"))
+_UNIT_MINUTES = {"minutes": 1, "hours": 60, "days": 1440}
 _EVERY_HELP = "Every N hours starts at midnight: 00:00, 05:00, 10:00, …"
+_SCHEDULE_IDS = frozenset((
+    "na-when", "na-at", "na-on", "na-every", "na-every-unit", "na-from", "na-until",
+    "na-max-runs", "na-folder",
+))
+
+
+def _every_fields(trigger: d.Trigger | None) -> tuple[str, str]:
+    """The number and unit an Every trigger opens with, an old every_hours included."""
+    if trigger is None or trigger.kind != "every":
+        return "", "hours"
+    minutes = trigger.every_minutes or trigger.every_hours * 60
+    if not minutes:
+        return "", "hours"
+    for unit in ("days", "hours"):
+        if minutes % _UNIT_MINUTES[unit] == 0:
+            return str(minutes // _UNIT_MINUTES[unit]), unit
+    return str(minutes), "minutes"
+
+
+def _next_text(due: datetime, now: datetime) -> str:
+    gap = (due.date() - now.date()).days
+    day = "today" if gap == 0 else "tomorrow" if gap == 1 else f"{due:%a} {due.day} {due:%b}"
+    return f"{day} {due:%H:%M}"
 
 
 def _cell(value: object) -> Text:
@@ -1389,7 +1466,10 @@ class NewAgentScreen(ModalScreen):
     NewAgentScreen #na-error { color: $error; height: auto; }
     NewAgentScreen #na-telegram { width: 1fr; }
     NewAgentScreen #na-test-result { height: auto; width: 1fr; }
+    NewAgentScreen #na-every { width: 12; }
+    NewAgentScreen #na-every-unit { width: 20; }
     NewAgentScreen #na-sources-list, NewAgentScreen #na-every-help,
+    NewAgentScreen #na-schedule-line,
     NewAgentScreen #na-skills-list, NewAgentScreen #na-tools-list,
     NewAgentScreen #na-left-out {
         height: auto; color: $text-muted;
@@ -1544,35 +1624,53 @@ class NewAgentScreen(ModalScreen):
             id="na-workdir-row",
         )
         workdir.display = kind == "personal"
+        trigger = existing.trigger if existing else d.Trigger()
+        on_row = HorizontalGroup(
+            Label("On", classes="field-label"),
+            Input(trigger.on, id="na-on", placeholder="2026-11-20"),
+            id="na-on-row",
+        )
         at_row = HorizontalGroup(
             Label("At", classes="field-label"),
-            Input(existing.trigger.at if existing else "", id="na-at", placeholder="07:00"),
+            Input(trigger.at, id="na-at", placeholder="07:00, 13:00"),
             id="na-at-row",
         )
-        at_row.display = when in ("daily", "weekdays")
+        days_row = HorizontalGroup(
+            Label("Days", classes="field-label"),
+            *(Checkbox(day.capitalize(), value=day in trigger.days, id=f"na-day-{day}")
+              for day in d.DAYS),
+            id="na-days-row",
+        )
+        every_number, every_unit = _every_fields(existing.trigger if existing else None)
         every_row = HorizontalGroup(
-            Label("Hours", classes="field-label"),
-            Input(
-                str(existing.trigger.every_hours) if existing and existing.trigger.every_hours else "",
-                id="na-every",
-                placeholder="4",
-            ),
+            Label("Every", classes="field-label"),
+            Input(every_number, id="na-every", placeholder="30"),
+            Select(_EVERY_UNITS, value=every_unit, allow_blank=False, id="na-every-unit"),
             id="na-every-row",
         )
-        every_row.display = when == "every"
         every_help = Static(_EVERY_HELP, id="na-every-help")
-        every_help.display = when == "every"
         folder_row = HorizontalGroup(
             Label("Folder", classes="field-label"),
-            Input(
-                existing.trigger.folder if existing else "",
-                id="na-folder",
-                placeholder="~/Downloads",
-            ),
+            Input(trigger.folder, id="na-folder", placeholder="~/Downloads"),
             Button("Choose", id="na-pick-folder"),
             id="na-folder-row",
         )
-        folder_row.display = when == "folder"
+        range_row = VerticalGroup(
+            HorizontalGroup(
+                Label("From", classes="field-label"),
+                Input(trigger.starts, id="na-from", placeholder="optional, 2026-11-17"),
+            ),
+            HorizontalGroup(
+                Label("Until", classes="field-label"),
+                Input(trigger.ends, id="na-until", placeholder="optional, 2026-11-20"),
+            ),
+            HorizontalGroup(
+                Label("Stop after (runs)", classes="field-label"),
+                Input(str(trigger.max_runs) if trigger.max_runs else "", id="na-max-runs",
+                      placeholder="optional"),
+            ),
+            id="na-range-rows",
+        )
         title = f"Edit {existing.name}" if (existing and self._is_edit) else "New agent"
         buttons = [Button("Review", id="na-next", variant="primary")]
         if self._allow_back:
@@ -1637,10 +1735,14 @@ class NewAgentScreen(ModalScreen):
                 Label("When", classes="field-label"),
                 Select(_WHEN, value=when, allow_blank=False, id="na-when"),
             ),
+            on_row,
             at_row,
+            days_row,
             every_row,
             every_help,
             folder_row,
+            range_row,
+            Static("", id="na-schedule-line", markup=False),
             Label("Check-in"),
             HorizontalGroup(
                 Label("Gate", classes="field-label"),
@@ -1825,6 +1927,18 @@ class NewAgentScreen(ModalScreen):
             self._sync_backups()
         elif select_id == "na-when":
             self._sync_when()
+        elif select_id == "na-every-unit":
+            self._sync_when()
+        if select_id in _SCHEDULE_IDS:
+            self._refresh_schedule_line()
+
+    def on_input_changed(self, event: "Input.Changed") -> None:
+        if event.input.id in _SCHEDULE_IDS:
+            self._refresh_schedule_line()
+
+    def on_checkbox_changed(self, event: "Checkbox.Changed") -> None:
+        if (event.checkbox.id or "").startswith("na-day-"):
+            self._refresh_schedule_line()
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         event.stop()
@@ -1900,13 +2014,70 @@ class NewAgentScreen(ModalScreen):
     def _sync_when(self) -> None:
         try:
             when = self._choice("#na-when")
+            unit = self._choice("#na-every-unit")
         except NoMatches:
             return
-        self.query_one("#na-at-row").display = when in ("daily", "weekdays")
+        self.query_one("#na-on-row").display = when == "once"
+        self.query_one("#na-at-row").display = when in ("once", "daily", "weekdays", "weekly")
+        self.query_one("#na-days-row").display = when == "weekly"
         every = when == "every"
         self.query_one("#na-every-row").display = every
-        self.query_one("#na-every-help").display = every
+        self.query_one("#na-every-help").display = every and unit == "hours"
         self.query_one("#na-folder-row").display = when == "folder"
+        self.query_one("#na-range-rows").display = when not in ("manual", "once")
+        self._refresh_schedule_line()
+
+    def _schedule_values(self) -> dict:
+        """The Schedule block as service.save_schedule takes it; ValueError says what is wrong."""
+        when = self._choice("#na-when") or "manual"
+        text = lambda widget_id: self.query_one(widget_id, Input).value.strip()  # noqa: E731
+        values: dict = {"kind": when, "at": "", "on": "", "days": (), "every_minutes": 0,
+                        "starts": "", "ends": "", "max_runs": 0}
+        if when in ("once", "daily", "weekdays", "weekly"):
+            values["at"] = text("#na-at")
+        if when == "once":
+            values["on"] = text("#na-on")
+        if when == "weekly":
+            values["days"] = tuple(
+                day for day in d.DAYS if self.query_one(f"#na-day-{day}", Checkbox).value)
+        if when == "every":
+            raw = text("#na-every")
+            if not re.fullmatch(r"\d{1,6}", raw):
+                raise ValueError("Every needs a whole number")
+            values["every_minutes"] = int(raw) * _UNIT_MINUTES[self._choice("#na-every-unit")]
+        if when not in ("manual", "once"):
+            values["starts"], values["ends"] = text("#na-from"), text("#na-until")
+            runs = text("#na-max-runs")
+            if runs and not re.fullmatch(r"\d{1,6}", runs):
+                raise ValueError("Stop after (runs) must be a whole number")
+            values["max_runs"] = int(runs) if runs else 0
+        return values
+
+    def _schedule_trigger(self, values: dict) -> d.Trigger:
+        old = self._existing.trigger if self._existing else d.Trigger()
+        raw = {**values, "days": list(values["days"]), "min_gap_minutes": old.min_gap_minutes,
+               "folder": self.query_one("#na-folder", Input).value.strip()
+               if values["kind"] == "folder" else ""}
+        return d._trigger(raw)  # the checks a saved file gets
+
+    def _schedule_text(self) -> str:
+        trigger = self._schedule_trigger(self._schedule_values())
+        words = service.when_text(trigger)
+        text = words[0].upper() + words[1:] + "."
+        now = datetime.now()
+        due = schedule.next_due(trigger, now=now)
+        return f"{text} Next: {_next_text(due, now)}." if due else text
+
+    def _refresh_schedule_line(self) -> None:
+        try:
+            line = self.query_one("#na-schedule-line", Static)
+            try:
+                text = self._schedule_text()
+            except ValueError as error:
+                text = str(error)
+        except NoMatches:
+            return
+        line.update(text)
 
     def _sync_backups(self) -> None:
         try:
@@ -2093,20 +2264,26 @@ class NewAgentScreen(ModalScreen):
         lines.append(f"timeout_minutes = {self._int_token('#na-timeout', 15)}")
         if self._existing and self._existing.before:
             lines.append(f"before = {_q(self._existing.before)}")
+        values = self._schedule_values()
+        trigger = self._schedule_trigger(values)
         lines += ["", "[trigger]", f"kind = {_q(when)}"]
-        at = self.query_one("#na-at", Input).value.strip()
-        if when in ("daily", "weekdays") or at:
-            lines.append(f"at = {_q(at)}")
-        minutes = self._existing.trigger.every_minutes if self._existing else 0
-        if when == "every" and minutes and not self.query_one("#na-every", Input).value.strip():
-            lines.append(f"every_minutes = {minutes}")  # a check-in's schedule, kept as it was
-        elif when == "every":
-            lines.append(f"every_hours = {self._int_token('#na-every', None)}")
-        folder = self.query_one("#na-folder", Input).value.strip()
-        if when == "folder" or folder:
-            lines.append(f"folder = {_q(folder)}")
-        gap = self._existing.trigger.min_gap_minutes if self._existing else 10
-        lines.append(f"min_gap_minutes = {gap}")
+        if trigger.at:
+            lines.append(f"at = {_q(trigger.at)}")
+        if trigger.on:
+            lines.append(f"on = {_q(trigger.on)}")
+        if trigger.days:
+            lines.append("days = [" + ", ".join(_q(day) for day in trigger.days) + "]")
+        if trigger.every_minutes:
+            lines.append(f"every_minutes = {trigger.every_minutes}")
+        if trigger.starts:
+            lines.append(f"starts = {_q(trigger.starts)}")
+        if trigger.ends:
+            lines.append(f"ends = {_q(trigger.ends)}")
+        if trigger.max_runs:
+            lines.append(f"max_runs = {trigger.max_runs}")
+        if trigger.folder:
+            lines.append(f"folder = {_q(trigger.folder)}")
+        lines.append(f"min_gap_minutes = {trigger.min_gap_minutes}")
         if self._tools:
             lines += ["", "[tools]"]
             lines += [f"{_q(key)} = {_q(value)}" for key, value in sorted(self._tools.items())]
@@ -2171,6 +2348,29 @@ class NewAgentScreen(ModalScreen):
         except dl.DeliveryError as error:
             self._show_error(str(error))
             return
+        global _pending_schedule
+        _pending_schedule = None
+        saved = self._existing
+        if (
+            self._is_edit and saved is not None and saved.path.is_file()
+            and (defn.kind, defn.name) == (saved.kind, saved.name)
+            and defn.trigger != saved.trigger
+        ):
+            # The same call `agents schedule` makes, run when Review's Save is pressed (a new
+            # agent has no file to save to yet). Back or cancel writes nothing.
+            values, root, folder = self._schedule_values(), self._root, defn.trigger.folder
+
+            def save_trigger() -> None:
+                name = f"{defn.kind}:{defn.name}"
+                if values["kind"] == "folder":
+                    # save_schedule keeps the stored folder, so a newly typed one goes in first.
+                    before = service.find(name, root)
+                    if before.trigger.folder != folder:
+                        service._write_changed(before, replace(
+                            before, trigger=replace(before.trigger, folder=folder)))
+                service.save_schedule(name, **values, repo_root=root)
+
+            _pending_schedule = (defn, save_trigger)
         self.dismiss(AgentForm(defn, delivery))
 
     def _delivery(self) -> dl.Delivery:
@@ -2257,4 +2457,16 @@ class ReviewScreen(ModalScreen):
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         event.stop()
-        self.dismiss("save" if event.button.id == "rv-save" else None)
+        global _pending_schedule
+        if event.button.id != "rv-save":
+            self.dismiss(None)
+            return
+        pending = _pending_schedule
+        if pending is not None and pending[0] is self._defn:
+            try:
+                pending[1]()
+            except ValueError as error:
+                self.query_one("#rv-text", Static).update(str(error))
+                return
+            _pending_schedule = None
+        self.dismiss("save")
