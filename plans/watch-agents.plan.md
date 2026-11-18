@@ -207,7 +207,7 @@ Rules every task keeps:
   6. The day checkboxes are styled as the other checkboxes in this screen are. The shared focus rule from agent-setup (PKR-1) is not in yet; do not add it here.
   Tests: each kind showing its own fields, the read-back line and a refusal, Save calling `save_schedule` with the right arguments for Once, Weekly and Every (days), an old agent's values loaded, and **Start again**.
 
-- [ ] WCH-9: The Watch block, Test, and the Agents list
+- [x] WCH-9: The Watch block, Test, and the Agents list
   Edit `src/whyline/console/agents_screens.py` and its tests only.
   1. A **Watch** section in New agent and Edit agent, closed until **Watch a web page** is ticked: **Address** (up to three), **Tell me when** (`the page changes`, `this text appears`, `this text is gone`, `let the agent decide`), **Text**, **Only between** (two inputs), **A number goes** (`—`, `below`, `above`) with its limit, **Stop after the first time**, **Tell me even outside active hours**, and **Agent runs per day, at most**.
   2. Under Instructions, when the rule allows it: `Leave this empty and whyline sends the message itself. No agent runs.`
