@@ -47119,3 +47119,39 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: dc2e3b531bb34badab475d55e660cf7d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-18T10:42:17.041Z"} -->
+
+## 2026-11-18 — Pass WCH-11 testing: documentation for schedules and watches is complete and test suite passes
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** WCH-11
+
+**Because:** README.md, docs/agents-capabilities.md, and docs/assistant.md accurately cover all schedule kinds with examples, From/Until/run limit, finished and Start again, page gate rules and Only between, no-instructions watches, number watches and comparison, VALUE: and REMEMBER:, stop after first time, broken-check messages, daily caps, Test, and limits; git diff --check is clean; uv run pytest -q passes with exit code 0
+
+**Rejected:**
+
+- Fail WCH-11 — all required documentation items are covered accurately and full pytest suite passed cleanly
+
+**Test:** uv run pytest -q: 100% passed (exit code 0)
+
+**Files:** README.md, docs/agents-capabilities.md, docs/assistant.md
+
+<!-- whyline-event: 8dc9b7cf31654c8e98fe043fbb620a6b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T11:25:04.273Z"} -->
+
+## 2026-11-18 — Approve WCH-11 Round 3 documentation review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** WCH-11
+
+**Because:** README.md, docs/agents-capabilities.md, and docs/assistant.md cover every requested schedule and watch topic accurately; git diff --check is clean; uv run pytest -q reached completion with one unrelated relay setup popup timing failure, and that exact test passed immediately in isolation
+
+**Rejected:**
+
+- Request changes — the only test failure is an unrelated non-reproducible UI timing flake and the documentation matches the implementation
+
+**Files:** README.md, docs/agents-capabilities.md, docs/assistant.md
+
+<!-- whyline-event: 00bc437f0e3c49b2aafb4e64429de188 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-18T11:47:04.101Z"} -->

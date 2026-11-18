@@ -177,6 +177,16 @@ main CLI, backups and timeout:
   message per chat per hour. **Test gate now** shows what the gate finds.
   See [check-ins](docs/agents-capabilities.md#check-ins).
 
+- **Schedules and watches:** run an Agent once on a date, weekly, every N
+  minutes, hours or days, or several times a day, with From and Until dates
+  and a run limit. A finished agent can be **Start again**ed. The `page` gate
+  watches up to three web pages (changed, text appears, text is gone, or a
+  number below or above a limit) and sends the message itself when you leave
+  Instructions empty. **Test** shows what it would do. It can't log in, run a
+  browser or get past robot checks, and the Mac must be awake. See
+  [schedules](docs/agents-capabilities.md#schedules) and
+  [watching a page](docs/agents-capabilities.md#watching-a-web-page).
+
 Examples: a weekday dependency and security watch, a nightly summary of what
 changed in a repository, or a weekly review of open issues.
 

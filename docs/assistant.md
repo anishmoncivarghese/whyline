@@ -206,6 +206,24 @@ now** to see what the gate finds without running the agent. Command line:
 `whyline agents checkin add|list|test|off`. See
 [Agent CLI capabilities](agents-capabilities.md#check-ins) for the details.
 
+## Watching a page
+
+A saved agent can also watch a web page, run once on a date, run weekly, run
+only between two dates, or stop after a number of runs. whyline fetches the
+page itself and starts an agent only when the rule fires: the page changed,
+a text appears, a text is gone, or a number crosses a limit. With the
+Instructions box empty (for the first three), whyline sends the message
+itself and no agent runs. For a number, the agent answers with `VALUE:
+<number>` and whyline does the comparison. Press **Test** to see what would
+happen before turning it on. After a hit, **Stop after the first time**
+finishes the agent, and **Start again** turns it back on.
+
+Limits: at most one fetch of a page per 5 minutes; pages that need a login
+or a browser can't be read; whyline does not get past robot checks; and the
+Mac has to be on and awake. See
+[Watching a web page](agents-capabilities.md#watching-a-web-page) and
+[Schedules](agents-capabilities.md#schedules).
+
 ## Limits
 
 - The Mac must be on and awake. A brief or reminder due while it sleeps runs
