@@ -193,7 +193,7 @@ Rules every task keeps:
      - errors print the reason and exit 2
   Tests: each command calling its service function, `--every 30m`, `2h` and `3d` giving the right minutes and `--every 30s` refused with `the shortest interval is 5 minutes`, `test_watch` leaving state, memory, cache and records unchanged, and `watch off` restoring a plain agent.
 
-- [ ] WCH-8: The Schedule block in New agent
+- [x] WCH-8: The Schedule block in New agent
   Edit `src/whyline/console/agents_screens.py` (`NewAgentScreen` and the Agents list) and its tests only.
   1. **When** is one `Select`: Manual, Once, Daily, Weekdays, Weekly, Every, When a folder changes. Only the chosen kind's fields are shown:
      - Once: a date input and a time
