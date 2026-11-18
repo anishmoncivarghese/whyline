@@ -224,7 +224,7 @@ Rules every task keeps:
   4. Creating an agent from either opens New agent with the Watch section ticked and the address empty, and the agent is personal.
   Tests: both templates listed, each building a valid definition once an address is given, and the created agent being personal with its Watch section filled.
 
-- [ ] WCH-11: Docs
+- [x] WCH-11: Docs
   Edit `docs/agents-capabilities.md`, `docs/assistant.md` and `README.md` only.
   Cover: the schedule kinds with one example each, From, Until and the run limit, what finished means and Start again, the page gate's four rules and Only between, a watch with no instructions, the value watch and who does the comparison, `VALUE:` and `REMEMBER:`, stop after the first time, the broken-check message, the daily cap, Test, and the limits (5 minutes, logins, pages that need a browser, robot checks, the Mac has to be awake).
   Verify with `uv run pytest -q`.
