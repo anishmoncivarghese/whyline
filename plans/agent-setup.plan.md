@@ -57,7 +57,7 @@ Rules every task keeps:
   1. Add `<Screen> Checkbox:focus { border: none; }` to the `DEFAULT_CSS` of each of the three screens.
   Tests: `test_focused_picker_checkbox_keeps_its_label` (for each of the three: focus its first checkbox, then `content_region.height == 1`, as `test_a_focused_brainstorm_checkbox_keeps_its_label_visible` does), and `test_every_one_line_checkbox_has_a_focus_rule` (each selector in `src/whyline/console/` with a `Checkbox { … height: 1 …}` rule also has `Checkbox:focus { border: none; }` for the same selector).
 
-- [ ] PKR-2: Tests never use the real home folder
+- [x] PKR-2: Tests never use the real home folder
   Edit `tests/conftest.py`, and any test that fails once the guard is in, only.
   Why: on 2026-11-14 at 15:19, during the agent-tools relay, something run from the test suite wrote `~/.whyline/mcp.toml` with the fixture server from `tests/agents/test_definitions_tools.py` (`files`, command `cmd`, hash `h1`). Only tests that ask for a `home` fixture are protected today.
   1. An autouse fixture in `tests/conftest.py` sets `HOME` and `USERPROFILE` to a fresh temporary folder for every test. The existing `home` fixtures keep working and keep their own folder.
