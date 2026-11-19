@@ -47296,3 +47296,80 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 5d98040250554d67bdc65a4dbc5d3e8d -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-19T09:17:57.742Z"} -->
+
+## 2026-11-19 — Pickers rebuild their body in place after Open Tools closes, remembering every permission seen, ticked or not
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PKR-4
+
+**Because:** ToolsScreen has no start-tab option and PKR-4 may only edit agents_screens.py, so a local ToolsScreen subclass selects the tab after mount
+
+**Rejected:**
+
+- recompose the whole picker — ids would collide and ticks be lost
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 7bf140b262d84713b03090dea0f765cc -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T09:22:51.619Z"} -->
+
+## 2026-11-19 — Fail PKR-4 due to WorkerFailed NoMatches in ToolsScreen._checked on teardown
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PKR-4
+
+**Because:** test_open_tools_keeps_the_picks failed with NoMatches: No nodes match '#tl-setup-note' on _OnTab() when agy is installed because ToolsScreen._checked callback runs during/after dismiss. _OnTab needs to guard against detached #tl-setup-note and test_new_agent_pickers needs to isolate shutil.which
+
+**Rejected:**
+
+- Pass and ignore — flake directly crashes textual worker and will break CI or test runs on machines with agy installed
+
+**Files:** src/whyline/console/agents_screens.py, tests/console/test_new_agent_pickers.py
+
+<!-- whyline-event: f65163876a4e4c09b32f2c6ace9db138 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T09:54:11.340Z"} -->
+
+## 2026-11-19 — Guard ToolsScreen._checked in the picker's _OnTab subclass and stub shutil.which in the picker test fixture
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PKR-4
+
+**Because:** Background agy/grok readiness checks can land after the Tools screen is torn down and crash on #tl-setup-note; host binaries made the test machine-dependent
+
+**Rejected:**
+
+- Edit tools_screens.py — PKR-4 may only edit agents_screens.py and the picker test
+
+**Files:** src/whyline/console/agents_screens.py, tests/console/test_new_agent_pickers.py
+
+<!-- whyline-event: f41cc741444d4bc49411ae79923708f3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T09:54:55.910Z"} -->
+
+## 2026-11-19 — Approve pickers pointing to Tools library with guarded readiness check and isolated test fixture
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PKR-4
+
+**Because:** Pickers open the right Tools tab, rebuild state preserving selected tools and permissions, show proper empty and unusable states, and _OnTab safely ignores NoMatches during teardown; all 10 picker tests and full test suites (1928 console tests and 3390 project tests) passed
+
+**Files:** src/whyline/console/agents_screens.py, tests/console/test_new_agent_pickers.py
+
+<!-- whyline-event: 7fd004125b274cf0a08ddc4fe93afd7c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T10:19:45.652Z"} -->
+
+## 2026-11-19 — Approve PKR-4 picker links to the Tools library
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** PKR-4
+
+**Because:** The pickers open the correct Tools tabs, rebuild from library state while retaining surviving selections and permissions, show the required guidance and unusable connector states, and all 10 focused tests pass; two unrelated full-suite UI timing failures passed on immediate isolated rerun
+
+**Files:** src/whyline/console/agents_screens.py, tests/console/test_new_agent_pickers.py
+
+<!-- whyline-event: b9455f5bff52435b8524132280959875 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T10:44:35.589Z"} -->

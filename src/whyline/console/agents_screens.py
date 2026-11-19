@@ -1277,6 +1277,31 @@ class _TextPromptScreen(ModalScreen):
             self.dismiss(None)
 
 
+def _open_tools_tab(screen, tab: str, done) -> None:
+    """Open ToolsScreen on one tab; ``done`` runs when it closes."""
+    from whyline.console.tools_screens import ToolsScreen
+
+    class _OnTab(ToolsScreen):
+        def on_mount(self) -> None:
+            self.call_after_refresh(self._show_tab)
+
+        def _checked(self, cli: str, ready: bool) -> None:
+            # A background readiness check can land while this screen closes.
+            from textual.css.query import NoMatches
+
+            try:
+                super()._checked(cli, ready)
+            except NoMatches:
+                pass
+
+        def _show_tab(self) -> None:
+            from textual.widgets import TabbedContent
+
+            self.query_one("#tl-tabs", TabbedContent).active = tab
+
+    screen.app.push_screen(_OnTab(), done)
+
+
 class PackPickScreen(ModalScreen):
     """Checklist of knowledge packs. Dismisses with the chosen "pack:<name>" items."""
 
@@ -1291,7 +1316,7 @@ class PackPickScreen(ModalScreen):
         self._chosen = set(chosen)
         self._names: list[str] = []
 
-    def compose(self) -> ComposeResult:
+    def _widgets(self) -> list:
         from whyline.tools import knowledge
 
         packs = knowledge.list_packs()
@@ -1304,26 +1329,44 @@ class PackPickScreen(ModalScreen):
             )
             for i, pack in enumerate(packs)
         ]
+        return [VerticalScroll(*boxes) if boxes else Static(
+            "No packs yet. Make one in Tools.", id="pp-none")]
+
+    def compose(self) -> ComposeResult:
         yield Vertical(
             Label("Add pack"),
-            VerticalScroll(*boxes) if boxes else Static("No packs yet. Make one in Tools.", id="pp-none"),
+            Static("Packs come from your library.", id="pp-hint", markup=False),
+            Vertical(*self._widgets(), id="pp-body"),
             Horizontal(
                 Button("Done", id="pp-done", variant="primary"),
+                Button("Open Tools…", id="pp-open"),
                 Button("Cancel", id="pp-cancel"),
             ),
         )
 
-    def on_button_pressed(self, event: "Button.Pressed") -> None:
+    def _picked(self) -> list[str]:
         from whyline.tools import knowledge
 
+        return [
+            f"{knowledge.PACK_PREFIX}{name}" for i, name in enumerate(self._names)
+            if self.query(f"#pp-{i}") and self.query_one(f"#pp-{i}", Checkbox).value
+        ]
+
+    async def _rebuild(self, _result=None) -> None:
+        body = self.query_one("#pp-body")
+        await body.remove_children()
+        await body.mount(*self._widgets())
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
         event.stop()
+        if event.button.id == "pp-open":
+            self._chosen = set(self._picked())
+            _open_tools_tab(self, "tl-knowledge", self._rebuild)
+            return
         if event.button.id != "pp-done":
             self.dismiss(None)
             return
-        self.dismiss([
-            f"{knowledge.PACK_PREFIX}{name}" for i, name in enumerate(self._names)
-            if self.query_one(f"#pp-{i}", Checkbox).value
-        ])
+        self.dismiss(self._picked())
 
 
 class SkillPickScreen(ModalScreen):
@@ -1345,7 +1388,7 @@ class SkillPickScreen(ModalScreen):
         self._chosen = set(chosen)
         self._skills: list = []
 
-    def compose(self) -> ComposeResult:
+    def _widgets(self) -> list:
         from whyline.tools import skills
 
         self._skills = skills.find(None if self._scope == "personal" else self._root)
@@ -1360,23 +1403,40 @@ class SkillPickScreen(ModalScreen):
                 label, value=skill.ref in self._chosen and not skill.broken,
                 id=f"sk-{i}", disabled=skill.broken,
             ))
-        initial = sum(s.size for s in self._skills if s.ref in self._chosen and not s.broken)
+        return [VerticalScroll(*boxes) if boxes else Static(
+            "No skills found. Make one in Tools.", id="sk-none")]
+
+    def compose(self) -> ComposeResult:
+        widgets = self._widgets()
+        initial = sum(
+            s.size for s in self._skills if s.ref in self._chosen and not s.broken)
         yield Vertical(
             Label("Add skills"),
-            VerticalScroll(*boxes) if boxes else Static(
-                "No skills found. Make one in Tools.", id="sk-none"),
+            Static("Skills come from your library.", id="sk-hint", markup=False),
+            Vertical(*widgets, id="sk-body"),
             Static(self._size_text(initial), id="sp-size", markup=False),
             Static("", id="sp-error", markup=False),
             Horizontal(
                 Button("Done", id="sk-done", variant="primary"),
+                Button("Open Tools…", id="sk-open"),
                 Button("Cancel", id="sk-cancel"),
             ),
         )
 
+    async def _rebuild(self, _result=None) -> None:
+        body = self.query_one("#sk-body")
+        await body.remove_children()
+        await body.mount(*self._widgets())
+        self._show_size()
+
+    def _show_size(self) -> None:
+        self.query_one("#sp-size", Static).update(
+            self._size_text(sum(s.size for s in self._picked())))
+
     def _picked(self) -> list:
         return [
             skill for i, skill in enumerate(self._skills)
-            if self.query_one(f"#sk-{i}", Checkbox).value
+            if self.query(f"#sk-{i}") and self.query_one(f"#sk-{i}", Checkbox).value
         ]
 
     @staticmethod
@@ -1387,13 +1447,16 @@ class SkillPickScreen(ModalScreen):
 
     def on_checkbox_changed(self, event) -> None:
         event.stop()
-        self.query_one("#sp-size", Static).update(
-            self._size_text(sum(s.size for s in self._picked())))
+        self._show_size()
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         from whyline.tools import skills
 
         event.stop()
+        if event.button.id == "sk-open":
+            self._chosen = {s.ref for s in self._picked()}
+            _open_tools_tab(self, "tl-skills", self._rebuild)
+            return
         if event.button.id != "sk-done":
             self.dismiss(None)
             return
@@ -1437,21 +1500,29 @@ class ToolPickScreen(ModalScreen):
     def __init__(self, chosen: dict[str, str]) -> None:
         super().__init__()
         self._chosen = dict(chosen)
+        self._perms = dict(chosen)  # permission of every tool seen, ticked or not
         self._keys: list[tuple[str, object]] = []  # index -> (key, Tool)
+        self._empty = False
 
-    def compose(self) -> ComposeResult:
+    def _widgets(self) -> list:
         from whyline.tools import mcp_config
 
+        self._keys = []
         sections = []
+        unusable = []
         for server in mcp_config.load().values():
-            if not server.enabled or not server.tools:
+            if not server.enabled:
+                unusable.append(f"{server.name} · turned off")
+                continue
+            if not server.tools:
+                unusable.append(f"{server.name} · not tested yet")
                 continue
             rows = []
             for tool in server.tools:
                 i = len(self._keys)
                 key = f"{server.name}.{tool.name}"
                 self._keys.append((key, tool))
-                permission = self._chosen.get(key, default_permission(tool))
+                permission = self._perms.get(key, default_permission(tool))
                 warning = Static(
                     _WRITE_WARNING, id=f"tl-w-{i}", classes="tp-warning", markup=False)
                 warning.display = permission == "allowed" and tool.read_only is not True
@@ -1466,16 +1537,49 @@ class ToolPickScreen(ModalScreen):
                     warning,
                 ]
             sections.append(Collapsible(*rows, title=server.name, collapsed=False))
-        body = VerticalScroll(*sections) if sections else Static(
-            "No tools yet. Enable and test a server in Tools.", id="tl-none")
+        self._empty = not sections
+        lines = [Static(text, classes="tp-unusable", markup=False) for text in unusable]
+        if self._empty:
+            return [Static(
+                "No connectors yet. Add one in Tools, test it, then choose its tools here.",
+                id="tl-none", markup=False), *lines]
+        return [VerticalScroll(*sections), *lines]
+
+    def compose(self) -> ComposeResult:
+        widgets = self._widgets()
         yield Vertical(
             Label("Add tools"),
-            body,
+            Static(
+                "Tools come from your connectors. Tick the ones this agent may use, "
+                "and choose Allowed or Ask first for each.", id="tl-hint", markup=False),
+            Vertical(*widgets, id="tl-body"),
             Horizontal(
-                Button("Done", id="tl-done", variant="primary"),
+                Button("Done", id="tl-done", variant="default" if self._empty else "primary"),
+                Button("Open Tools…", id="tl-open",
+                       variant="primary" if self._empty else "default"),
                 Button("Cancel", id="tl-cancel"),
             ),
         )
+
+    def _collect(self) -> dict[str, str]:
+        """Ticks and permissions on screen; remembers both for the next rebuild."""
+        picked: dict[str, str] = {}
+        for i, (key, _tool) in enumerate(self._keys):
+            if not self.query(f"#tl-c-{i}"):
+                continue
+            value = self.query_one(f"#tl-s-{i}", Select).value
+            permission = value if value in ("allowed", "ask") else "ask"
+            self._perms[key] = permission
+            if self.query_one(f"#tl-c-{i}", Checkbox).value:
+                picked[key] = permission
+        return picked
+
+    async def _rebuild(self, _result=None) -> None:
+        body = self.query_one("#tl-body")
+        await body.remove_children()
+        await body.mount(*self._widgets())
+        self.query_one("#tl-done", Button).variant = "default" if self._empty else "primary"
+        self.query_one("#tl-open", Button).variant = "primary" if self._empty else "default"
 
     def on_select_changed(self, event: "Select.Changed") -> None:
         select_id = event.select.id or ""
@@ -1490,15 +1594,14 @@ class ToolPickScreen(ModalScreen):
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         event.stop()
+        if event.button.id == "tl-open":
+            self._chosen = self._collect()
+            _open_tools_tab(self, "tl-connectors", self._rebuild)
+            return
         if event.button.id != "tl-done":
             self.dismiss(None)
             return
-        picked: dict[str, str] = {}
-        for i, (key, _tool) in enumerate(self._keys):
-            if self.query_one(f"#tl-c-{i}", Checkbox).value:
-                value = self.query_one(f"#tl-s-{i}", Select).value
-                picked[key] = value if value in ("allowed", "ask") else "ask"
-        self.dismiss(picked)
+        self.dismiss(self._collect())
 
 
 def tools_summary(defn: d.AgentDef) -> str:
