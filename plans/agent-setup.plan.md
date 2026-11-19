@@ -127,7 +127,7 @@ Rules every task keeps:
   5. **New folder…** asks for a name, refuses `/`, `..` and an existing name, creates it and enters it.
   Tests: `test_picker_returns_only_real_folders`, Up, Home, the path box with `~`, hidden entries, the unreadable folder, the 500 cap, New folder and its refusals, and the files and many modes.
 
-- [ ] FLD-2: A default folder for new agents
+- [x] FLD-2: A default folder for new agents
   Create `src/whyline/agents/defaults.py` and `tests/agents/test_defaults.py`. Edit `src/whyline/console/settings_screen.py`, `src/whyline/cli.py` and their tests.
   1. `defaults.folder() -> Path` reads `default_folder` from `paths.settings_file("defaults.toml")`, expanding `~`. With no file, or a folder that no longer exists, it is the home folder.
   2. `defaults.set_folder(path)` refuses a path that is not an existing folder, and stores it with `~` in place of the home folder.
