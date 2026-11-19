@@ -118,7 +118,7 @@ Rules every task keeps:
   3. `whyline agents new` and `whyline agents edit` (where they take `--model`) gain `--model-for <cli>=<id>`, repeatable. `--model` keeps meaning the main CLI's model.
   Tests: the listing, add and remove, `--model-for` on a backup, and a CLI that is not the agent's refused with the definition's message.
 
-- [ ] FLD-1: A folder and file picker
+- [x] FLD-1: A folder and file picker
   Create `src/whyline/console/pickers.py` and `tests/console/test_pickers.py` only.
   1. `PathPickScreen(start: Path, *, files: bool = False, many: bool = False, title: str)`: a list of the current folder's entries (folders first, hidden entries off unless **Show hidden** is ticked), with **Up**, **Home**, **New folder…**, a path box that accepts a pasted or typed path (with `~`), **Choose** and **Cancel**.
   2. With `files=False` only folders are listed and **Choose** returns the current folder. With `files=True` files are listed too, and with `many=True` they have checkboxes and **Choose** returns the ticked ones.
