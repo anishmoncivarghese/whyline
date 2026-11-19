@@ -143,7 +143,7 @@ Rules every task keeps:
   3. Knowledge → **Add files** opens `PathPickScreen(files=True, many=True)` starting at **Runs in**, and adds the ticked files. Typing a path still works through the picker's path box.
   Tests: Browse writing the folder back, the new agent's starting folder following the setting, an edited agent keeping its folder, and Add files adding several ticked files.
 
-- [ ] SKC-1: Skills from the other CLIs' folders
+- [x] SKC-1: Skills from the other CLIs' folders
   Edit `src/whyline/tools/skills.py`, `src/whyline/console/tools_screens.py` and their tests only.
   1. `_places` adds `("agents", ~/.agents/skills)` and `("codex", ~/.codex/skills)` after `claude`. `ORIGINS` gains both.
   2. `copy_to_whyline` accepts any origin that is not whyline's own, and its message becomes `Only skills from another tool's folder are copied; this one is already whyline's.`
