@@ -111,7 +111,7 @@ Rules every task keeps:
   7. The form still fits 80x24 by scrolling as it does today.
   Tests: the options and their order, the backup dropdown appearing with its tick, `Other…` adding and selecting, the refill on a Main CLI change, Refresh keeping the selection, the disabled case, an edited agent's unlisted model kept, and the Review line and warning.
 
-- [ ] AMD-4: Models from the CLI
+- [x] AMD-4: Models from the CLI
   Edit `src/whyline/cli.py` and its tests only.
   1. `whyline agents models <cli> [--refresh]` prints the list from `models.options`, one id per line, with `(added by you)` after the user's own.
   2. `whyline agents models <cli> --add <id>` and `--remove <id>` call `models.add` and `models.remove`.
