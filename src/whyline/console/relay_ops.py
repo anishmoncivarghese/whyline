@@ -17,6 +17,7 @@ from dataclasses import dataclass, replace as dc_replace
 from datetime import datetime
 from pathlib import Path
 
+from whyline import models as _catalog
 from whyline.console.adapters import BRAINSTORM_LABELS
 
 PLANS_DIR = "plans"
@@ -861,25 +862,7 @@ def save_release(root: Path, value: str) -> None:
     setup.write_release(root, value)
 
 
-AGENT_MODELS: dict[str, list[str]] = {
-    "claude": [
-        "opus",
-        "sonnet",
-        "haiku",
-        "claude-opus-5-5",
-        "claude-sonnet-4-6",
-        "claude-opus-4-6",
-    ],
-    "codex": [
-        "gpt-5.6-sol",
-        "gpt-5.6",
-        "gpt-5-codex",
-    ],
-    "grok": [
-        "grok-4.6",
-        "grok-4",
-    ],
-}
+AGENT_MODELS = _catalog.AGENT_MODELS
 
 _CLAUDE_ALIASES = ("opus", "sonnet", "haiku")
 _CLAUDE_MODEL_ID = re.compile(r"claude-[a-z]+-\d+(-\d+)*")
@@ -903,44 +886,16 @@ def valid_model(agent: str, model: str) -> str | None:
     return None
 
 
-_AGY_MODELS_TIMEOUT = 10
-_AGY_NEGATIVE_TTL = 60.0
 _clock = time.monotonic
 _agy_runner = subprocess.run
 
-
-@dataclass(frozen=True)
-class _AgyMiss:
-    """Negative cache for a failed or empty `agy models` run."""
-
-    expires_at: float
-
-
-# None = never tried; list = session-long success; _AgyMiss = failure/empty TTL.
-_AGY_MODELS_CACHE: list[tuple[str, str]] | _AgyMiss | None = None
-
-
-def clear_antigravity_models_cache() -> None:
-    global _AGY_MODELS_CACHE
-    _AGY_MODELS_CACHE = None
+clear_antigravity_models_cache = _catalog.clear_antigravity_models_cache
+_parse_agy_models = _catalog.parse_listing
 
 
 def antigravity_models_status(*, now: float | None = None) -> str:
-    """Cache state for Antigravity's dynamic catalogue: `untried`, `ok`, or `failed`.
-
-    `None` is only the untried cache slot. A failed or empty fetch is an
-    `_AgyMiss`, so tests can tell those states apart. After the negative TTL
-    the status becomes `untried` again and a later fetch may retry.
-    """
-    cache = _AGY_MODELS_CACHE
-    if cache is None:
-        return "untried"
-    if isinstance(cache, _AgyMiss):
-        tick = _clock() if now is None else now
-        if tick < cache.expires_at:
-            return "failed"
-        return "untried"
-    return "ok"
+    """Cache state for Antigravity's catalogue: `untried`, `ok`, or `failed`."""
+    return _catalog.antigravity_models_status(now=now)
 
 
 def cached_model_options(agent: str, *, now: float | None = None) -> list[tuple[str, str]] | None:
@@ -951,81 +906,23 @@ def cached_model_options(agent: str, *, now: float | None = None) -> list[tuple[
     call `antigravity_models_status` to tell those two None cases apart.
     """
     if agent == "antigravity":
-        if antigravity_models_status(now=now) == "ok" and isinstance(
-            _AGY_MODELS_CACHE, list
-        ):
-            return list(_AGY_MODELS_CACHE)
+        if antigravity_models_status(now=now) == "ok":
+            return _catalog.antigravity_cached()
         return None
     if agent in AGENT_MODELS:
         return [(m, m) for m in AGENT_MODELS[agent]]
     return None
 
 
-def _parse_agy_models(stdout: str) -> list[tuple[str, str]]:
-    models: list[tuple[str, str]] = []
-    for line in stdout.splitlines():
-        line = line.strip()
-        if not line or line.startswith("Fetching") or line.startswith("⠋") or line.startswith("..."):
-            continue
-        parts = line.split("\t")
-        if len(parts) >= 2:
-            model_id = parts[0].strip()
-            label = parts[1].strip()
-        else:
-            tokens = line.split(None, 1)
-            if not tokens:
-                continue
-            model_id = tokens[0].strip()
-            label = tokens[1].strip() if len(tokens) > 1 else model_id
-        if model_id and (label, model_id) not in models:
-            models.append((label, model_id))
-    return models
-
-
 def antigravity_models(
     *, runner=None, clock=None, now: float | None = None
 ) -> list[tuple[str, str]] | None:
-    """Fetch `agy models` unless a live cache says not to.
-
-    Success is cached for the console session. Failure, an empty list, and
-    an exception are cached for 60 seconds using `clock` (default
-    `time.monotonic`), sampled when the miss is recorded after the call
-    completes. Returns the (label, model_id) list, or None on
-    failure/empty/negative cache.
-    """
-    global _AGY_MODELS_CACHE
-    tick_fn = clock or _clock
-    run = runner if runner is not None else _agy_runner
-    tick = tick_fn() if now is None else now
-    status = antigravity_models_status(now=tick)
-    if status == "ok" and isinstance(_AGY_MODELS_CACHE, list):
-        return list(_AGY_MODELS_CACHE)
-    if status == "failed":
-        return None
-
-    def record_miss() -> None:
-        global _AGY_MODELS_CACHE
-        _AGY_MODELS_CACHE = _AgyMiss(tick_fn() + _AGY_NEGATIVE_TTL)
-
-    try:
-        res = run(
-            ["agy", "models"],
-            capture_output=True,
-            text=True,
-            timeout=_AGY_MODELS_TIMEOUT,
-        )
-        if res.returncode != 0:
-            record_miss()
-            return None
-        models = _parse_agy_models(res.stdout)
-        if not models:
-            record_miss()
-            return None
-        _AGY_MODELS_CACHE = models
-        return list(models)
-    except Exception:
-        record_miss()
-        return None
+    """Fetch `agy models` unless a live cache says not to (see `whyline.models`)."""
+    return _catalog.antigravity_models(
+        runner=runner if runner is not None else _agy_runner,
+        clock=clock or _clock,
+        now=now,
+    )
 
 
 def model_options_for_agent(agent: str, *, now: float | None = None) -> list[tuple[str, str]] | None:

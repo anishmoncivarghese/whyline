@@ -47373,3 +47373,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b9455f5bff52435b8524132280959875 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-19T10:44:35.589Z"} -->
+
+## 2026-11-19 — Moved model lists and Antigravity listing into whyline.models; relay_ops keeps thin wrappers
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AMD-1
+
+**Because:** relay_ops tests monkeypatch relay_ops._agy_runner, so the wrapper passes it through to models
+
+**Rejected:**
+
+- Re-export models.antigravity_models directly — breaks the _agy_runner monkeypatch the console tests rely on
+
+**Files:** src/whyline/models.py
+
+<!-- whyline-event: 4b9a6492d297468fa3ab0783293924e0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T10:48:05.952Z"} -->
+
+## 2026-11-19 — Approve AMD-1 unified model catalogue implementation: all acceptance tests pass and full test suite clean
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** AMD-1
+
+**Because:** Verified whyline.models (AGENT_MODELS, LISTERS, options, cached, stale, add, remove, Antigravity session cache/parser) satisfies all requirements; tests/test_models.py (6 passed), tests/console/test_relay_ops.py and test_relay_setup_screen.py (249 passed), and full pytest suite (5422 passed) succeeded
+
+**Files:** src/whyline/models.py, src/whyline/console/relay_ops.py, tests/test_models.py
+
+<!-- whyline-event: fb946a6d5eed4b4baf84759a71edc06b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T11:17:48.911Z"} -->
+
+## 2026-11-19 — Approve AMD-1 unified model catalogue in round-three review
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AMD-1
+
+**Because:** The diff satisfies the requested merge, persistence, stale, validation, failure, timeout, and relay compatibility behavior; tests cover each acceptance case; uv run pytest -q exited 0
+
+**Files:** src/whyline/models.py, src/whyline/console/relay_ops.py, tests/test_models.py
+
+<!-- whyline-event: 17f1bfab74ce43cf86c3791fa9b70189 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T11:42:54.889Z"} -->
