@@ -489,6 +489,16 @@ def _add_agents(subparsers: "argparse._SubParsersAction") -> None:
     new.add_argument("--from", dest="template", required=True, metavar="TEMPLATE")
     new.add_argument("--name", default=None, metavar="N")
     new.add_argument("--workdir", default=None, metavar="DIR")
+    new.add_argument("--model", default=None, metavar="ID", help="the main CLI's model")
+    new.add_argument(
+        "--model-for", dest="model_for", action="append", default=[], metavar="CLI=ID",
+        help="a model for one CLI (the main or a backup); repeatable")
+    models_cmd = sub.add_parser("models", help="Models a CLI can use, and your own additions")
+    models_cmd.add_argument("cli")
+    models_cmd.add_argument("--refresh", action="store_true", help="ask the CLI for its list again")
+    models_edit = models_cmd.add_mutually_exclusive_group()
+    models_edit.add_argument("--add", metavar="ID", help="add a model id to the list")
+    models_edit.add_argument("--remove", metavar="ID", help="remove a model id you added")
     sub.add_parser("tick", help="Run due agents (called by the scheduler)")
     sub.add_parser("approvals", help="Tool calls waiting for your yes or no")
     for word in ("approve", "deny"):
@@ -2118,6 +2128,16 @@ def cmd_agents(args: argparse.Namespace) -> int:
                 label = row.defn.label if isinstance(row.defn, d.AgentDef) else f"{row.defn.path.name} (broken)"
                 print(f"{label:<32} {row.when:<28} {row.status:<14} {row.last_outcome}")
             return EXIT_OK
+        if args.agents_command == "models":
+            from whyline import models as model_catalog
+
+            if args.add or args.remove:
+                (model_catalog.add if args.add else model_catalog.remove)(args.cli, args.add or args.remove)
+                return EXIT_OK
+            mine = set(model_catalog._added(model_catalog._entry(model_catalog._load(), args.cli)))
+            for _label, model_id in model_catalog.options(args.cli, refresh=args.refresh):
+                print(f"{model_id} (added by you)" if (model_id, model_id) in mine else model_id)
+            return EXIT_OK
         if args.agents_command == "templates":
             from whyline.agents import templates
 
@@ -2129,9 +2149,24 @@ def cmd_agents(args: argparse.Namespace) -> int:
                 print(f"{item.name:<20} {item.title:<24} {item.about}".rstrip())
             return EXIT_OK
         if args.agents_command == "new":
+            import dataclasses
+
             from whyline.agents import templates
 
-            defn = templates.create(args.template, args.name, args.workdir)
+            wanted = {}
+            for item in args.model_for:
+                cli_name, sep, model_id = item.partition("=")
+                if not sep or not cli_name.strip() or not model_id.strip():
+                    print(f"--model-for needs CLI=ID, not '{item}'.", file=sys.stderr)
+                    return EXIT_USAGE
+                wanted[cli_name.strip()] = model_id.strip()
+            built = None
+            if args.model or wanted:
+                built = templates.build(args.template, args.name, args.workdir)
+                if args.model:
+                    wanted.setdefault(built.runner, args.model.strip())
+                built = dataclasses.replace(built, model="", models={**built.models, **wanted})
+            defn = templates.create(args.template, args.name, args.workdir, defn=built)
             home_s = Path.home().as_posix().rstrip("/")
             shown = defn.path.as_posix()
             if home_s and shown.startswith(home_s + "/"):

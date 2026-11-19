@@ -68,3 +68,41 @@ def test_agents_templates_and_new_from_template_cli(repo, home, tmp_path, monkey
     assert cli.main(["agents", "new", "--from", "no-such-template"]) != 0
     assert "unknown template" in capsys.readouterr().err
 
+
+def test_agents_models_lists_adds_and_removes(home, capsys):
+    assert cli.main(["agents", "models", "codex", "--add", "my-model"]) == 0
+    assert capsys.readouterr().out == ""
+    assert cli.main(["agents", "models", "codex"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert "gpt-5.6" in lines
+    assert "my-model (added by you)" in lines
+    assert cli.main(["agents", "models", "codex", "--remove", "my-model"]) == 0
+    capsys.readouterr()
+    assert cli.main(["agents", "models", "codex"]) == 0
+    assert "my-model" not in capsys.readouterr().out
+    assert cli.main(["agents", "models", "codex", "--add", "bad id!"]) != 0
+    assert "not a model id" in capsys.readouterr().err
+
+
+def test_agents_new_model_and_model_for_backup(home, tmp_path, capsys):
+    assert cli.main([
+        "agents", "new", "--from", "example-digest", "--name", "m1", "--workdir", str(tmp_path / "w"),
+        "--model", "sonnet", "--model-for", "codex=gpt-5.6",
+    ]) == 0
+    capsys.readouterr()
+    text = (home / ".whyline/agents/m1.toml").read_text()
+    assert '"claude" = "sonnet"' in text
+    assert '"codex" = "gpt-5.6"' in text
+
+
+def test_agents_new_model_for_other_cli_is_refused(home, tmp_path, capsys):
+    code = cli.main([
+        "agents", "new", "--from", "example-digest", "--name", "m2", "--workdir", str(tmp_path / "w"),
+        "--model-for", "grok=grok-4",
+    ])
+    assert code != 0
+    assert "models names grok, which is not the runner or a backup" in capsys.readouterr().err
+    assert not (home / ".whyline/agents/m2.toml").exists()
+    assert cli.main(["agents", "new", "--from", "example-digest", "--model-for", "oops"]) != 0
+    assert "CLI=ID" in capsys.readouterr().err
+

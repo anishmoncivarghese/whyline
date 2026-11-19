@@ -47549,3 +47549,59 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 957ad7913c9b445eaee6f9ed44dc5fc4 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-19T14:46:09.585Z"} -->
+
+## 2026-11-19 — agents new gets --model/--model-for; no agents edit exists so only new changed
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AMD-4
+
+**Because:** the task named edit 'where they take --model'; the CLI has no edit command, and --model-for builds the definition then lets parse/render refuse a CLI that is not runner or backup
+
+**Rejected:**
+
+- Adding agents edit — out of scope for this task
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: 87c69235899646c2ac1c083731e6a34e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T14:47:52.542Z"} -->
+
+## 2026-11-19 — Fail AMD-4: top-level import dataclasses in src/whyline/cli.py regresses module import budget
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** AMD-4
+
+**Because:** Top-level import dataclasses in src/whyline/cli.py causes tests/test_perf.py::test_importing_whyline_pulls_in_few_modules to fail (pulls in 71 modules against budget of 60); moving the import into the command handler fixes the regression
+
+**Files:** src/whyline/cli.py
+
+<!-- whyline-event: a0478d2a82aa4c9c8afe88eac5495eef -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T15:14:39.949Z"} -->
+
+## 2026-11-19 — Pass AMD-4: deferred dataclasses import restores import budget, models CLI commands and --model-for function correctly
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** AMD-4
+
+**Because:** Moving import dataclasses into cmd_agents fixed test_importing_whyline_pulls_in_few_modules, tests/agents/test_cli_agents.py verifies models listing/add/remove/--model-for behavior, and the full test suite passed (5347 passed, 1 skipped)
+
+**Files:** src/whyline/cli.py, tests/agents/test_cli_agents.py
+
+<!-- whyline-event: b6096acea9114dda978283b4a75ebcb6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T15:39:23.613Z"} -->
+
+## 2026-11-19 — Approve AMD-4 CLI model listing, catalog edits, and per-CLI agent model selection
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AMD-4
+
+**Because:** The diff implements models listing with user-added labels, add/remove through the model catalog, and new-agent main/backup model overrides with definition-level refusal of unrelated CLIs; the requested tests cover each behavior, git diff --check passed, and the independent plain full suite uv run pytest -q completed at 100% with exit 0
+
+**Files:** src/whyline/cli.py, tests/agents/test_cli_agents.py
+
+<!-- whyline-event: 7b252bfa971e4fbda613890c141266e8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T16:03:30.401Z"} -->
