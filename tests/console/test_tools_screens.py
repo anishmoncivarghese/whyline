@@ -133,6 +133,24 @@ async def test_claude_skill_offers_only_copy_and_copy_works(home, tmp_path):
         assert not screen.query_one("#tl-skill-edit").disabled
 
 
+@pytest.mark.parametrize("ref, label", [
+    ("agents:shared", "~/.agents"), ("codex:fromcodex", "Codex")])
+async def test_other_tool_folders_show_origin_and_copy(home, tmp_path, ref, label):
+    make_skill(home / ".agents" / "skills", "shared", "Agents one")
+    make_skill(home / ".codex" / "skills", "fromcodex", "Codex one")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 50)) as pilot:
+        screen = await open_tools(pilot, app, "tl-skills")
+        assert skill_rows(screen)[ref][0] == label
+        pick_skill(screen, ref)
+        await pilot.pause()
+        assert not screen.query_one("#tl-skill-copy").disabled
+        assert screen.query_one("#tl-skill-edit").disabled
+        await pilot.click("#tl-skill-copy")
+        await pilot.pause()
+        assert f"Copied to whyline:{ref.split(':')[1]}" in text(screen, "#tl-skill-status")
+
+
 async def test_new_skill_personal_and_repository(home, tmp_path):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(140, 50)) as pilot:

@@ -1,8 +1,10 @@
 """The skills library: folders holding a ``SKILL.md`` that agents may be given.
 
-Skills are read from four places, in this order: ``~/.whyline/skills/``,
-``<root>/.whyline/skills/``, ``~/.claude/skills/`` and ``<root>/.claude/skills/``.
-Only whyline skills can be changed here; Claude skills are copied first."""
+Skills are read from these places, in this order: ``~/.whyline/skills/``,
+``<root>/.whyline/skills/``, ``~/.claude/skills/``, ``~/.agents/skills/``,
+``~/.codex/skills/`` and ``<root>/.claude/skills/``. The same skill (name and
+``SKILL.md`` text) found twice is listed once, under the first place.
+Only whyline skills can be changed here; the others are copied first."""
 from __future__ import annotations
 
 import re
@@ -15,8 +17,10 @@ from whyline.tools import users
 SKILL_LIMIT = 20_000
 AGENT_SKILLS_LIMIT = 60_000
 
-ORIGINS = ("whyline", "whyline-repo", "claude", "claude-project")
+ORIGINS = ("whyline", "whyline-repo", "claude", "agents", "codex", "claude-project")
+OWN_ORIGINS = ("whyline", "whyline-repo")
 CLAUDE_REFUSAL = "Claude skills are read where they are. Copy to whyline to change it."
+NOT_COPIED = "Only skills from another tool's folder are copied; this one is already whyline's."
 
 _NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
@@ -50,6 +54,8 @@ def _places(root: Path | None) -> list[tuple[str, Path]]:
     if root is not None:
         places.append(("whyline-repo", Path(root) / ".whyline" / "skills"))
     places.append(("claude", home / ".claude" / "skills"))
+    places.append(("agents", home / ".agents" / "skills"))
+    places.append(("codex", home / ".codex" / "skills"))
     if root is not None:
         places.append(("claude-project", Path(root) / ".claude" / "skills"))
     return places
@@ -107,7 +113,29 @@ def _load(origin: str, folder: Path) -> Skill:
     return Skill(origin, folder.name, description, folder, size, names, problem)
 
 
+def _text(skill: Skill) -> str | None:
+    try:
+        return (skill.path / "SKILL.md").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
 def find(root: Path | None = None) -> list[Skill]:
+    """Every skill, with a copy of one already listed (same name and text) left out."""
+    seen: set[tuple[str, str]] = set()
+    listed: list[Skill] = []
+    for skill in _scan(root):
+        text = _text(skill)
+        if text is not None:
+            key = (skill.name, text)
+            if key in seen:
+                continue
+            seen.add(key)
+        listed.append(skill)
+    return listed
+
+
+def _scan(root: Path | None) -> list[Skill]:
     found: list[Skill] = []
     for origin, place in _places(root):
         if not place.is_dir():
@@ -122,7 +150,7 @@ def get(ref: str, root: Path | None = None) -> Skill:
     origin, sep, name = ref.partition(":")
     if not sep or origin not in ORIGINS or not name:
         raise ValueError(f"A skill is named origin:name, for example whyline:{name or 'notes'}.")
-    for skill in find(root):
+    for skill in _scan(root):
         if skill.origin == origin and skill.name == name:
             return skill
     raise KeyError(ref)
@@ -159,8 +187,8 @@ def create(name: str, description: str, body: str, *, repo_root: Path | None = N
 
 def copy_to_whyline(ref: str, root: Path | None = None) -> Skill:
     source = get(ref, root)
-    if not source.origin.startswith("claude"):
-        raise ValueError("Only Claude skills are copied; this one is already whyline's.")
+    if source.origin in OWN_ORIGINS:
+        raise ValueError(NOT_COPIED)
     target = _whyline_dir(None) / source.name
     if target.exists():
         raise ValueError(f"A whyline skill named {source.name} already exists.")
@@ -171,7 +199,7 @@ def copy_to_whyline(ref: str, root: Path | None = None) -> Skill:
 
 def _writable(ref: str, root: Path | None) -> Skill:
     skill = get(ref, root)
-    if skill.origin.startswith("claude"):
+    if skill.origin not in OWN_ORIGINS:
         raise ValueError(CLAUDE_REFUSAL)
     return skill
 

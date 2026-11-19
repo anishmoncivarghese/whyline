@@ -46,6 +46,28 @@ def test_discovery_from_all_four_places_in_order(home, repo):
     assert skills.get("claude-project:d", repo).description == "Does a thing"
 
 
+def test_agents_and_codex_places_found_and_copied(home, repo):
+    _skill(home / ".agents" / "skills", "a1")
+    _skill(home / ".codex" / "skills", "x1")
+    assert [s.ref for s in skills.find(None)] == ["agents:a1", "codex:x1"]
+    assert skills.copy_to_whyline("agents:a1", repo).ref == "whyline:a1"
+    assert skills.copy_to_whyline("codex:x1", repo).ref == "whyline:x1"
+    with pytest.raises(ValueError, match="already whyline's"):
+        skills.copy_to_whyline("whyline:a1", repo)
+    with pytest.raises(ValueError):
+        skills.edit("codex:x1", repo, description="x")
+
+
+def test_same_skill_listed_once_differing_pair_kept(home, repo):
+    for place in (".claude", ".agents", ".codex"):
+        _skill(home / place / "skills", "same")
+    _skill(home / ".claude" / "skills", "diff", description="One")
+    _skill(home / ".codex" / "skills", "diff", description="Two")
+    refs = [s.ref for s in skills.find(None)]
+    assert refs == ["claude:diff", "claude:same", "codex:diff"]
+    assert skills.get("codex:same", None).name == "same"  # still addressable
+
+
 def test_front_matter_parsing():
     text = "---\nname: x\ndescription: \"Quoted: yes\"\nother\n---\nbody"
     assert skills.parse_front_matter(text) == {"name": "x", "description": "Quoted: yes"}
@@ -120,7 +142,7 @@ def test_cli(home, repo, monkeypatch, capsys):
     capsys.readouterr()
     assert cli.main(["tools", "skills", "list"]) == 0
     out = capsys.readouterr().out
-    assert "whyline:mine" in out and "whyline:c" in out and "claude:c" in out
+    assert "whyline:mine" in out and "whyline:c" in out and "claude:c" not in out  # the copy hides the same one
     assert cli.main(["tools", "skills", "show", "whyline:mine"]) == 0
     assert cli.main(["tools", "skills", "edit", "claude:c", "--description", "x"]) == 1
     assert "Copy to whyline" in capsys.readouterr().err

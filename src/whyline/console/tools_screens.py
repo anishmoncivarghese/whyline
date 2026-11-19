@@ -24,6 +24,8 @@ _ORIGIN_LABEL = {
     "whyline": "whyline",
     "whyline-repo": "whyline · repo",
     "claude": "Claude",
+    "agents": "~/.agents",
+    "codex": "Codex",
     "claude-project": "Claude · project",
 }
 _PERSONAL, _REPO = "personal", "repo"
@@ -587,7 +589,7 @@ class ToolsScreen(ModalScreen):
                 if s.ref == select:
                     table.move_cursor(row=index)
         if not found:
-            self._skill_say("No skills yet. Write one, or copy one from Claude.")
+            self._skill_say("No skills yet. Write one, or copy one from another tool.")
         self._skill_buttons()
 
     def _skill_selected(self) -> str | None:
@@ -598,9 +600,9 @@ class ToolsScreen(ModalScreen):
 
     def _skill_buttons(self) -> None:
         ref = self._skill_selected()
-        claude = ref is not None and ref.startswith("claude")
-        mine = ref is not None and not claude
-        self.query_one("#tl-skill-copy", Button).disabled = not claude
+        mine = ref is not None and ref.partition(":")[0] in skills.OWN_ORIGINS
+        other = ref is not None and not mine
+        self.query_one("#tl-skill-copy", Button).disabled = not other
         self.query_one("#tl-skill-edit", Button).disabled = not mine
         self.query_one("#tl-skill-remove", Button).disabled = not mine
 
@@ -638,7 +640,7 @@ class ToolsScreen(ModalScreen):
         ref = self._skill_selected()
         if ref is None:
             self._skill_say("Pick a skill first.")
-        elif ref.startswith("claude"):
+        elif ref.partition(":")[0] not in skills.OWN_ORIGINS:
             self._skill_say(skills.CLAUDE_REFUSAL)
         else:
             self._skill_form(ref)

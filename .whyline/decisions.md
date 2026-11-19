@@ -47789,3 +47789,72 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b1114348ed8948dba7ca44433a24e0f1 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-19T20:31:47.332Z"} -->
+
+## 2026-11-19 — find() hides a skill whose name and SKILL.md text match an earlier one; get() still scans all places
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SKC-1
+
+**Because:** Spec lists a duplicate once under the first place, but refs like claude:x must still resolve (copy-twice error, CLI)
+
+**Rejected:**
+
+- dedupe inside get too — refs shown earlier would stop resolving
+
+**Files:** src/whyline/tools/skills.py
+
+<!-- whyline-event: d220722c4d4d4fe58a97750e1ba4f311 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T20:34:17.912Z"} -->
+
+## 2026-11-19 — Pass SKC-1: Skills from the other CLIs' folders
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SKC-1
+
+**Because:** Verified agents (~/.agents/skills) and codex (~/.codex/skills) places discovery, copy_to_whyline for non-whyline origins with updated message, deduplication keeping first place in order when name and SKILL.md match while keeping differing pairs, and console Tools library Skills tab displaying origin labels and enabling Copy for non-whyline skills; 29 skills and tools_screens tests pass along with agent scope tests and full test suite.
+
+**Files:** src/whyline/tools/skills.py, src/whyline/console/tools_screens.py
+
+<!-- whyline-event: 99e1c7d9d827466aaf555ad22bbb8fa9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T21:03:33.827Z"} -->
+
+## 2026-11-19 — Reject SKC-1 because the new console coverage is nondeterministic
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** SKC-1
+
+**Because:** The required plain full suite failed at tests/console/test_tools_screens.py:152 when the second copy click after a table reload did not dispatch; the focused test passes alone, so each origin should be isolated in its own parametrized UI session or the test must robustly await the post-click state before approval.
+
+**Files:** tests/console/test_tools_screens.py
+
+<!-- whyline-event: 31ef6cd8bc2b4f35a0d00fe7d2a28b53 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T21:28:54.570Z"} -->
+
+## 2026-11-19 — Pass SKC-1: Skills from the other CLIs' folders with deterministic console tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SKC-1
+
+**Because:** Verified agents (~/.agents/skills) and codex (~/.codex/skills) places discovery, copy_to_whyline for non-whyline origins with updated message, deduplication keeping first place in order when name and SKILL.md match while keeping differing pairs, and console Tools library Skills tab displaying origin labels and enabling Copy for non-whyline skills; parametrized console tests isolate origin copy flows deterministically and full suite (4455 tests) passes with exit code 0.
+
+**Files:** src/whyline/tools/skills.py
+
+<!-- whyline-event: dc5c80d48a024812b23445f736972a63 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T22:38:19.601Z"} -->
+
+## 2026-11-19 — Approve SKC-1: agents and codex skill places with isolated console copy tests
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SKC-1
+
+**Because:** Working-tree matches the spec: _places and ORIGINS add agents then codex after claude; copy_to_whyline accepts any origin outside OWN_ORIGINS with the new already-whyline message; find() lists the same name and SKILL.md once under the first place while get() still resolves hidden refs; the Skills tab shows origin labels and Copy for non-whyline skills. Tests cover both new places, copy from each, duplicate-once vs differing pair, and the existing personal-agent repo-skill refusal. Parametrized console tests use one UI session per origin, which addresses the prior full-suite flake at the second copy click. uv run pytest -q exited 0.
+
+**Files:** src/whyline/tools/skills.py
+
+<!-- whyline-event: 9207815b66974547b73fdd6d8caa0764 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T23:26:53.750Z"} -->
