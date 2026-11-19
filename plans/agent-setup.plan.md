@@ -136,7 +136,7 @@ Rules every task keeps:
   5. No existing agent is changed.
   Tests: the default with no file, a missing folder falling back to home, the refusal, `~` stored, the Settings section saving through `set_folder`, and the CLI.
 
-- [ ] FLD-3: Browse in New agent
+- [x] FLD-3: Browse in New agent
   Edit `src/whyline/console/agents_screens.py` and its tests only.
   1. **Runs in** gets **Browse…**, opening `PathPickScreen` at the field's value (or `defaults.folder()` when it is empty or missing) and writing the chosen folder back with `~` for the home folder.
   2. A new personal agent starts with **Runs in** set to `defaults.folder()`. An agent opened for editing keeps its own.
