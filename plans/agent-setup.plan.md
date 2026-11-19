@@ -51,7 +51,7 @@ Rules every task keeps:
 - Saving **Agents for this run** changes only what the user changed, and one refused change does not stop the others. LRV-2, `test_save_applies_only_what_changed`.
 - A `pays` call over the per-call or the per-day limit is refused without asking, and a `pays` tool with no limits can't be called. RSK-2, `test_pays_limits_are_enforced`.
 
-- [ ] PKR-1: A focused checkbox keeps its label in the three pickers
+- [x] PKR-1: A focused checkbox keeps its label in the three pickers
   Edit `src/whyline/console/agents_screens.py` and `tests/console/test_new_agent_pickers.py` (new) only.
   Why: `PackPickScreen`, `SkillPickScreen` and `ToolPickScreen` set `Checkbox { border: none; height: 1; … }`. Textual's own `Checkbox:focus` rule adds a tall border, and on a one-line checkbox the border takes the only line, so the focused row looks like an empty box and its tick can't be seen. Eight other screens already carry the fix (`NewAgentScreen Checkbox:focus { border: none; }` and the like).
   1. Add `<Screen> Checkbox:focus { border: none; }` to the `DEFAULT_CSS` of each of the three screens.
