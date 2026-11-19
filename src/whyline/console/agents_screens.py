@@ -18,6 +18,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Collapsible, DataTable, Input, Label, Select, Static, TextArea
 
 from whyline.agents import capabilities, definitions as d, deliveries as dl, paths, records, templates
+from whyline import models
 from whyline.agents import schedule, service
 from whyline.agents.service import NO_AGENTS
 
@@ -1241,10 +1242,11 @@ class _TextPromptScreen(ModalScreen):
         "_TextPromptScreen Static { height: auto; color: $error; }"
     )
 
-    def __init__(self, title: str, placeholder: str = "") -> None:
+    def __init__(self, title: str, placeholder: str = "", check=None) -> None:
         super().__init__()
         self._title = title
         self._placeholder = placeholder
+        self._check = check
 
     def compose(self) -> ComposeResult:
         yield Vertical(
@@ -1263,6 +1265,13 @@ class _TextPromptScreen(ModalScreen):
 
     def _add(self) -> None:
         text = self.query_one("#tp-input", Input).value.strip()
+        if self._check is not None:
+            problem = self._check(text)
+            if problem:
+                self.query_one("#tp-error", Static).update(problem)
+                return
+            self.dismiss(text)
+            return
         if not re.match(r"https?://\S+$", text):
             self.query_one("#tp-error", Static).update(
                 "Enter a web address starting with http:// or https://")
@@ -1645,6 +1654,18 @@ def tools_summary(defn: d.AgentDef) -> str:
     return " · ".join(parts)
 
 
+_DEFAULT_MODEL = "Default (the CLI decides)"
+_OTHER_MODEL = "Other…"
+_OTHER_VALUE = "\x00other"
+_NO_MODEL = "This CLI has no model setting"
+
+
+def _model_problem(text: str) -> str:
+    if models.valid_id(text):
+        return ""
+    return "Use 1 to 80 letters, digits or . _ : / - [ ]"
+
+
 class NewAgentScreen(ModalScreen):
     """Collects one agent. Dismisses with an AgentForm, "back", or None."""
 
@@ -1664,6 +1685,7 @@ class NewAgentScreen(ModalScreen):
     NewAgentScreen #na-telegram { width: 1fr; }
     NewAgentScreen #na-test-result { height: auto; width: 1fr; }
     NewAgentScreen #na-every { width: 12; }
+    NewAgentScreen .na-model-select { width: 1fr; }
     NewAgentScreen #na-every-unit { width: 20; }
     NewAgentScreen #na-sources-list, NewAgentScreen #na-every-help,
     NewAgentScreen #na-schedule-line,
@@ -1706,6 +1728,131 @@ class NewAgentScreen(ModalScreen):
         self._skills: list[str] = list(existing.skills) if existing else []
         self._tools: dict[str, str] = dict(existing.tools) if existing else {}
         self._picking = False
+        # CLI -> the model last chosen for it, so changing Main CLI back restores it.
+        self._picked: dict[str, str] = dict(existing.models) if existing else {}
+
+    def _takes_model(self, cli: str) -> bool:
+        """True when the CLI's adapter has a model flag, as the runner reads it."""
+        if not cli:
+            return False
+        try:
+            from whyline_relay import config
+
+            adapter = config.adapter_for(config.load(self._root), cli)
+        except Exception:
+            return False
+        return bool(getattr(adapter, "model_flag", None))
+
+    def _model_options(self, cli: str, keep: str) -> list[tuple[str, str]]:
+        listed = models.cached(cli)
+        options = [(_DEFAULT_MODEL, ""), *listed]
+        if keep and keep not in {model_id for _, model_id in listed}:
+            options.append((keep, keep))
+        options.append((_OTHER_MODEL, _OTHER_VALUE))
+        return options
+
+    def _model_select(self, widget_id: str, cli: str) -> Select:
+        if not self._takes_model(cli):
+            return Select([(_NO_MODEL, "")], value="", allow_blank=False, disabled=True,
+                          id=widget_id, classes="na-model-select")
+        keep = self._picked.get(cli, "")
+        return Select(self._model_options(cli, keep), value=keep, allow_blank=False,
+                      id=widget_id, classes="na-model-select")
+
+    def _fill_model(self, widget_id: str, cli: str) -> None:
+        try:
+            select = self.query_one(widget_id, Select)
+        except NoMatches:
+            return
+        if not self._takes_model(cli):
+            select.set_options([(_NO_MODEL, "")])
+            select.value = ""
+            select.disabled = True
+            return
+        keep = self._picked.get(cli, "")
+        select.disabled = False
+        select.set_options(self._model_options(cli, keep))
+        select.value = keep
+
+    def _refill_models(self) -> None:
+        self._fill_model("#na-model", self._choice("#na-runner"))
+        for cli in self._all_clis():
+            self._fill_model(f"#na-model-{cli}", cli)
+
+    def _model_choice(self, widget_id: str, cli: str) -> str:
+        value = self.query_one(widget_id, Select).value
+        if isinstance(value, str) and value != _OTHER_VALUE:
+            return value
+        return self._picked.get(cli, "")
+
+    def _chosen_models(self, runner: str, backups: list[str]) -> dict[str, str]:
+        chosen: dict[str, str] = {}
+        for cli in (runner, *backups):
+            if not self._takes_model(cli):
+                continue
+            widget_id = "#na-model" if cli == runner else f"#na-model-{cli}"
+            value = self._model_choice(widget_id, cli)
+            if value:
+                chosen[cli] = value
+        return chosen
+
+    def _model_changed(self, event: "Select.Changed") -> None:
+        select = event.select
+        if event.value != select.value:
+            return  # a refill moved on; this event is stale
+        cli = (self._choice("#na-runner") if select.id == "na-model"
+               else (select.id or "")[len("na-model-"):])
+        widget_id = f"#{select.id}"
+        if event.value == _OTHER_VALUE:
+            def done(model_id: str | None) -> None:
+                if model_id:
+                    try:
+                        models.add(cli, model_id)
+                    except (ValueError, OSError) as error:
+                        self._show_error(str(error))
+                    self._picked[cli] = model_id
+                self._fill_model(widget_id, cli)
+
+            self.app.push_screen(
+                _TextPromptScreen("Model id", "e.g. gpt-5.6", check=_model_problem), done)
+        elif isinstance(event.value, str):
+            self._picked[cli] = event.value
+
+    def _shown_clis(self) -> list[str]:
+        runner = self._choice("#na-runner")
+        shown = [runner] if runner else []
+        for cli in self._all_clis():
+            if cli != runner and self.query_one(f"#na-backup-{cli}", Checkbox).value:
+                shown.append(cli)
+        return [cli for cli in shown if self._takes_model(cli)]
+
+    def _refresh_models(self) -> None:
+        clis = self._shown_clis()
+        button = self.query_one("#na-refresh-models", Button)
+        button.disabled = True
+
+        def work() -> None:
+            for cli in clis:
+                try:
+                    models.options(cli, refresh=True)
+                except Exception:
+                    pass
+            self.app.call_from_thread(done)
+
+        def done() -> None:
+            button.disabled = False
+            self._refill_models()
+
+        self.run_worker(work, thread=True)
+
+    def _sync_model_rows(self) -> None:
+        for cli in self._all_clis():
+            try:
+                box = self.query_one(f"#na-backup-{cli}", Checkbox)
+                row = self.query_one(f"#na-model-row-{cli}")
+            except NoMatches:
+                return
+            row.display = box.display and box.value
 
     def _provider_enabled(self, cli: str) -> bool:
         from whyline.console.repl import provider_enabled
@@ -1811,6 +1958,15 @@ class NewAgentScreen(ModalScreen):
             )
             box.display = cli != runner and cli in offered
             boxes.append(box)
+        model_rows = []
+        for cli in self._all_clis():
+            row = HorizontalGroup(
+                Label(f"{cli} model", classes="field-label"),
+                self._model_select(f"na-model-{cli}", cli),
+                id=f"na-model-row-{cli}",
+            )
+            row.display = cli in backups and cli != runner
+            model_rows.append(row)
         workdir = HorizontalGroup(
             Label("Runs in", classes="field-label"),
             Input(
@@ -1907,8 +2063,10 @@ class NewAgentScreen(ModalScreen):
             Static(self._left_out_text(), id="na-left-out", markup=False),
             HorizontalGroup(
                 Label("Model", classes="field-label"),
-                Input(existing.model if existing else "", id="na-model", placeholder="optional"),
+                self._model_select("na-model", runner or ""),
+                Button("Refresh models", id="na-refresh-models"),
             ),
+            *model_rows,
             Label("Knowledge"),
             HorizontalGroup(
                 Button("Add files", id="na-add-sources"),
@@ -2257,6 +2415,9 @@ class NewAgentScreen(ModalScreen):
             self._drop_repo_skills()
         elif select_id == "na-runner":
             self._sync_backups()
+            self._refill_models()
+        elif select_id == "na-model" or (select_id or "").startswith("na-model-"):
+            self._model_changed(event)
         elif select_id == "na-when":
             self._sync_when()
         elif select_id == "na-every-unit":
@@ -2273,6 +2434,8 @@ class NewAgentScreen(ModalScreen):
     def on_checkbox_changed(self, event: "Checkbox.Changed") -> None:
         if event.checkbox.id in _WATCH_IDS:
             self._sync_watch()
+        if (event.checkbox.id or "").startswith("na-backup-"):
+            self._sync_model_rows()
         if (event.checkbox.id or "").startswith("na-day-"):
             self._refresh_schedule_line()
 
@@ -2285,6 +2448,8 @@ class NewAgentScreen(ModalScreen):
             self.dismiss("back")
         elif button_id == "na-next":
             self._submit()
+        elif button_id == "na-refresh-models":
+            self._refresh_models()
         elif button_id == "na-send-test":
             self._send_test()
         elif button_id == "na-ck-test":
@@ -2432,6 +2597,7 @@ class NewAgentScreen(ModalScreen):
             box.display = show
             if not show:
                 box.value = False
+        self._sync_model_rows()
 
     def _sources_text(self) -> str:
         return "\n".join(self._sources) if self._sources else "(none)"
@@ -2587,9 +2753,14 @@ class NewAgentScreen(ModalScreen):
             f"runner = {_q(runner)}",
             "backup = [" + ", ".join(_q(cli) for cli in backups) + "]",
         ]
-        model = self.query_one("#na-model", Input).value.strip()
-        if model:
-            lines.append(f"model = {_q(model)}")
+        chosen = self._chosen_models(runner, backups)
+        saved = self._existing
+        # An old file's `model = "x"` stays that way while nothing else is chosen.
+        legacy = bool(
+            saved and saved.model_field and saved.runner == runner
+            and chosen == {runner: saved.model})
+        if legacy:
+            lines.append(f"model = {_q(chosen[runner])}")
         lines.append("knowledge = [" + ", ".join(_q(source) for source in self._sources) + "]")
         if self._skills:
             lines.append("skills = [" + ", ".join(_q(ref) for ref in self._skills) + "]")
@@ -2602,6 +2773,8 @@ class NewAgentScreen(ModalScreen):
         lines.append(f"timeout_minutes = {self._int_token('#na-timeout', 15)}")
         if self._existing and self._existing.before:
             lines.append(f"before = {_q(self._existing.before)}")
+        if chosen and not legacy:
+            lines += ["", "[models]"] + [f"{_q(k)} = {_q(v)}" for k, v in sorted(chosen.items())]
         values = self._schedule_values()
         trigger = self._schedule_trigger(values)
         lines += ["", "[trigger]", f"kind = {_q(when)}"]
@@ -2825,7 +2998,18 @@ class ReviewScreen(ModalScreen):
         summary = tools_summary(self._defn)
         if summary:
             text = text.rstrip() + "\n" + summary
-        return text
+        return text.rstrip() + "\n" + self._models_text()
+
+    def _models_text(self) -> str:
+        defn = self._defn
+        clis = (defn.runner, *defn.backup)
+        line = "Models: " + " · ".join(
+            f"{cli} {defn.models.get(cli) or 'default'}" for cli in clis)
+        for cli in clis:
+            model = defn.models.get(cli)
+            if model and model not in {mid for _, mid in models.cached(cli)}:
+                line += f"\nWarning: {model} is not in the list of {cli} models. It is still saved."
+        return line
 
     def compose(self) -> ComposeResult:
         yield Vertical(

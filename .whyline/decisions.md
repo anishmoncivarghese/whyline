@@ -47506,3 +47506,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: a0c87f7479a545f982dfff894e2133fb -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-19T13:41:28.115Z"} -->
+
+## 2026-11-19 — New agent model dropdowns keep a per-CLI picked-model dict and write [models]; an old model= line is kept as is
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AMD-3
+
+**Because:** Changing Main CLI must restore that CLI's choice, and legacy files should not be rewritten just by opening and saving
+
+**Rejected:**
+
+- Reading the Select value only — loses a CLI's choice when Main CLI changes
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: dc639065166846e8af6a7ebbf9d1d743 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T13:52:12.068Z"} -->
+
+## 2026-11-19 — Approve model dropdowns with per-CLI caching, dynamic backup rows, worker refresh, and review warnings
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** AMD-3
+
+**Because:** All model dropdown requirements verified: default/cached/other options, other modal prompt validation and addition, dynamic backup row visibility, runner refill preserving selections, refresh worker, disabled state for CLIs without model flag, legacy model preservation on edit, non-blocking review warnings, and all 10 new tests plus full test suite passed cleanly
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: e6a67f3416484e46aee031f276657843 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T14:21:29.124Z"} -->
+
+## 2026-11-19 — Approve AMD-3 model dropdowns and review warnings
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AMD-3
+
+**Because:** The implementation satisfies the requested per-CLI dropdown, Other prompt, refresh worker, disabled CLI, edit preservation, save, review and 80x24 behavior; 11 focused tests passed, and the full suite's two unrelated Textual mount races passed immediately on isolated rerun
+
+**Files:** src/whyline/console/agents_screens.py, tests/console/test_new_agent_models.py
+
+<!-- whyline-event: 957ad7913c9b445eaee6f9ed44dc5fc4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T14:46:09.585Z"} -->
