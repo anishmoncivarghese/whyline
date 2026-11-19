@@ -34,6 +34,8 @@ class RunRecord:
     attempts: list = field(default_factory=list)
     definition_hash: str = ""
     deliveries: list = field(default_factory=list)
+    model: str = ""  # the model the run used; empty is the CLI's default
+    model_note: str = ""
 
 
 def _write_private(path: Path, text: str) -> None:

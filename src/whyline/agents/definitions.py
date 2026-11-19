@@ -57,7 +57,10 @@ class AgentDef:
     instructions: str
     runner: str
     backup: tuple[str, ...] = ()
-    model: str = ""
+    model: str = ""  # the runner's model; kept in step with models[runner]
+    models: dict[str, str] = field(default_factory=dict)  # CLI -> model
+    # True when the file spelled the runner's model as the old `model = "x"`.
+    model_field: bool = field(default=False, compare=False)
     # Old files only; loaded into knowledge too, so it is not part of equality.
     sources: tuple[str, ...] = field(default=(), compare=False)
     skills: tuple[str, ...] = ()  # "origin:name"
@@ -73,6 +76,14 @@ class AgentDef:
     active_hours: str = ""  # HH:MM-HH:MM, then optional days: mon-fri or mon,wed
     silent: bool = False
     watch: watch_rules.Watch | None = None
+
+    def __post_init__(self) -> None:
+        models = dict(self.models)
+        if self.model and self.runner not in models:
+            models[self.runner] = self.model
+            object.__setattr__(self, "model_field", True)
+        object.__setattr__(self, "models", models)
+        object.__setattr__(self, "model", models.get(self.runner, ""))
 
     @property
     def agent_id(self) -> str:
@@ -104,6 +115,17 @@ def _strs(raw: dict, key: str) -> tuple[str, ...]:
     if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
         raise DefinitionError(f"{key} must be a list of text")
     return tuple(value)
+
+
+def _models(raw: dict, runner: str, backup: tuple[str, ...]) -> dict[str, str]:
+    table = raw.get("models", {})
+    if not isinstance(table, dict) or not all(isinstance(v, str) for v in table.values()):
+        raise DefinitionError("models must be a table of text")
+    unknown = [cli for cli in table if cli not in (runner, *backup)]
+    if unknown:
+        raise DefinitionError(
+            f"models names {', '.join(unknown)}, which is not the runner or a backup")
+    return {cli: model for cli, model in table.items() if model.strip()}
 
 
 def _int(raw: dict, key: str, default: int) -> int:
@@ -272,6 +294,7 @@ def parse(text: str, *, kind: str, path: Path, repo_root: Path | None = None) ->
     backup = _strs(raw, "backup")
     if runner in backup or len(set(backup)) != len(backup) or not set(backup) <= set(CLIS):
         raise DefinitionError("backup must list other CLIs, each once")
+    models = _models(raw, runner, backup)
     workdir = _str(raw, "workdir")
     if kind == "repo":
         if repo_root is None:
@@ -292,7 +315,7 @@ def parse(text: str, *, kind: str, path: Path, repo_root: Path | None = None) ->
     knowledge = tuple(dict.fromkeys((*_strs(raw, "knowledge"), *sources)))
     defn = AgentDef(
         name=name, kind=kind, path=path, root=root, instructions=instructions,
-        runner=runner, backup=backup, model=_str(raw, "model"), sources=sources,
+        runner=runner, backup=backup, model=_str(raw, "model"), models=models, sources=sources,
         skills=_strs(raw, "skills"), knowledge=knowledge, tools=_tools(raw.get("tools", {})),
         workdir=workdir, report_folder=_str(raw, "report_folder"),
         timeout_minutes=timeout, before=before, trigger=_trigger(raw.get("trigger", {})),
@@ -376,7 +399,8 @@ def render(defn: AgentDef) -> str:
     lines = [f"name = {_q(defn.name)}", f"instructions = {_q(defn.instructions)}",
              f"runner = {_q(defn.runner)}"]
     lines.append("backup = [" + ", ".join(_q(b) for b in defn.backup) + "]")
-    if defn.model:
+    only_runner = defn.models == {defn.runner: defn.model}
+    if defn.model and only_runner and defn.model_field:
         lines.append(f"model = {_q(defn.model)}")
     # knowledge already holds what an old file called sources
     knowledge = dict.fromkeys((*defn.knowledge, *defn.sources))
@@ -390,6 +414,8 @@ def render(defn: AgentDef) -> str:
     lines.append(f"timeout_minutes = {defn.timeout_minutes}")
     if defn.before:
         lines.append(f"before = {_q(defn.before)}")
+    if defn.models and not (only_runner and defn.model_field):
+        lines += ["", "[models]"] + [f"{_q(k)} = {_q(v)}" for k, v in sorted(defn.models.items())]
     if defn.tools:
         lines += ["", "[tools]"] + [f"{_q(k)} = {_q(v)}" for k, v in sorted(defn.tools.items())]
     t = defn.trigger

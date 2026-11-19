@@ -47416,3 +47416,93 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 17f1bfab74ce43cf86c3791fa9b70189 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-19T11:42:54.889Z"} -->
+
+## 2026-11-19 — AgentDef keeps model as the runner's model alongside models; refused model retries once on CLI default
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AMD-2
+
+**Because:** constructors in workflows/console pass model=, so it stays an init field synced to models[runner]; model_field flag keeps old files rendering as model= so the hash holds
+
+**Rejected:**
+
+- drop model field — breaks workflows agent step and console callers outside this task's files
+
+**Files:** src/whyline/agents/definitions.py
+
+<!-- whyline-event: 6ad8df7535c3444ca1441760d715f446 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T11:48:02.217Z"} -->
+
+## 2026-11-19 — Verify AgentDef models parsing/rendering, CLI model selection in runner, and refusal retry on default
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** AMD-2
+
+**Because:** AgentDef correctly parses [models] table and preserves legacy model= hash; runner._command selects model via config.with_model using adapter flag; refusal retry fires on MODEL_REFUSED before backup and logs model/model_note on RunRecord; 543 agent tests and AMD-2 test suite pass
+
+**Files:** src/whyline/agents/definitions.py, src/whyline/agents/runner.py, src/whyline/agents/records.py
+
+<!-- whyline-event: f742a44606094f2f89a10b9c0e0a8515 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T12:17:49.110Z"} -->
+
+## 2026-11-19 — Request AMD-2 changes for true default-model retry and meaningful legacy hash coverage
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AMD-2
+
+**Because:** runner._command(use_model=False) leaves a relay-configured --model value in the command, so a refused agent model retries another pinned model instead of the CLI default; test_old_model_field_keeps_the_hash compares a rendered definition only with its own reparsed rendering rather than the original legacy text
+
+**Rejected:**
+
+- approve — the full suite passes, but the default retry violates the task in a valid configured environment and the pinned hash test does not prove its guarantee
+
+**Files:** src/whyline/agents/runner.py, tests/agents/test_definitions_models.py
+
+<!-- whyline-event: 80803591c0404d5aa9802115d7f9d986 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T12:43:43.534Z"} -->
+
+## 2026-11-19 — Default-model retry strips any relay-configured model flag pair from the command
+
+**Actor:** claude
+**Role:** implementer
+**Task:** AMD-2
+
+**Because:** with_model only replaces/appends; use_model=False left a pinned relay model, so the retry ran another pinned model instead of the CLI default
+
+**Rejected:**
+
+- pass empty model to with_model — would emit an empty --model value
+
+**Files:** src/whyline/agents/runner.py
+
+<!-- whyline-event: f01b050d43504917a9955b74e7b32389 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T12:45:28.256Z"} -->
+
+## 2026-11-19 — Verify default-model retry strips relay model and legacy hash matches original text
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** AMD-2
+
+**Because:** runner._without_model strips all model flags on retry so refused model uses CLI default even with pinned relay config; test_old_model_field_keeps_the_hash verifies rendered definition hash matches the original pre-[models] text; 10 model tests and full pytest suite (5334 passed) pass
+
+**Files:** src/whyline/agents/runner.py, tests/agents/test_definitions_models.py
+
+<!-- whyline-event: ee532ad616b84f31836adb5cb02f4e85 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T13:12:18.015Z"} -->
+
+## 2026-11-19 — Approve AMD-2 per-CLI models and refusal fallback
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** AMD-2
+
+**Because:** The diff satisfies every acceptance case and the 10 focused tests pass; the full uv run pytest -q run had only seven recovery preflight failures caused by transient free disk below 1 GB, and tests/console/test_recovery.py passed once capacity recovered
+
+**Files:** src/whyline/agents/definitions.py, src/whyline/agents/runner.py, src/whyline/agents/records.py
+
+<!-- whyline-event: a0c87f7479a545f982dfff894e2133fb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T13:41:28.115Z"} -->

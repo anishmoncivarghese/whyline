@@ -238,7 +238,42 @@ def _without_missing_settings(command: list[str], root: Path) -> list[str]:
     return cliargs.without_missing_settings(command, root)
 
 
-def _command(defn, cli: str, run_folder: Path | None = None) -> list[str] | None:
+MODEL_REFUSED = (
+    "model not found", "unknown model", "invalid model", "model does not exist",
+    "model is not supported", "model_not_found", "not a valid model",
+)
+
+
+def _model_flag(defn, cli: str) -> tuple[str, ...] | None:
+    adapter = _adapter(defn, cli)
+    return getattr(adapter, "model_flag", None) or None
+
+
+def _model_for(defn, cli: str) -> str:
+    """The model this agent names for cli, when cli can take one."""
+    return defn.models.get(cli, "") if _model_flag(defn, cli) else ""
+
+
+def _model_refused(model: str, raw: str) -> bool:
+    lowered = raw.lower()
+    return bool(model) and model.lower() in lowered and any(p in lowered for p in MODEL_REFUSED)
+
+
+def _without_model(command: list[str], flag: tuple[str, ...]) -> list[str]:
+    """command with every `flag value` pair dropped, so the CLI uses its own
+    default even when the relay config pins a model."""
+    size, kept, i = len(flag), [], 0
+    while i < len(command):
+        if tuple(command[i:i + size]) == tuple(flag):
+            i += size + 1
+        else:
+            kept.append(command[i])
+            i += 1
+    return kept
+
+
+def _command(defn, cli: str, run_folder: Path | None = None, *,
+             use_model: bool = True) -> list[str] | None:
     from whyline_relay import chat, config
 
     try:
@@ -249,6 +284,11 @@ def _command(defn, cli: str, run_folder: Path | None = None) -> list[str] | None
     if command is None:
         return None
     command = _without_missing_settings(command, defn.root)
+    model = _model_for(defn, cli) if use_model else ""
+    if model:
+        command = config.with_model(command, _model_flag(defn, cli), model)
+    elif not use_model and _model_flag(defn, cli):
+        command = _without_model(command, _model_flag(defn, cli))
     if run_folder is not None and cli in ("claude", "codex"):
         command = [*command, "--add-dir", str(run_folder)]
     if run_folder is not None and defn.tools:
@@ -384,34 +424,49 @@ def execute_once(defn, *, source: str, payload_dir: Path | None = None, unattend
             record.attempts.append({"cli": cli, "outcome": "skipped",
                                     "reason": "no verified read-only setting"})
             continue
+        model = _model_for(defn, cli)
         answer_file = None
-        adapter = _adapter(defn, cli)
-        if adapter is not None and adapter.uses_output_file:
-            # Codex: the last message goes to this file, as in relay chat.
-            answer_file = folder / "answer.txt"
-            argv = [*argv, "-o", str(answer_file)]
-        progress(f"{cli} is working")
-        cli_env = dict(env_note)
-        if extras.tools_file is not None and capabilities.tools_support(cli) != "none":
-            cli_env["WHYLINE_TOOLS_RUN"] = str(extras.tools_file)
-        old_env = {k: os.environ.get(k) for k in (*cli_env, "SSH_AUTH_SOCK")}
-        os.environ.update(cli_env)
-        os.environ.pop("SSH_AUTH_SOCK", None)
         error, code, raw = None, None, ""
-        try:
-            extra = {} if cancel_event is None else {"cancel_event": cancel_event}
-            result = run_fn(argv, prompt, cwd=defn.root, log_path=folder / "output.log",
-                            timeout_seconds=defn.timeout_minutes * 60, capture=True,
-                            echo=False, agent_name=cli, **extra)
-            code, raw = result.exit_code, result.output or ""
-        except Exception as caught:  # AgentTimeout, AgentMissing, OSError
-            error = caught
-        finally:
-            for key, value in old_env.items():
-                if value is None:
-                    os.environ.pop(key, None)
-                else:
-                    os.environ[key] = value
+        for use_model in (True, False):
+            if not use_model:
+                argv = _command(defn, cli, folder, use_model=False)
+            answer_file = None
+            adapter = _adapter(defn, cli)
+            if adapter is not None and adapter.uses_output_file:
+                # Codex: the last message goes to this file, as in relay chat.
+                answer_file = folder / "answer.txt"
+                argv = [*argv, "-o", str(answer_file)]
+            progress(f"{cli} is working")
+            cli_env = dict(env_note)
+            if extras.tools_file is not None and capabilities.tools_support(cli) != "none":
+                cli_env["WHYLINE_TOOLS_RUN"] = str(extras.tools_file)
+            old_env = {k: os.environ.get(k) for k in (*cli_env, "SSH_AUTH_SOCK")}
+            os.environ.update(cli_env)
+            os.environ.pop("SSH_AUTH_SOCK", None)
+            error, code, raw = None, None, ""
+            try:
+                extra = {} if cancel_event is None else {"cancel_event": cancel_event}
+                result = run_fn(argv, prompt, cwd=defn.root, log_path=folder / "output.log",
+                                timeout_seconds=defn.timeout_minutes * 60, capture=True,
+                                echo=False, agent_name=cli, **extra)
+                code, raw = result.exit_code, result.output or ""
+            except Exception as caught:  # AgentTimeout, AgentMissing, OSError
+                error = caught
+            finally:
+                for key, value in old_env.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+            if not (use_model and model and error is None and code != 0
+                    and _model_refused(model, raw)):
+                break
+            # The CLI refused the model: once more on its default, before any backup.
+            record.attempts.append({"cli": cli, "outcome": "model_refused",
+                                    "reason": f"{model} was refused"})
+            record.model_note = f"{model} was refused; ran on the default"
+            model = ""
+        record.model = model
         outcome, reason = _classify(cli, code, raw, error)
         record.attempts.append({"cli": cli, "outcome": outcome, "reason": reason})
         record.cli, record.argv, record.exit_code = cli, tuple(argv), code
