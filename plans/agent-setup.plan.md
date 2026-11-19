@@ -74,7 +74,7 @@ Rules every task keeps:
   4. The tools hash of a server that was already tested does not change.
   Tests: `test_unstated_tool_shows_not_stated_and_asks_first`, the round trip of all three values, an old file loading unchanged, and the hash staying the same.
 
-- [ ] PKR-4: The pickers point at the Tools library
+- [x] PKR-4: The pickers point at the Tools library
   Edit `src/whyline/console/agents_screens.py` and `tests/console/test_new_agent_pickers.py` only.
   Why: connectors, skills and packs are added in **Tools**, and the New agent pickers only list what is there. Nothing in a picker says so, and an empty one is a dead end.
   1. Add tools says, under its title, `Tools come from your connectors. Tick the ones this agent may use, and choose Allowed or Ask first for each.`
