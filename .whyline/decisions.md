@@ -47202,3 +47202,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b115f3624d574cadbabaaa926f8e7b4c -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-19T06:15:22.862Z"} -->
+
+## 2026-11-19 — Autouse _tmp_home fixture sets HOME and USERPROFILE per test
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PKR-2
+
+**Because:** any test, not only those asking for home, could write the real ~/.whyline (mcp.toml incident 2026-11-14)
+
+**Rejected:**
+
+- patching Path.home only — subprocesses and os.path.expanduser would still see the real home
+
+**Files:** tests/conftest.py
+
+<!-- whyline-event: db9651f5fd384b68ac9c45f68eedbe16 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T06:51:01.363Z"} -->
+
+## 2026-11-19 — Autouse _tmp_home fixture in tests/conftest.py protects ~/.whyline and passes suite
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PKR-2
+
+**Because:** All tests never see the real home, tests/test_conftest_guard.py passes, real ~/.whyline remains untouched, and custom home fixtures continue to function
+
+**Rejected:**
+
+- Fail PKR-2 — test suite runs cleanly with autouse _tmp_home in place and preserves real home isolation
+
+**Files:** tests/conftest.py
+
+<!-- whyline-event: 64d3fc7d1b924d06a9bc68bdfb277c18 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T07:20:40.118Z"} -->
+
+## 2026-11-19 — Approve PKR-2 home isolation guard
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** PKR-2
+
+**Because:** The autouse fixture redirects HOME and USERPROFILE to a fresh temporary directory per test, the regression tests exercise both Path.home and connector persistence without a named home fixture, and an independent full uv run pytest -q completed successfully
+
+**Rejected:**
+
+- Request changes for the transient ReleaseScreen worker failure — the test has no home dependency, passed on focused rerun, and the second full suite passed
+
+**Files:** tests/conftest.py, tests/test_conftest_guard.py
+
+<!-- whyline-event: b837fba9d6234ce7b5a40763c8c8247b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T08:08:13.786Z"} -->

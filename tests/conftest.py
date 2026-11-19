@@ -56,6 +56,18 @@ def repo(tmp_path: Path) -> Repo:
 
 
 @pytest.fixture(autouse=True)
+def _tmp_home(tmp_path_factory, monkeypatch):
+    """Point HOME at a fresh temporary folder so no test touches ~/.whyline.
+
+    Tests that ask for their own ``home`` fixture override this afterwards.
+    """
+    fake = tmp_path_factory.mktemp("autohome")
+    monkeypatch.setenv("HOME", str(fake))
+    monkeypatch.setenv("USERPROFILE", str(fake))
+    return fake
+
+
+@pytest.fixture(autouse=True)
 def _no_real_telegram(monkeypatch):
     """Fail fast instead of calling the Telegram API from a test.
 
