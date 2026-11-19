@@ -100,7 +100,7 @@ Rules every task keeps:
   3. When a run fails and its output matches a model refusal (`MODEL_REFUSED`: a short list of patterns such as `model not found`, `unknown model`, `invalid model`, case-insensitive, with the model id in the output), it is run once more on the CLI's default before any backup is tried. The run record gets `model` (what ran) and `model_note` (`sonnet-9 was refused; ran on the default`).
   Tests: `test_old_model_field_keeps_the_hash`, `test_run_uses_the_model_of_the_cli_that_runs` (main and a backup, each with its own model), a CLI with no flag, a key that is not a CLI of the agent refused, the refusal retry and its note, and an ordinary failure not retried.
 
-- [ ] AMD-3: Model dropdowns in New agent
+- [x] AMD-3: Model dropdowns in New agent
   Edit `src/whyline/console/agents_screens.py` and its tests only.
   1. The Model `Input` is replaced by a `Select` beside Main CLI (`id="na-model"`), and one beside each ticked backup (`id="na-model-<cli>"`), shown only while that backup is ticked.
   2. Each holds `Default (the CLI decides)`, then `models.cached(cli)`, then `Other…`. `Other…` opens a one-line box; a valid id is added with `models.add` and selected.
