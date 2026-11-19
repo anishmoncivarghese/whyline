@@ -2877,6 +2877,7 @@ class RunAgentsScreen(ModalScreen):
     RunAgentsScreen Select > SelectCurrent { border: none; height: 1; padding: 0 1; }
     RunAgentsScreen Select.-model { width: 26; margin-left: 1; }
     RunAgentsScreen Checkbox { border: none; height: 1; padding: 0; }
+    RunAgentsScreen Checkbox:focus { border: none; }
     RunAgentsScreen Button { border: none; height: 1; min-width: 8; }
     RunAgentsScreen .ra-reason { padding: 0 0 0 16; color: $text-muted; height: auto; width: 1fr; }
     RunAgentsScreen .ra-reason.-empty { display: none; }

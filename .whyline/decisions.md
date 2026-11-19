@@ -47155,3 +47155,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 00bc437f0e3c49b2aafb4e64429de188 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-18T11:47:04.101Z"} -->
+
+## 2026-11-19 — Fixed RunAgentsScreen Checkbox focus rule in relay_screens.py alongside the three pickers
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PKR-1
+
+**Because:** the new every-one-line-checkbox guard test found it missing; leaving it would fail the required test
+
+**Rejected:**
+
+- allowlist RunAgentsScreen in the test — hides a real bug of the same kind
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 6ecefea0e24b4183bf30468a91881dc8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T05:20:08.510Z"} -->
+
+## 2026-11-19 — Approve focused checkbox height and focus rule coverage across console screens
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PKR-1
+
+**Because:** PackPickScreen, SkillPickScreen, and ToolPickScreen preserve 1-line content height when focused, and the scanner guard verifies all one-line console checkbox selectors have focus rules; targeted tests and full suites pass
+
+**Files:** src/whyline/console/agents_screens.py, src/whyline/console/relay_screens.py, tests/console/test_new_agent_pickers.py
+
+<!-- whyline-event: 43b4b58f5aed49a88e9452ba810d7da9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T05:54:07.321Z"} -->
+
+## 2026-11-19 — Approve picker checkbox focus fixes and repository-wide guard
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** PKR-1
+
+**Because:** PackPickScreen, SkillPickScreen, and ToolPickScreen retain one-line visible checkbox content when focused; the behavioral regression test covers all three, the scanner enforces the invariant across console modules and correctly exposed the same defect in RunAgentsScreen, and uv run pytest -q completed successfully
+
+**Rejected:**
+
+- Request changes for relay_screens.py scope — the task explicitly requires every one-line console checkbox selector to have the focus override, so fixing the newly exposed RunAgentsScreen violation is necessary
+
+**Files:** src/whyline/console/agents_screens.py, src/whyline/console/relay_screens.py, tests/console/test_new_agent_pickers.py
+
+<!-- whyline-event: b115f3624d574cadbabaaa926f8e7b4c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T06:15:22.862Z"} -->

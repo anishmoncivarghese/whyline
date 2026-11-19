@@ -1283,6 +1283,7 @@ class PackPickScreen(ModalScreen):
     DEFAULT_CSS = _CSS.format(name="PackPickScreen") + (
         "PackPickScreen VerticalScroll { height: auto; max-height: 20; }"
         " PackPickScreen Checkbox { border: none; height: 1; padding: 0 1; width: auto; }"
+        " PackPickScreen Checkbox:focus { border: none; }"
     )
 
     def __init__(self, chosen: list[str]) -> None:
@@ -1332,6 +1333,7 @@ class SkillPickScreen(ModalScreen):
     DEFAULT_CSS = _CSS.format(name="SkillPickScreen") + (
         "SkillPickScreen VerticalScroll { height: auto; max-height: 20; }"
         " SkillPickScreen Checkbox { border: none; height: 1; padding: 0 1; width: auto; }"
+        " SkillPickScreen Checkbox:focus { border: none; }"
         " SkillPickScreen #sp-size { height: auto; }"
         " SkillPickScreen #sp-error { height: auto; color: $error; }"
     )
@@ -1419,6 +1421,7 @@ class ToolPickScreen(ModalScreen):
     DEFAULT_CSS = _CSS.format(name="ToolPickScreen") + (
         "ToolPickScreen VerticalScroll { height: auto; max-height: 24; }"
         " ToolPickScreen Checkbox { border: none; height: 1; padding: 0 1; width: auto; }"
+        " ToolPickScreen Checkbox:focus { border: none; }"
         " ToolPickScreen HorizontalGroup { height: auto; }"
         " ToolPickScreen .tp-warning { height: auto; color: $warning; }"
     )
