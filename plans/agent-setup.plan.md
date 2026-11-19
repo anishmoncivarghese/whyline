@@ -84,7 +84,7 @@ Rules every task keeps:
   5. Add skills and Add pack get the same line (`Skills come from your library.`, `Packs come from your library.`) and **Open Tools…** on their own tab.
   Tests: `test_open_tools_keeps_the_picks`, the empty state and its primary button, the untested and turned-off lines, and the right tab opening from each picker.
 
-- [ ] AMD-1: One list of models for every CLI
+- [x] AMD-1: One list of models for every CLI
   Create `src/whyline/models.py` and `tests/test_models.py`. Edit `src/whyline/console/relay_ops.py` and its tests.
   1. Move `AGENT_MODELS` and the Antigravity listing (`_parse_agy_models`, its cache and `antigravity_models_status`) into `whyline.models`. `relay_ops` keeps its names as thin calls into it, so nothing that imports them changes.
   2. `models.options(cli, *, refresh=False, run=…, now=…) -> list[tuple[str, str]]` (label, id): the CLI's own list where a listing command is known (`LISTERS: dict[str, list[str]]`, Antigravity today), then the built-in list, then the user's additions, each id once, in that order.
