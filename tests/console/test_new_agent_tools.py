@@ -61,6 +61,25 @@ async def test_tool_picker_defaults_and_warning(tmp_path):
     assert results == [{"notion.search": "allowed", "notion.create_page": "allowed"}]
 
 
+async def test_unstated_tool_shows_not_stated_and_asks_first(tmp_path):
+    from whyline.console.agents_screens import ToolPickScreen, default_permission
+    from whyline.tools import mcp_config
+    from whyline.tools.mcp_config import Server, Tool
+
+    mcp_config.save_server(Server(name="notion", command="x", tools=(Tool("read"),)))
+    assert default_permission(Tool("read")) == "ask"
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 100)) as pilot:
+        app.push_screen(ToolPickScreen({}), lambda r: None)
+        await pilot.pause()
+        s = app.screen
+        assert "not stated" in str(s.query_one("#tl-c-0", tui.Checkbox).label)
+        assert s.query_one("#tl-s-0", tui.Select).value == "ask"
+        s.query_one("#tl-s-0", tui.Select).value = "allowed"
+        await pilot.pause()
+        assert s.query_one("#tl-w-0").display
+
+
 async def test_skill_picker_shows_origin_and_size(tmp_path):
     from whyline.console.agents_screens import SkillPickScreen
     from whyline.tools import skills

@@ -23,7 +23,7 @@ class Tool:
     name: str
     description: str = ""
     input_schema: dict = field(default_factory=dict)
-    read_only: bool = False
+    read_only: bool | None = None  # None: the server gave no hint
 
 
 @dataclass(frozen=True)
@@ -88,11 +88,12 @@ def load() -> dict[str, Server]:
                 schema = json.loads(item.get("input_schema", "{}"))
             except (TypeError, ValueError):
                 schema = {}
+            stated = item.get("read_only")
             tools.append(Tool(
                 name=str(item.get("name", "")),
                 description=str(item.get("description", "")),
                 input_schema=schema if isinstance(schema, dict) else {},
-                read_only=bool(item.get("read_only", False)),
+                read_only=stated if isinstance(stated, bool) else None,
             ))
         found[name] = Server(
             name=name,
@@ -131,7 +132,8 @@ def _write(servers: dict[str, Server]) -> None:
             lines.append(f"name = {_q(tool.name)}")
             lines.append(f"description = {_q(tool.description)}")
             lines.append(f"input_schema = {_q(json.dumps(tool.input_schema, sort_keys=True))}")
-            lines.append(f"read_only = {'true' if tool.read_only else 'false'}")
+            if tool.read_only is not None:
+                lines.append(f"read_only = {'true' if tool.read_only else 'false'}")
         lines.append("")
     target = _file()
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -178,7 +180,7 @@ def test_server(name: str, *, session=None) -> str:
     servers[name] = replace(
         server,
         tools_hash=mcp.tools_hash(found),
-        tools=tuple(Tool(t.name, t.description, t.input_schema, bool(t.read_only)) for t in found),
+        tools=tuple(Tool(t.name, t.description, t.input_schema, t.read_only) for t in found),
     )
     _write(servers)
     names = ", ".join(t.name for t in found[:10])

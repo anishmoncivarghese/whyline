@@ -15,6 +15,7 @@ from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, S
 
 from whyline import credentials
 from whyline.agents import capabilities
+from whyline.console.agents_screens import tool_kind
 from whyline.tools import knowledge, mcp, mcp_config, skills, users
 
 _SETUP = (("grok", "Set up grok"), ("antigravity", "Set up Antigravity"))
@@ -423,7 +424,7 @@ class ToolsScreen(ModalScreen):
             node = tree.root.add(
                 f"{name}  {_server_state(server)}  {len(server.tools)} tools", data=name)
             for tool in server.tools:
-                node.add_leaf(f"{tool.name}  {'reads' if tool.read_only else 'writes'}", data=name)
+                node.add_leaf(f"{tool.name}  {tool_kind(tool)}", data=name)
         tree.root.expand()
         if not servers:
             self._say("No connectors yet. Add one, or import from Claude or Codex.")

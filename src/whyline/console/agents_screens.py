@@ -1411,7 +1411,15 @@ _PERMISSION_OPTIONS = [("Allowed", "allowed"), ("Ask first", "ask")]
 
 
 def default_permission(tool) -> str:
-    return "allowed" if tool.read_only else "ask"
+    return "allowed" if tool.read_only is True else "ask"
+
+
+def tool_kind(tool) -> str:
+    """``reads``, ``writes`` or ``not stated``. A tool that is not stated is
+    treated as a writing tool everywhere else."""
+    if tool.read_only is None:
+        return "not stated"
+    return "reads" if tool.read_only else "writes"
 
 
 class ToolPickScreen(ModalScreen):
@@ -1446,8 +1454,8 @@ class ToolPickScreen(ModalScreen):
                 permission = self._chosen.get(key, default_permission(tool))
                 warning = Static(
                     _WRITE_WARNING, id=f"tl-w-{i}", classes="tp-warning", markup=False)
-                warning.display = permission == "allowed" and not tool.read_only
-                kind = "reads" if tool.read_only else "writes"
+                warning.display = permission == "allowed" and tool.read_only is not True
+                kind = tool_kind(tool)
                 rows += [
                     HorizontalGroup(
                         Checkbox(f"{tool.name} · {kind}", value=key in self._chosen,

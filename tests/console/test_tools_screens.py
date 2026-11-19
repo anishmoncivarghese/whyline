@@ -379,7 +379,7 @@ async def test_test_runs_in_a_worker_and_shows_tools(home, tmp_path):
         node = screen.query_one("#tl-tree").root.children[0]
         assert "2 tools" in str(node.label)
         node.expand()
-        assert [str(c.label) for c in node.children] == ["read_it  reads", "write_it  writes"]
+        assert [str(c.label) for c in node.children] == ["read_it  reads", "write_it  not stated"]
 
 
 async def test_remove_server_and_refusal_names_users(home, tmp_path):

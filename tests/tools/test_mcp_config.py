@@ -34,6 +34,55 @@ def test_round_trip_and_mode(home):
     assert mode == 0o600
 
 
+@pytest.mark.parametrize("stated", [True, False, None])
+def test_read_only_round_trips_all_three_values(home, stated):
+    server = Server(name="files", command="x", tools=(Tool("read", read_only=stated),))
+    mcp_config.save_server(server)
+    text = (home / ".whyline" / "mcp.toml").read_text(encoding="utf-8")
+    assert ("read_only" in text) == (stated is not None)
+    assert mcp_config.load()["files"].tools[0].read_only is stated
+
+
+def test_old_file_loads_as_it_is(home):
+    _write(home / ".whyline" / "mcp.toml", (
+        '[servers.old]\ncommand = "x"\nargs = []\nenabled = true\ntools_hash = ""\n'
+        '[[servers.old.tools]]\nname = "a"\nread_only = false\n'
+        '[[servers.old.tools]]\nname = "b"\nread_only = true\n'
+        '[[servers.old.tools]]\nname = "c"\n'
+    ))
+    tools = mcp_config.load()["old"].tools
+    assert [t.read_only for t in tools] == [False, True, None]
+
+
+def test_tools_hash_ignores_read_only_hint():
+    from whyline.tools import mcp
+
+    a = [mcp.Tool("t", "", {"type": "object"}, True)]
+    b = [mcp.Tool("t", "", {"type": "object"}, None)]
+    assert mcp.tools_hash(a) == mcp.tools_hash(b)
+
+
+def test_test_server_keeps_unstated(home):
+    from whyline.tools import mcp
+
+    class Live:
+        def __init__(self, server):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def list_tools(self):
+            return [mcp.Tool("read", "", {})]
+
+    mcp_config.save_server(Server(name="files", command="x"))
+    mcp_config.test_server("files", session=Live)
+    assert mcp_config.load()["files"].tools[0].read_only is None
+
+
 def test_bad_name_and_value_in_env_refused(home):
     with pytest.raises(ValueError):
         mcp_config.save_server(Server(name="Bad_Name", command="x"))

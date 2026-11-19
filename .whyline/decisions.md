@@ -47253,3 +47253,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b837fba9d6234ce7b5a40763c8c8247b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-19T08:08:13.786Z"} -->
+
+## 2026-11-19 — Unstated MCP tool read_only stays None and is treated as writing
+
+**Actor:** claude
+**Role:** implementer
+**Task:** PKR-3
+
+**Because:** a server giving no hint must not read as writes; ask-first and write warning stay as the safe default
+
+**Rejected:**
+
+- keep bool and default False — picker labels a tool called read as writes
+
+**Files:** src/whyline/tools/mcp_config.py
+
+<!-- whyline-event: 4fbe98e2e841416b920cd0ec39a09239 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T08:22:09.039Z"} -->
+
+## 2026-11-19 — Approve unstated MCP tool read_only handling and display
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** PKR-3
+
+**Because:** unstated read_only remains None, displays as not stated in tool picker and library, defaults to ask with write warnings, preserves tools hash, and all 5312 project tests pass
+
+**Files:** src/whyline/tools/mcp_config.py
+
+<!-- whyline-event: 0f7235ceb9734fe6960036e45fce8347 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T08:53:54.032Z"} -->
+
+## 2026-11-19 — Approve tri-state MCP tool read-only handling
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** PKR-3
+
+**Because:** Unstated hints remain None through server testing and persistence, display as not stated, default to ask with write warnings, preserve explicit legacy false values and tools hashes, and the full pytest suite passes
+
+**Files:** src/whyline/tools/mcp_config.py
+
+<!-- whyline-event: 5d98040250554d67bdc65a4dbc5d3e8d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T09:17:57.742Z"} -->
