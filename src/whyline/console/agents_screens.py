@@ -17,7 +17,7 @@ from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Collapsible, DataTable, Input, Label, Select, Static, TextArea
 
-from whyline.agents import capabilities, definitions as d, deliveries as dl, paths, records, templates
+from whyline.agents import capabilities, defaults, definitions as d, deliveries as dl, paths, records, templates
 from whyline import models
 from whyline.agents import schedule, service
 from whyline.agents.service import NO_AGENTS
@@ -1967,10 +1967,14 @@ class NewAgentScreen(ModalScreen):
             )
             row.display = cli in backups and cli != runner
             model_rows.append(row)
+        if existing is None:
+            initial_workdir = defaults._shorten(defaults.folder())
+        else:
+            initial_workdir = existing.workdir or "~"
         workdir = HorizontalGroup(
             Label("Runs in", classes="field-label"),
             Input(
-                existing.workdir if existing and existing.workdir else "~",
+                initial_workdir,
                 id="na-workdir",
                 placeholder="~",
             ),

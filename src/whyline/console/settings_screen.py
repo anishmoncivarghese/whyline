@@ -126,14 +126,21 @@ class ProviderSettingsScreen(ModalScreen):
         save_chat: Callable[[dict], object] | None = None,
         safety: dict | None = None,
         save_safety: Callable[..., object] | None = None,
+        agents: dict | None = None,
+        save_agents: Callable[[str], object] | None = None,
     ) -> None:
         """``chat`` shows the Relay chat section: ``choices`` (agent names),
         ``agent`` (str | None), ``timeout_seconds`` and ``snapshot_chars``.
         ``save_chat`` receives only the values changed, as ``relaychat.settings.save``
         keyword names. ``safety`` shows the Relay safety section: ``battery_percent``
         (int | None), ``on_wake`` and ``on_quit``; ``save_safety`` takes
-        ``relaysafety.save`` keywords."""
+        ``relaysafety.save`` keywords. ``agents`` shows the Agents section:
+        ``folder`` (the default folder for new agents) and ``home``; ``save_agents``
+        receives the chosen folder (``defaults.set_folder``)."""
         super().__init__()
+        self._agents = dict(agents) if agents is not None and save_agents is not None else None
+        self._save_agents = save_agents
+        self._agents_folder = str(self._agents.get("folder", "")) if self._agents else ""
         self._chat = dict(chat) if chat is not None and save_chat is not None else None
         self._save_chat = save_chat
         self._safety = dict(safety) if safety is not None and save_safety is not None else None
@@ -172,6 +179,7 @@ class ProviderSettingsScreen(ModalScreen):
                 *rows,
                 *self._chat_widgets(),
                 *self._safety_widgets(),
+                *self._agents_widgets(),
                 id="ss-body",
             ),
             Static(_HINT, id="ss-hint", markup=False),
@@ -236,6 +244,44 @@ class ProviderSettingsScreen(ModalScreen):
                 raise ValueError("Snapshot size must be a whole number of characters.")
             changes["snapshot_chars"] = int(text)
         return changes
+
+    def _agents_widgets(self) -> list:
+        if self._agents is None:
+            return []
+        return [
+            Label("Agents", id="ss-agents-section", classes="ss-section-title"),
+            Horizontal(
+                Label("Default folder for new agents", classes="ss-chat-label"),
+                Static(self._agents_folder, id="ss-agents-folder", markup=False,
+                       classes="ss-status"),
+                Button("Browse…", id="ss-agents-browse"),
+                Button("Reset", id="ss-agents-reset"),
+                classes="ss-row",
+            ),
+        ]
+
+    def _browse_folder(self) -> None:
+        from pathlib import Path
+
+        from whyline.console.pickers import PathPickScreen
+
+        start = Path(self._agents_folder).expanduser()
+        self.app.push_screen(
+            PathPickScreen(start, title="Default folder for new agents"),
+            self._folder_picked,
+        )
+
+    def _folder_picked(self, picked: object) -> None:
+        if picked is None or not self.is_attached:
+            return
+        self._set_agents_folder(str(picked))
+
+    def _set_agents_folder(self, text: str) -> None:
+        self._agents_folder = text
+        try:
+            self.query_one("#ss-agents-folder", Static).update(text)
+        except NoMatches:
+            return
 
     def _safety_widgets(self) -> list:
         if self._safety is None:
@@ -308,6 +354,10 @@ class ProviderSettingsScreen(ModalScreen):
             self._save()
         elif event.button.id == "ss-check-selected":
             self._check_selected()
+        elif event.button.id == "ss-agents-browse":
+            self._browse_folder()
+        elif event.button.id == "ss-agents-reset" and self._agents is not None:
+            self._set_agents_folder(str(self._agents.get("home", "")))
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         agent = _checkbox_agent(event.checkbox.id)
@@ -379,7 +429,7 @@ class ProviderSettingsScreen(ModalScreen):
         completed = {agent: dict(result) for agent, result in self._completed.items()}
         button = self.query_one("#ss-save", Button)
         button.disabled = True
-        saved_chat = saved_safety = False
+        saved_chat = saved_safety = saved_agents = False
         try:
             changes = self._chat_changes()
             safety_changes = self._safety_changes()
@@ -389,6 +439,9 @@ class ProviderSettingsScreen(ModalScreen):
             if safety_changes:
                 self._save_safety(**safety_changes)
                 saved_safety = True
+            if self._agents is not None and self._agents_folder != self._agents.get("folder"):
+                self._save_agents(self._agents_folder)
+                saved_agents = True
             self._save_enabled(values, completed)
         except Exception as error:
             if saved_chat:
@@ -401,6 +454,11 @@ class ProviderSettingsScreen(ModalScreen):
                 before = {name: self._safety.get(name) for name in safety_changes}
                 try:
                     self._save_safety(**before)
+                except Exception:
+                    pass
+            if saved_agents:
+                try:
+                    self._save_agents(str(self._agents.get("folder", "")))
                 except Exception:
                     pass
             button.disabled = False

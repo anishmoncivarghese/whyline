@@ -499,6 +499,11 @@ def _add_agents(subparsers: "argparse._SubParsersAction") -> None:
     models_edit = models_cmd.add_mutually_exclusive_group()
     models_edit.add_argument("--add", metavar="ID", help="add a model id to the list")
     models_edit.add_argument("--remove", metavar="ID", help="remove a model id you added")
+    settings_cmd = sub.add_parser("settings", help="Defaults for new agents on this Mac")
+    settings_sub = settings_cmd.add_subparsers(dest="agents_setting", required=True)
+    folder_cmd = settings_sub.add_parser(
+        "default-folder", help="Show or set the folder new agents start in")
+    folder_cmd.add_argument("path", nargs="?", default=None, metavar="PATH")
     sub.add_parser("tick", help="Run due agents (called by the scheduler)")
     sub.add_parser("approvals", help="Tool calls waiting for your yes or no")
     for word in ("approve", "deny"):
@@ -2098,6 +2103,18 @@ def cmd_agents(args: argparse.Namespace) -> int:
 
     if args.agents_command == "scheduler":
         return _cmd_agents_scheduler(args)
+    if args.agents_command == "settings":
+        from whyline.agents import defaults
+
+        if args.path is None:
+            print(defaults.folder())
+            return EXIT_OK
+        try:
+            print(defaults.set_folder(args.path))
+        except defaults.DefaultsError as error:
+            print(str(error), file=sys.stderr)
+            return EXIT_USAGE
+        return EXIT_OK
     if args.agents_command == "mail-script":
         return _cmd_agents_mail_script(args)
     if args.agents_command == "telegram":

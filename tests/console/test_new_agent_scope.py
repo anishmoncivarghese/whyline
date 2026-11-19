@@ -148,3 +148,33 @@ async def test_list_row_marks_repository_agents(tmp_path):
         table = app.screen.query_one("#al-table", DataTable)
         first = [str(table.get_row_at(i)[0]) for i in range(2)]
     assert first == ["repox · this repository only", "personalx"]
+
+
+@pytest.mark.asyncio
+async def test_new_agent_runs_in_uses_default_folder(tmp_path, env):
+    from whyline.agents import defaults
+
+    (env / "work").mkdir()
+    defaults.set_folder(env / "work")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 100)) as pilot:
+        app.push_screen(NewAgentScreen(tmp_path, STATUS), app._new_agent_done)
+        await pilot.pause()
+        assert app.screen.query_one("#na-workdir", tui.Input).value == "~/work"
+
+
+@pytest.mark.asyncio
+async def test_existing_agent_runs_in_ignores_default_folder(tmp_path, env):
+    from whyline.agents import defaults
+
+    (env / "work").mkdir()
+    defaults.set_folder(env / "work")
+    path = tmp_path / "keep.toml"
+    path.write_text("x", encoding="utf-8")
+    defn = d.AgentDef(name="keep", kind="personal", path=path, root=tmp_path,
+                      instructions="x", runner="claude", workdir="")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 100)) as pilot:
+        app.push_screen(NewAgentScreen(tmp_path, STATUS, defn), app._new_agent_done)
+        await pilot.pause()
+        assert app.screen.query_one("#na-workdir", tui.Input).value == "~"

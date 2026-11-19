@@ -5370,7 +5370,10 @@ class WhylineConsoleApp(App):
         self._sync_mode_indicator()
 
     def _open_settings(self) -> None:
+        from pathlib import Path
+
         from whyline import account, relaysafety
+        from whyline.agents import defaults
         from whyline.console.settings_screen import ProviderSettingsScreen
         from whyline.relaychat import agent_choice
         from whyline.relaychat import settings as chat_settings
@@ -5396,6 +5399,8 @@ class WhylineConsoleApp(App):
                     "on_quit": safety.on_quit,
                 },
                 save_safety=relaysafety.save,
+                agents={"folder": str(defaults.folder()), "home": str(Path.home())},
+                save_agents=defaults.set_folder,
             ),
             self._settings_closed,
         )

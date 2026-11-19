@@ -47648,3 +47648,97 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 3fe5baf59224499b9e5bd6a44edd3533 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-19T17:18:57.062Z"} -->
+
+## 2026-11-19 — Settings Agents section stages the folder and saves on Save via defaults.set_folder; Reset stages home
+
+**Actor:** claude
+**Role:** implementer
+**Task:** FLD-2
+
+**Because:** matches the transactional Settings modal; a refused folder shows the error and keeps the screen open
+
+**Rejected:**
+
+- save on Browse — breaks Cancel semantics
+
+**Files:** src/whyline/console/settings_screen.py
+
+<!-- whyline-event: ababa1af0953439c93918541945e6ee4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T17:22:37.319Z"} -->
+
+## 2026-11-19 — Pass FLD-2 default folder configuration, CLI, and console Settings integration
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** FLD-2
+
+**Because:** tests/agents/test_defaults.py (7 passed) and tests/console/test_settings_agents.py (4 passed) verify defaults.folder fallback to home, refusal of non-existing folders, ~ contraction/expansion, CLI default-folder get/set, and Settings screen staging, browsing, reset, and save behavior; git diff --check is clean and existing suite passes
+
+**Files:** src/whyline/agents/defaults.py, src/whyline/console/settings_screen.py, src/whyline/cli.py
+
+<!-- whyline-event: c92af583a5214362af09fc8f8c6acc10 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T18:20:06.302Z"} -->
+
+## 2026-11-19 — Reject FLD-2 until new personal agents consume the configured default folder
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FLD-2
+
+**Because:** The storage, CLI, Settings section, and 11 focused tests pass, but src/whyline/console/agents_screens.py still initializes a new personal agent's Runs in field to ~ instead of defaults.folder(), contrary to the design requirement; no test covers that core behavior. The plain full suite had one unrelated release-screen worker race that passed on immediate isolated rerun.
+
+**Rejected:**
+
+- approve the settings-only implementation — it stores and displays a value that new agents never use
+
+**Files:** src/whyline/console/agents_screens.py, tests/console/test_new_agent_scope.py
+
+<!-- whyline-event: 8882bb3cfd074edb946892912392fcee -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T18:45:56.301Z"} -->
+
+## 2026-11-19 — New Agent screen seeds Runs in from defaults.folder() only when no existing/template agent is passed
+
+**Actor:** claude
+**Role:** implementer
+**Task:** FLD-2
+
+**Because:** existing and template-prefilled agents must keep their own workdir (task item 5)
+
+**Rejected:**
+
+- apply default when existing.workdir is empty — would change existing agents
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 0367818fc5b74ba681f2a2c402a5eaf6 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T18:46:47.295Z"} -->
+
+## 2026-11-19 — Pass FLD-2 with NewAgentScreen default folder integration and full test suite verification
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** FLD-2
+
+**Because:** NewAgentScreen correctly initializes Runs in to defaults.folder() for new agents while preserving existing agent workdirs; focused tests (19 passed) and full pytest suite (5383 passed, 1 skipped) passed cleanly
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 526db2f3a5664b9a8fb363bbcabf8c2a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T19:11:56.202Z"} -->
+
+## 2026-11-19 — Approve FLD-2 default folder persistence, console integration, CLI, and new-agent behavior
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FLD-2
+
+**Because:** The implementation reads and validates defaults.toml with home fallback, stores home-relative paths using tilde, exposes Browse and Reset through Settings with persistence via defaults.set_folder, provides the requested CLI, seeds only new agents while preserving existing workdirs, and uv run pytest -q completed at 100 percent with no failures and one skip
+
+**Rejected:**
+
+- request further changes — the diff and tests cover every specified behavior without a concrete defect
+
+**Files:** src/whyline/agents/defaults.py, src/whyline/console/settings_screen.py, src/whyline/console/agents_screens.py, src/whyline/cli.py
+
+<!-- whyline-event: dcac80835eeb46c681f42829a188751a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T19:37:34.002Z"} -->
