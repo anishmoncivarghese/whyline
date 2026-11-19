@@ -65,7 +65,7 @@ Rules every task keeps:
   3. Nothing in the real `~/.whyline` is removed or changed by this task.
   Tests: `test_tests_never_see_the_real_home` (with no fixture named, `Path.home()` is under the temporary folder and is not the home recorded when the session started), and `test_saving_a_connector_in_a_plain_test_lands_in_tmp`.
 
-- [ ] PKR-3: `not stated` for a tool that doesn't say whether it reads
+- [x] PKR-3: `not stated` for a tool that doesn't say whether it reads
   Edit `src/whyline/tools/mcp_config.py`, `src/whyline/console/agents_screens.py`, `src/whyline/console/tools_screens.py` and their tests only.
   Why: `mcp.Tool.read_only` is None when a server gives no hint, but `mcp_config` stores it as `false`, and the picker then says `writes` for a tool called `read`.
   1. `mcp_config.Tool.read_only` becomes `bool | None`. `test_server` keeps None. The file writes `read_only` only when it is stated, and a tool with no `read_only` line loads as None.
