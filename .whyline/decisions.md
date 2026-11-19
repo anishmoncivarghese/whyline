@@ -47605,3 +47605,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 7b252bfa971e4fbda613890c141266e8 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-19T16:03:30.401Z"} -->
+
+## 2026-11-19 — Picker lists rows as unnamed widgets mapped to paths; New folder is a nested modal that creates the folder itself
+
+**Actor:** claude
+**Role:** implementer
+**Task:** FLD-1
+
+**Because:** no id clashes when the list is rebuilt, and refusals keep the name dialog open
+
+**Rejected:**
+
+- inline name box — more state in the main screen
+
+**Files:** src/whyline/console/pickers.py
+
+<!-- whyline-event: f95a4038680d47128e349b4d5ba95a3d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T16:05:32.750Z"} -->
+
+## 2026-11-19 — Pass FLD-1 folder and file picker implementation
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** FLD-1
+
+**Because:** All 23 picker tests and the 5370 full suite tests pass; directory navigation, file selection, multi-selection, 500 entry limit, hidden items, and new folder dialog with input validation behave as specified
+
+**Files:** src/whyline/console/pickers.py
+
+<!-- whyline-event: 326c5c75a1a74087a72fdf5599bc6ad4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T16:30:32.114Z"} -->
+
+## 2026-11-19 — Approve FLD-1 folder and file picker
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FLD-1
+
+**Because:** The implementation matches the required folder, file, and multi-file behaviors; its 23 focused tests cover every named scenario, and an independent full uv run pytest -q rerun passed after one unrelated timing-sensitive test passed in isolation
+
+**Files:** src/whyline/console/pickers.py, tests/console/test_pickers.py
+
+<!-- whyline-event: 3fe5baf59224499b9e5bd6a44edd3533 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T17:18:57.062Z"} -->
