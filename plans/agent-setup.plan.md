@@ -93,7 +93,7 @@ Rules every task keeps:
   5. A lister that fails or times out (10 seconds) leaves the cache as it is and returns the cached list.
   Tests: the merge order and no duplicates, `cached` starting no process, a failed lister keeping the old cache, the stale mark, add and remove with a bad id refused, and `relay_ops`'s existing model tests still passing.
 
-- [ ] AMD-2: A model per CLI on the agent, and the run uses it
+- [x] AMD-2: A model per CLI on the agent, and the run uses it
   Edit `src/whyline/agents/definitions.py`, `src/whyline/agents/runner.py`, `src/whyline/agents/records.py` and their tests only.
   1. `AgentDef.models: dict[str, str]`, from a `[models]` table (`claude = "sonnet"`). Keys must be the runner or a backup. An old `model = "x"` is read as `models[runner] = "x"`. `render` writes `[models]` only when it is not empty, and writes `model` as before when the only entry is the runner's and the file had `model`, so `test_old_model_field_keeps_the_hash` holds.
   2. `runner._command` adds the model for the CLI it is building, with `whyline_relay.config.with_model` and that CLI's adapter `model_flag`. A CLI with no model flag runs without one.
