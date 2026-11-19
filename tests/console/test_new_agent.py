@@ -55,7 +55,7 @@ async def test_fill_review_and_save_a_repo_agent(tmp_path, monkeypatch):
 
     src = tmp_path / "repo" / "docs"
     src.mkdir(parents=True)
-    monkeypatch.setattr(mac_input, "pick_files", lambda run=None: [src])
+    (src / "a.md").write_text("a", encoding="utf-8")
     backup_writes = []
     monkeypatch.setattr(relay_ops, "save_backup", lambda *args: backup_writes.append(args))
     app = tui.WhylineConsoleApp(root=tmp_path / "repo")
@@ -71,11 +71,10 @@ async def test_fill_review_and_save_a_repo_agent(tmp_path, monkeypatch):
         s.query_one("#na-when", tui.Select).value = "weekdays"
         await pilot.pause()
         s.query_one("#na-at", tui.Input).value = "07:00"
-        await pilot.click("#na-add-sources")
-        for _ in range(50):
-            if "docs" in str(s.query_one("#na-sources-list").renderable):
-                break
-            await pilot.pause(0.05)
+        s.query_one("#na-add-sources", tui.Button).press()
+        await pilot.pause()
+        app.screen.dismiss([src / "a.md"])
+        await pilot.pause()
         await pilot.click("#na-next")
         await pilot.pause()
         assert isinstance(app.screen, ReviewScreen)
@@ -86,7 +85,7 @@ async def test_fill_review_and_save_a_repo_agent(tmp_path, monkeypatch):
     text = saved.read_text()
     assert saved.exists() and 'backup = ["codex"]' in text
     assert backup_writes == []
-    assert 'knowledge = ["docs"]' in text
+    assert 'knowledge = ["docs/a.md"]' in text
     assert state.all_activations(state.connect())[0].status == "active"
 
 

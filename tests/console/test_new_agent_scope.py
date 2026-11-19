@@ -178,3 +178,65 @@ async def test_existing_agent_runs_in_ignores_default_folder(tmp_path, env):
         app.push_screen(NewAgentScreen(tmp_path, STATUS, defn), app._new_agent_done)
         await pilot.pause()
         assert app.screen.query_one("#na-workdir", tui.Input).value == "~"
+
+
+@pytest.mark.asyncio
+async def test_runs_in_browse_writes_folder_back_with_tilde(tmp_path, env):
+    from whyline.console.pickers import PathPickScreen
+
+    (env / "work").mkdir()
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 100)) as pilot:
+        app.push_screen(NewAgentScreen(tmp_path, STATUS), app._new_agent_done)
+        await pilot.pause()
+        s = app.screen
+        s.query_one("#na-workdir-browse", tui.Button).press()
+        await pilot.pause()
+        assert isinstance(app.screen, PathPickScreen)
+        assert app.screen._cwd == env
+        app.screen.dismiss(env / "work")
+        await pilot.pause()
+        assert s.query_one("#na-workdir", tui.Input).value == "~/work"
+
+
+@pytest.mark.asyncio
+async def test_runs_in_browse_starts_at_default_folder_when_empty(tmp_path, env):
+    from whyline.agents import defaults
+    from whyline.console.pickers import PathPickScreen
+
+    (env / "work").mkdir()
+    defaults.set_folder(env / "work")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 100)) as pilot:
+        app.push_screen(NewAgentScreen(tmp_path, STATUS), app._new_agent_done)
+        await pilot.pause()
+        s = app.screen
+        s.query_one("#na-workdir", tui.Input).value = ""
+        s.query_one("#na-workdir-browse", tui.Button).press()
+        await pilot.pause()
+        assert isinstance(app.screen, PathPickScreen)
+        assert app.screen._cwd == env / "work"
+
+
+@pytest.mark.asyncio
+async def test_add_files_adds_several_ticked_files(tmp_path, env):
+    from whyline.console.pickers import PathPickScreen
+
+    work = env / "work"
+    work.mkdir()
+    (work / "a.md").write_text("a", encoding="utf-8")
+    (work / "b.md").write_text("b", encoding="utf-8")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 100)) as pilot:
+        app.push_screen(NewAgentScreen(tmp_path, STATUS), app._new_agent_done)
+        await pilot.pause()
+        s = app.screen
+        s.query_one("#na-workdir", tui.Input).value = str(work)
+        s.query_one("#na-add-sources", tui.Button).press()
+        await pilot.pause()
+        assert isinstance(app.screen, PathPickScreen)
+        assert app.screen._cwd == work
+        assert app.screen._many
+        app.screen.dismiss([work / "a.md", work / "b.md"])
+        await pilot.pause()
+        assert s._sources == ["~/work/a.md", "~/work/b.md"]

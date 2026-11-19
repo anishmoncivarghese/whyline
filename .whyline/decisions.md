@@ -47742,3 +47742,50 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: dcac80835eeb46c681f42829a188751a -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-19T19:37:34.002Z"} -->
+
+## 2026-11-19 — Add files uses PathPickScreen; repo-scoped agents start at the repo root, personal at Runs in
+
+**Actor:** claude
+**Role:** implementer
+**Task:** FLD-3
+
+**Because:** Runs in is hidden for repo agents, so the repo root is the sensible start
+
+**Rejected:**
+
+- mac_input.pick_files — replaced; the in-console picker is the console-first path
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 32a0006af8de4354bb582bb9a5f48536 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T19:40:55.187Z"} -->
+
+## 2026-11-19 — Pass FLD-3 with PathPickScreen integration for Runs in and Knowledge Add files
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** FLD-3
+
+**Because:** Browse on Runs in correctly opens PathPickScreen and shortens chosen folders with ~, empty or missing folders fall back to defaults.folder(), Add files uses PathPickScreen(files=True, many=True) starting at Runs in, and full test suite passed with exit code 0
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: a8c81981488d4395828f2081be1d45ad -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T20:07:04.270Z"} -->
+
+## 2026-11-19 — Approve FLD-3 in-console browsing for Runs in and Knowledge files
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** FLD-3
+
+**Because:** The diff seeds new personal agents from defaults.folder(), preserves edited workdirs, opens PathPickScreen with the required folder fallbacks and multi-file options, stores home paths with tilde, and the full uv run pytest -q suite passed with exit code 0
+
+**Rejected:**
+
+- request changes — the implementation and tests cover each requested behavior without a concrete defect
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: b1114348ed8948dba7ca44433a24e0f1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T20:31:47.332Z"} -->

@@ -1978,6 +1978,7 @@ class NewAgentScreen(ModalScreen):
                 id="na-workdir",
                 placeholder="~",
             ),
+            Button("Browse…", id="na-workdir-browse"),
             id="na-workdir-row",
         )
         workdir.display = kind == "personal"
@@ -2463,7 +2464,9 @@ class NewAgentScreen(ModalScreen):
         elif button_id == "na-telegram-setup":
             self._telegram_setup()
         elif button_id == "na-add-sources":
-            self._pick("sources")
+            self._add_files()
+        elif button_id == "na-workdir-browse":
+            self._browse_workdir()
         elif button_id == "na-clear-sources":
             self._sources.clear()
             self._refresh_sources()
@@ -2487,6 +2490,46 @@ class NewAgentScreen(ModalScreen):
             self._tools_changed()
         elif button_id == "na-pick-folder":
             self._pick("folder")
+
+    def _workdir_start(self) -> Path:
+        """The folder in Runs in, or the default folder when it is empty or gone."""
+        text = self.query_one("#na-workdir", Input).value.strip()
+        if text:
+            path = Path(text).expanduser()
+            if path.is_dir():
+                return path
+        return defaults.folder()
+
+    def _browse_workdir(self) -> None:
+        from whyline.console.pickers import PathPickScreen
+
+        self.app.push_screen(
+            PathPickScreen(self._workdir_start(), title="Runs in"),
+            self._workdir_picked,
+        )
+
+    def _workdir_picked(self, picked: object) -> None:
+        if picked is None or not self.is_attached:
+            return
+        self.query_one("#na-workdir", Input).value = defaults._shorten(Path(picked))
+
+    def _add_files(self) -> None:
+        from whyline.console.pickers import PathPickScreen
+
+        if self._choice("#na-kind") == "repo":
+            start = self._root
+        else:
+            start = self._workdir_start()
+        self.app.push_screen(
+            PathPickScreen(start, files=True, many=True, title="Add files"),
+            self._files_picked,
+        )
+
+    def _files_picked(self, picked: object) -> None:
+        if not picked or not self.is_attached:
+            return
+        paths = picked if isinstance(picked, list) else [picked]
+        self._pick_done("sources", [Path(p) for p in paths])
 
     def _sync_kind(self) -> None:
         try:
