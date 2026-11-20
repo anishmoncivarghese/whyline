@@ -185,7 +185,7 @@ Rules every task keeps:
   6. An installed skill's row shows `from <source>` and **Update…**, which shows `update_diff` with **Update** and **Cancel**, or `Already up to date`.
   Tests: the first-use fetch and its cancel, the offline line, the preview's order with warnings first, Install and Install as, the link parsed and a bad link refused, and Update's diff and its up-to-date line.
 
-- [ ] SKC-5: Draft a skill from a description
+- [x] SKC-5: Draft a skill from a description
   Create `src/whyline/tools/skill_draft.py` and `tests/tools/test_skill_draft.py`. Edit `src/whyline/console/tools_screens.py` and its tests.
   1. `skill_draft.prompt(description) -> str` asks for one `SKILL.md`: front matter with `name` and a one-line `description`, then the body, and nothing else. The user's description is in a labelled block as data.
   2. `skill_draft.parse(answer) -> tuple[str, str, str]` (name, description, body) takes the first fenced block or the whole answer, and raises `DraftError` with a plain reason when the front matter, name or description is missing or the text is over `SKILL_LIMIT`.
