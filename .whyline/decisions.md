@@ -47858,3 +47858,55 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 9207815b66974547b73fdd6d8caa0764 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-19T23:26:53.750Z"} -->
+
+## 2026-11-19 — Skill source fetch uses git clone/fetch+reset with a sibling .fetched stamp; sources file stores only user sources plus disabled built-in names
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SKC-2
+
+**Because:** keeps the clone a pure git checkout and built-in definitions in code so they can change between releases
+
+**Rejected:**
+
+- storing all sources in the toml — built-in URL changes would never reach existing users
+
+**Files:** src/whyline/tools/skill_sources.py
+
+<!-- whyline-event: 3be2f58ebcd844849029a157c3c517ed -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T23:28:14.211Z"} -->
+
+## 2026-11-19 — Skill sources pass testing: Source/Entry schema, built-ins, load/add/remove/set_enabled, git argv on clone/fetch, index manifest parsing and symlink skipping, and search ranking
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SKC-2
+
+**Because:** All 22 unit tests in tests/tools/test_skill_sources.py pass covering git argv, isolation, disabling builtins, and search ranking
+
+**Rejected:**
+
+- Failing on unrelated flaky console UI test — test_no_question_without_notes_or_when_released is in console release screens and passes cleanly in isolation
+
+**Files:** src/whyline/tools/skill_sources.py
+
+<!-- whyline-event: 5c84978752e9484f8e099769fe351537 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-19T23:54:31.035Z"} -->
+
+## 2026-11-20 — Approve SKC-2 skill sources
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SKC-2
+
+**Because:** Source/Entry, builtins, toml load/add/remove/disable, fetch git argv, index symlink skip, and search rank/cap match the task; 22 unit tests pass; the full-suite failure of test_notes_review_in_ask_mode is an unrelated console flake that passes in isolation
+
+**Rejected:**
+
+- Reject for unused run() stub in test_no_fetch_without_asking — load/index/search never call git
+- Fail SKC-2 on test_notes_review_in_ask_mode — console release notes, not this task, passes in isolation
+
+**Files:** src/whyline/tools/skill_sources.py, tests/tools/test_skill_sources.py
+
+<!-- whyline-event: 04df163eec3d46b793b2e8b2a8871748 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T00:23:22.881Z"} -->
