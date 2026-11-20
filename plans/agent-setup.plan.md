@@ -193,7 +193,7 @@ Rules every task keeps:
   4. **New skill** gets **Draft from a description…**: a box for the description, `Drafting…` in a worker, then the normal New skill form filled in for editing. Nothing is saved until **Save**.
   Tests: the prompt holding the description as data, parse on a good answer, each `DraftError`, the single retry, and the form filled and nothing saved before Save.
 
-- [ ] SKC-6: A skills picker you can search, and the commands
+- [x] SKC-6: A skills picker you can search, and the commands
   Edit `src/whyline/console/agents_screens.py`, `src/whyline/tools/cli.py` and their tests only.
   1. `SkillPickScreen` gets a search box that filters by name and description, and each row shows `name · origin` with the description on its own wrapped line underneath, so nothing is cut off. Ticks are kept while filtering. A broken skill is listed last, disabled, with its reason.
   2. CLI, each calling the functions above: `whyline tools skills sources [add NAME URL [--path P] | remove NAME | refresh [NAME]]`, `browse <text>`, `show-remote <source>:<name>` (the preview), `install <source>:<name> [--as NAME] [--yes]` (prints the warnings and asks `[y/N]`), and `update <name> [--yes]` (prints the diff and asks).
