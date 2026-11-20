@@ -64,6 +64,9 @@ def _write_tools(defn, run_folder: Path) -> Path | None:
         server_name, _, tool_name = key.partition(".")
         server = servers.get(server_name)
         tool = next((t for t in server.tools if t.name == tool_name), None) if server else None
+        if tool is None and server_name == mcp_config.MADE:
+            # Not accepted any more, or removed: still named, so the call is refused, not missing.
+            tool = mcp_config.Tool(tool_name)
         if tool is None:
             continue
         items.append({"server": server_name, "tool": tool_name, "permission": permission,

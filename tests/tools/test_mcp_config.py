@@ -29,7 +29,8 @@ def test_round_trip_and_mode(home):
         tools=(Tool("read", "Reads \"it\"", {"type": "object", "properties": {"p": {"type": "string"}}}, True),),
     )
     mcp_config.save_server(server)
-    assert mcp_config.load() == {"files": server}
+    assert mcp_config._load_saved() == {"files": server}
+    assert set(mcp_config.load()) == {"files", "made"}
     mode = stat.S_IMODE(os.stat(home / ".whyline" / "mcp.toml").st_mode)
     assert mode == 0o600
 
@@ -88,7 +89,7 @@ def test_bad_name_and_value_in_env_refused(home):
         mcp_config.save_server(Server(name="Bad_Name", command="x"))
     with pytest.raises(ValueError):
         mcp_config.save_server(Server(name="ok", command="x", env={"K": "Not A Credential"}))
-    assert mcp_config.load() == {}
+    assert mcp_config._load_saved() == {}
 
 
 def test_import_from_three_configs(home):
@@ -129,7 +130,7 @@ def test_remove_refused_while_used(home):
     assert "files" in mcp_config.load()
     users.unregister("t")
     mcp_config.remove_server("files")
-    assert mcp_config.load() == {}
+    assert mcp_config._load_saved() == {}
 
 
 def test_cli_add_list_import_remove(home, capsys):

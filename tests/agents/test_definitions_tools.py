@@ -93,6 +93,37 @@ def test_hash_without_tools_ignores_servers(repo, home):
     assert d.definition_hash(BASE) == before
 
 
+def _made(name="weather", url="https://api.example.com/{city}", accept=True):
+    from whyline.tools import made
+
+    made.save(made.MadeTool(name=name, url=url, inputs=[made.ToolInput("city")]))
+    if accept:
+        made.accept(name)
+
+
+def test_agent_may_name_a_made_tool_and_its_hash_follows_the_tool(repo, home):
+    from whyline.tools import made
+
+    _made()
+    a = _parse(repo, '[tools]\n"made.weather" = "ask"\n')
+    assert a.tools == {"made.weather": "ask"}
+    first = d.definition_hash(d.render(a))
+    _made(url="https://api.example.org/{city}", accept=False)
+    edited = d.definition_hash(d.render(a))
+    assert edited != first
+    made.accept("weather")
+    assert d.definition_hash(d.render(a)) not in (first, edited)
+
+
+def test_unaccepted_or_removed_made_tool_keeps_the_agent_loading(repo, home):
+    from whyline.tools import made
+
+    _made(accept=False)
+    assert _parse(repo, '[tools]\n"made.weather" = "allowed"\n').tools == {"made.weather": "allowed"}
+    made.remove("weather")
+    assert _parse(repo, '[tools]\n"made.weather" = "allowed"\n').tools == {"made.weather": "allowed"}
+
+
 def test_agents_register_as_users(repo, home, monkeypatch):
     _server(home, env={"TOKEN": "gh-token"})
     _skill(home)

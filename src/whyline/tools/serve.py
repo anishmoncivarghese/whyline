@@ -139,6 +139,8 @@ class Server:
             body, error = self._text_result(DENIED_TEXT), DENIED_TEXT
         elif decision == "timed out":
             body, error = self._text_result(TIMED_OUT_TEXT), TIMED_OUT_TEXT
+        elif item["server"] == mcp_config.MADE:
+            body, error, size = self._call_made(item["tool"], arguments)
         else:
             try:
                 result = self._session(item["server"]).call(item["tool"], arguments)
@@ -155,6 +157,27 @@ class Server:
                 body = self._text_result(error)
         self._log(name, item, arguments, decision, self._clock() - started, size, error)
         return body
+
+    def _call_made(self, name: str, arguments: dict) -> tuple[dict, str, int]:
+        from whyline.tools import made
+
+        tool = made.load(name)
+        if tool is None or not made.accepted(tool):
+            error = f"made.{name} is not accepted"
+            return self._text_result(error), error, 0
+        try:
+            text = made.call(tool, arguments, get_credential=self._credential)
+        except made.MadeToolError as problem:
+            error = str(problem)
+            return self._text_result(error), error, 0
+        return {"content": [{"type": "text", "text": text}], "isError": False}, "", len(text)
+
+    @staticmethod
+    def _credential(name: str) -> str | None:
+        try:
+            return credentials.value(name)
+        except Exception:
+            return None
 
     def _drop(self, server_name: str) -> None:
         session = self._sessions.pop(server_name, None)

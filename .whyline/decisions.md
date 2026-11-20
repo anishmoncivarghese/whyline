@@ -48383,3 +48383,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: da69914fc4c44f418ad12b4a49044eb5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-20T12:44:40.266Z"} -->
+
+## 2026-11-20 — Built-in made server is added in mcp_config.load(); saved-server writers use _load_saved()
+
+**Actor:** claude
+**Role:** implementer
+**Task:** MKT-2
+
+**Because:** pickers need made tools listed without an mcp.toml entry, but save/remove/test must never write the built-in into mcp.toml
+
+**Rejected:**
+
+- separate made-only picker function — every picker calls load() so each would need changing
+
+**Files:** src/whyline/tools/mcp_config.py
+
+<!-- whyline-event: b659b5395118466697ca53e38bb57059 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T13:02:24.516Z"} -->
+
+## 2026-11-20 — Pass MKT-2: accepted made tools built into serve and definitions with call logging, approval and hash tracking
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** MKT-2
+
+**Because:** All 810 tests across tests/tools, tests/agents, and tests/console/test_tools_screens.py passed; made server correctly lists accepted tools, serve answers made.call through approval and call logging paths, unaccepted/removed tools return made.<name> is not accepted at runtime, and agent definition hashes track accepted_hash
+
+**Files:** src/whyline/tools/serve.py
+
+<!-- whyline-event: 8713b170df8c499b964b746a10105a40 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T13:30:08.981Z"} -->
+
+## 2026-11-20 — Approve MKT-2: made tools built into serve and definitions with call logging, approval, and hash tracking
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** MKT-2
+
+**Because:** All project tests pass; made tools are exposed as a built-in server without mcp.toml entries, serve executes made.call with full approval and call logging, unaccepted/removed tools are gracefully refused at runtime, and definition hash tracks accepted_hash
+
+**Files:** src/whyline/tools/serve.py
+
+<!-- whyline-event: 2a3a1d1dba034f6dbc6dbff0ae4ea0a4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T20:57:05.622Z"} -->

@@ -342,7 +342,7 @@ async def test_add_server_refuses_a_bad_name(home, tmp_path):
         await pilot.pause()
         assert isinstance(app.screen, AddServerScreen)
         assert "server name" in text(form, "#as-status")
-    assert mcp_config.load() == {}
+    assert mcp_config._load_saved() == {}
 
 
 async def test_import_adds_only_ticked_servers(home, tmp_path):
@@ -367,7 +367,7 @@ async def test_import_adds_only_ticked_servers(home, tmp_path):
         await pilot.click("#im-go")
         await pilot.pause()
         assert app.screen is screen
-    assert list(mcp_config.load()) == ["alpha"]
+    assert list(mcp_config._load_saved()) == ["alpha"]
 
 
 async def test_test_runs_in_a_worker_and_shows_tools(home, tmp_path):
@@ -381,7 +381,7 @@ async def test_test_runs_in_a_worker_and_shows_tools(home, tmp_path):
 
         servers = {name: replace(server, tools=(
             mcp_config.Tool("read_it", read_only=True), mcp_config.Tool("write_it")))}
-        mcp_config._write({**mcp_config.load(), **servers})
+        mcp_config._write({**mcp_config._load_saved(), **servers})
         return "2 tools: read_it, write_it"
 
     app = tui.WhylineConsoleApp(root=tmp_path)
@@ -421,7 +421,7 @@ async def test_remove_server_and_refusal_names_users(home, tmp_path):
         screen.query_one("#tl-remove").press()
         await pilot.pause()
         assert "Removed MCP server free" in text(screen, "#tl-status")
-    assert list(mcp_config.load()) == ["used"]
+    assert list(mcp_config._load_saved()) == ["used"]
 
 
 async def test_credentials_add_rotate_remove_with_masked_value(home, stored, tmp_path):

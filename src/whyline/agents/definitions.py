@@ -366,7 +366,8 @@ def _check_tools(defn: AgentDef) -> None:
         server = servers.get(server_name)
         if server is None:
             raise DefinitionError(f"unknown server {server_name} in tool {key}")
-        if tool_name not in {t.name for t in server.tools}:
+        # A made tool that is not accepted is refused when it is called, not here.
+        if server_name != mcp_config.MADE and tool_name not in {t.name for t in server.tools}:
             raise DefinitionError(f"unknown tool {tool_name} on server {server_name}")
         if permission not in TOOL_PERMISSIONS:
             raise DefinitionError(
@@ -475,9 +476,20 @@ def definition_hash(text: str) -> str:
         from whyline.tools import mcp_config
 
         servers = mcp_config.load()
-        used = sorted({key.partition(".")[0] for key in tools})
+        used = sorted({key.partition(".")[0] for key in tools} - {mcp_config.MADE})
         raw = {**raw, "_tools_hash": {
             name: servers[name].tools_hash if name in servers else "" for name in used}}
+        # A made tool that was edited or removed is a different agent until accepted again.
+        from whyline.tools import made
+
+        held = {}
+        for key in sorted(tools):
+            server_name, _, tool_name = key.partition(".")
+            if server_name == mcp_config.MADE:
+                tool = made.load(tool_name)
+                held[tool_name] = tool.accepted_hash if tool else ""
+        if held:
+            raw["_made_hash"] = held
     named = raw.get("skills")
     if isinstance(named, list) and named:
         # An installed skill whose files changed is a different agent until accepted again.

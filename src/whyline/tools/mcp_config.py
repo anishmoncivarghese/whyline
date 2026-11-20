@@ -63,7 +63,29 @@ def valid_name(name: str) -> bool:
     return bool(_NAME.match(name))
 
 
+MADE = "made"  # the built-in server of accepted made tools; never in mcp.toml
+
+
+def made_server() -> Server:
+    """The accepted made tools as one built-in server, a tool each."""
+    from whyline.tools import made
+
+    tools = []
+    for item in made.load_all():
+        if not made.accepted(item):
+            continue
+        properties = {
+            i.name: {"type": i.type, **({"description": i.about} if i.about else {})}
+            for i in item.inputs}
+        schema = {"type": "object", "properties": properties,
+                  "required": [i.name for i in item.inputs if i.required]}
+        tools.append(Tool(item.name, item.about, schema, item.risk == "reads"))
+    return Server(name=MADE, command="", tools=tuple(tools))
+
+
 def _validate(server: Server) -> None:
+    if server.name == MADE:
+        raise ValueError(f"{MADE} is built in and cannot be saved as a server")
     if not valid_name(server.name):
         raise ValueError("a server name is lowercase letters, digits and hyphens, starting with a letter")
     if not server.command.strip():
@@ -76,6 +98,13 @@ def _validate(server: Server) -> None:
 
 
 def load() -> dict[str, Server]:
+    """The saved servers plus the built-in ``made`` one."""
+    found = _load_saved()
+    found[MADE] = made_server()
+    return found
+
+
+def _load_saved() -> dict[str, Server]:
     try:
         raw = tomllib.loads(_file().read_text(encoding="utf-8"))
     except (FileNotFoundError, tomllib.TOMLDecodeError):
@@ -146,14 +175,14 @@ def _write(servers: dict[str, Server]) -> None:
 
 def save_server(server: Server) -> None:
     _validate(server)
-    servers = load()
+    servers = _load_saved()
     servers[server.name] = server
     _write(servers)
 
 
 def remove_server(name: str) -> None:
     """Delete a server. Refused, naming the users, while anything uses it."""
-    servers = load()
+    servers = _load_saved()
     if name not in servers:
         raise KeyError(name)
     in_use = users.of("server", name)
@@ -171,7 +200,7 @@ def test_server(name: str, *, session=None) -> str:
 
     from whyline.tools import mcp
 
-    servers = load()
+    servers = _load_saved()
     if name not in servers:
         raise KeyError(name)
     server = servers[name]
