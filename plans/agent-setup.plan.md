@@ -199,7 +199,7 @@ Rules every task keeps:
   2. CLI, each calling the functions above: `whyline tools skills sources [add NAME URL [--path P] | remove NAME | refresh [NAME]]`, `browse <text>`, `show-remote <source>:<name>` (the preview), `install <source>:<name> [--as NAME] [--yes]` (prints the warnings and asks `[y/N]`), and `update <name> [--yes]` (prints the diff and asks).
   Tests: the filter keeping ticks, the wrapped description, the broken row, and each command, with install and update writing nothing on `n`.
 
-- [ ] CON-1: The connector catalogue
+- [x] CON-1: The connector catalogue
   Create `src/whyline/tools/catalogue.py`, `src/whyline/tools/connectors.toml` and `tests/tools/test_catalogue.py`. Edit `pyproject.toml` only to ship the data file.
   1. `Entry`: `name`, `title`, `about` (one line), `command`, `args`, `credentials` (each `var`, `label`, `where` — a URL saying where to get it), `tools` (each `name` and `risk`), `source` (the project's own page), `checked` (a date, or `""`).
   2. `catalogue.load() -> list[Entry]` reads the packaged file and refuses an entry with no `source`, a command that is not a bare program name (`npx`, `uvx`, `docker`, `python3`, `node`), or a credential value in place of a variable name.
