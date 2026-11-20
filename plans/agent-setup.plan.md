@@ -175,7 +175,7 @@ Rules every task keeps:
   5. `definitions.definition_hash` adds `_skills_hash` holding, for each skill the agent names that has a `source.toml`, the sha256 of its files. Skills with no `source.toml` add nothing, so today's agents keep their hash.
   Tests: `test_install_stays_inside_the_skill_folder`, `test_changed_installed_skill_needs_accepting`, each warning firing and its harmless twin not, the preview, the name clash, the rewritten name, the diff and update, and a skill with no source having no update.
 
-- [ ] SKC-4: Browse and Sources in the Tools library
+- [x] SKC-4: Browse and Sources in the Tools library
   Edit `src/whyline/console/tools_screens.py` and its tests only.
   1. The Skills tab gets **Browse…** and **Sources…**.
   2. **Sources…** lists each source with its kind, licence and last fetch, with **Add…** (name, URL, folder), **Turn off / on**, **Remove** (the user's own only), **Refresh** and, for a directory, **Open in browser**.
