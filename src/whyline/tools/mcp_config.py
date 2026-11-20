@@ -9,7 +9,7 @@ import json
 import os
 import re
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from whyline.tools import users
@@ -99,9 +99,12 @@ def _validate(server: Server) -> None:
 
 def load() -> dict[str, Server]:
     """The saved servers plus the built-in ``made`` one."""
+    from whyline.tools import risk
+
     found = _load_saved()
     found[MADE] = made_server()
-    return found
+    # A raised risk level changes the hash, so agents using the tool accept it again.
+    return {n: replace(s, tools_hash=risk.mixed(n, s.tools_hash)) for n, s in found.items()}
 
 
 def _load_saved() -> dict[str, Server]:
@@ -174,8 +177,14 @@ def _write(servers: dict[str, Server]) -> None:
 
 
 def save_server(server: Server) -> None:
+    from whyline.tools import risk
+
     _validate(server)
     servers = _load_saved()
+    before = servers.get(server.name)
+    if before is not None and server.tools_hash == risk.mixed(server.name, before.tools_hash):
+        # Read back from load(): keep the stored hash, not the one mixed with levels.
+        server = replace(server, tools_hash=before.tools_hash)
     servers[server.name] = server
     _write(servers)
 
@@ -196,8 +205,6 @@ def test_server(name: str, *, session=None) -> str:
     """Start a server, list its tools and store them with their hash. Returns
     ``<n> tools: <first 10 names>``. Raises KeyError for an unknown name and
     ``mcp.McpError`` when the server fails."""
-    from dataclasses import replace
-
     from whyline.tools import mcp
 
     servers = _load_saved()

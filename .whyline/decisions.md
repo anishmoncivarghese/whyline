@@ -48469,3 +48469,47 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 7c5a54e9036a42f897dd485f07460072 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-20T21:56:28.138Z"} -->
+
+## 2026-11-20 — Level changes reach tools_hash by mixing user levels into mcp_config.load(), un-mixed again in save_server
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSK-1
+
+**Because:** agents read servers via load(); mixing only when levels exist keeps every existing acceptance valid, and save_server must not persist the mixed hash or it would drift
+
+**Rejected:**
+
+- Mix in definitions.py only — spec says the server's tools_hash changes
+- Store the level in mcp.toml — needs a schema change and loses the never-lower floor check
+
+**Files:** src/whyline/tools/risk.py
+
+<!-- whyline-event: c5cd33725b584030bc426836cd7e7168 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T21:59:35.562Z"} -->
+
+## 2026-11-20 — Verified tool risk levels, floor enforcement, hints, and tools_hash mixing for RSK-1
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RSK-1
+
+**Because:** All 12 tests in tests/tools/test_risk.py, 239 tests in tests/tools, 559 tests in tests/agents, and 39 tests in tests/console/test_tools_screens.py pass. All requirements of RSK-1 are verified: LEVELS rising order, risk.of priority resolution, set_level floor enforcement with 0600 file permissions, pay/send hints extraction, and tools_hash invalidation on risk elevation.
+
+**Files:** src/whyline/tools/risk.py
+
+<!-- whyline-event: 1d51e2c3dcf2468d8e4ec3d12bfc6b7c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T22:30:40.373Z"} -->
+
+## 2026-11-20 — Approve RSK-1: tool risk levels, floor enforcement, hints, and tools_hash mixing
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** RSK-1
+
+**Because:** Implementation satisfies all requirements: LEVELS tuple hierarchy, base level resolution, user level overrides with floor enforcement and 0600 file permissions, pay/send hints parsing, and tools_hash mixing on risk elevation. Full test suite passes.
+
+**Files:** src/whyline/tools/risk.py
+
+<!-- whyline-event: 3428a94d89bb4af386f319bb2008af32 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T22:57:44.053Z"} -->

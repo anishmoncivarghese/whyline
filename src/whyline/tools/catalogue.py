@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import re
 import tomllib
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from whyline import credentials as keychain
-from whyline.tools import mcp_config
+from whyline.tools import mcp_config, risk
 
 NOT_CHECKED = "not checked by whyline yet"
 
@@ -32,6 +32,8 @@ class Credential:
 class Tool:
     name: str
     risk: str
+    pay: dict[str, str] = field(default_factory=dict)
+    send: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -52,6 +54,23 @@ class Entry:
         return f"checked {self.checked}" if self.checked else NOT_CHECKED
 
 
+def _hints(entry: str, tool: str, raw: dict, kind: str, keys: tuple[str, ...]) -> dict[str, str]:
+    given = raw.get(kind, {})
+    wanted = risk.hint_dict(given, keys)
+    if given and (not isinstance(given, dict) or len(wanted) != len(given)):
+        raise CatalogueError(f"{entry}/{tool}: {kind} hints may only name {', '.join(keys)}")
+    return wanted
+
+
+def _tool(entry: str, raw: dict) -> Tool:
+    name = str(raw["name"])
+    return Tool(
+        name, str(raw.get("risk", "")),
+        pay=_hints(entry, name, raw, "pay", risk.PAY_KEYS),
+        send=_hints(entry, name, raw, "send", risk.SEND_KEYS),
+    )
+
+
 def _entry(raw: dict) -> Entry:
     name = str(raw.get("name", ""))
     if not name:
@@ -68,7 +87,7 @@ def _entry(raw: dict) -> Entry:
         if not _VAR.match(var):
             raise CatalogueError(f"{name}: credential var is not a variable name")
         creds.append(Credential(var, str(c.get("label", var)), str(c.get("where", ""))))
-    tools = tuple(Tool(str(t["name"]), str(t.get("risk", ""))) for t in raw.get("tools", []))
+    tools = tuple(_tool(name, t) for t in raw.get("tools", []))
     return Entry(
         name=name,
         title=str(raw.get("title", name)),

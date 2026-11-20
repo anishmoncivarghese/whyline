@@ -63,6 +63,8 @@ class MadeTool:
     pick: str = ""
     risk: str = "reads"
     accepted_hash: str = ""
+    pay: dict[str, str] = field(default_factory=dict)  # amount_arg, currency_arg, payee_arg
+    send: dict[str, str] = field(default_factory=dict)  # to_arg, text_arg
 
 
 # --- storage ---------------------------------------------------------------
@@ -99,7 +101,10 @@ def _dump(tool: MadeTool) -> str:
         f"risk = {_q(tool.risk)}",
         f"accepted_hash = {_q(tool.accepted_hash)}",
     ]
-    for table, values in (("headers", tool.headers), ("query", tool.query)):
+    for table, values in (("headers", tool.headers), ("query", tool.query),
+                          ("pay", tool.pay), ("send", tool.send)):
+        if table in ("pay", "send") and not values:
+            continue
         lines += ["", f"[{table}]"]
         lines += [f"{_q(k)} = {_q(v)}" for k, v in values.items()]
     for item in tool.inputs:
@@ -151,6 +156,8 @@ def _parse(raw: dict) -> MadeTool:
         pick=_text(raw, "pick"),
         risk=_text(raw, "risk", "reads"),
         accepted_hash=_text(raw, "accepted_hash"),
+        pay=_strings(raw.get("pay")),
+        send=_strings(raw.get("send")),
     )
 
 
@@ -194,6 +201,9 @@ def remove(name: str) -> bool:
 def tool_hash(tool: MadeTool) -> str:
     data = asdict(tool)
     data.pop("accepted_hash", None)
+    for hint in ("pay", "send"):  # absent when empty, so earlier acceptances still hold
+        if not data.get(hint):
+            data.pop(hint, None)
     text = json.dumps(data, sort_keys=True, ensure_ascii=True)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
