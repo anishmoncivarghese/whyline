@@ -1,5 +1,6 @@
 """`whyline tools mcp list|add|remove|import|test` and
-`whyline tools skills list|show|new|copy|edit|remove`. Exit codes: 0 ok,
+`whyline tools skills list|show|new|copy|edit|remove|sources|browse|show-remote|
+install|update`. Exit codes: 0 ok,
 1 refused or failed, 2 bad usage."""
 from __future__ import annotations
 
@@ -131,16 +132,137 @@ def _add_skills_parser(tools_sub: "argparse._SubParsersAction") -> None:
     edit.add_argument("--body", help="new text, or - to read stdin")
     remove = sub.add_parser("remove", help="Delete a whyline skill nothing uses")
     remove.add_argument("ref")
+    sources = sub.add_parser("sources", help="Where skills can be found (list when no action)")
+    actions = sources.add_subparsers(dest="sources_action")
+    add = actions.add_parser("add", help="Add a source")
+    add.add_argument("name")
+    add.add_argument("url")
+    add.add_argument("--path", default="", help="folder in the repository holding the skills")
+    drop = actions.add_parser("remove", help="Forget a source")
+    drop.add_argument("name")
+    refresh = actions.add_parser("refresh", help="Fetch one source, or all enabled")
+    refresh.add_argument("name", nargs="?")
+    browse = sub.add_parser("browse", help="Search the fetched sources")
+    browse.add_argument("text", nargs="+")
+    remote = sub.add_parser("show-remote", help="Preview a skill in a source")
+    remote.add_argument("ref", help="source:name")
+    install = sub.add_parser("install", help="Install a skill from a source")
+    install.add_argument("ref", help="source:name")
+    install.add_argument("--as", dest="as_name", help="install under another name")
+    install.add_argument("--yes", action="store_true", help="do not ask")
+    update = sub.add_parser("update", help="Update an installed skill from its source")
+    update.add_argument("name")
+    update.add_argument("--yes", action="store_true", help="do not ask")
+
+
+def _ask(yes: bool) -> bool:
+    if yes:
+        return True
+    try:
+        return input("Continue? [y/N] ").strip().lower() in ("y", "yes")
+    except EOFError:
+        return False
+
+
+def _entry(ref: str):
+    from whyline.tools import skill_sources
+
+    source, _, name = ref.partition(":")
+    if not name:
+        raise ValueError("Use source:name.")
+    if not any(s.name == source for s in skill_sources.load()):
+        raise ValueError(f"There is no source called {source}.")
+    for entry in skill_sources.index(next(s for s in skill_sources.load() if s.name == source)):
+        if entry.name == name:
+            return entry
+    raise ValueError(f"No skill {name} in {source}. Refresh the source or browse.")
+
+
+def _sources(args: argparse.Namespace) -> int:
+    from whyline.tools import skill_sources
+
+    action = args.sources_action
+    if action == "add":
+        added = skill_sources.add(args.name, args.url, args.path)
+        print(f"Added source {added.name}. Run: whyline tools skills sources refresh {added.name}")
+    elif action == "remove":
+        if not skill_sources.remove(args.name):
+            print(f"No source {args.name}.", file=sys.stderr)
+            return EXIT_ERROR
+        print(f"Removed source {args.name}.")
+    elif action == "refresh":
+        chosen = [s for s in skill_sources.load() if s.enabled and args.name in (None, s.name)]
+        if not chosen:
+            print(f"No source {args.name}." if args.name else "No sources to refresh.", file=sys.stderr)
+            return EXIT_ERROR
+        for source in chosen:
+            commit = skill_sources.fetch(source)
+            print(f"{source.name}: {commit[:12]}  {len(skill_sources.index(source))} skills")
+    else:
+        for source in skill_sources.load():
+            state = "" if source.enabled else " (off)"
+            got = skill_sources.fetched(source) or "not fetched"
+            print(f"{source.name}{state}  {source.url}  {source.path or '.'}  {got}")
+    return EXIT_OK
+
+
+def _skills_remote(args: argparse.Namespace) -> int:
+    from whyline.tools import skill_install, skill_sources
+
+    command = args.skills_command
+    if command == "sources":
+        return _sources(args)
+    if command == "browse":
+        found = skill_sources.search(" ".join(args.text))
+        if not found:
+            print("No skills found.")
+        for e in found:
+            print(f"{e.source}:{e.name}  {e.size} bytes  {e.description}")
+        return EXIT_OK
+    if command == "update":
+        diff = skill_install.update_diff(args.name)
+        if not diff:
+            print(f"{args.name} is up to date.")
+            return EXIT_OK
+        print(diff)
+        if not _ask(args.yes):
+            print("Nothing changed.")
+            return EXIT_OK
+        print(f"Updated {skill_install.update(args.name).ref}.")
+        return EXIT_OK
+    entry = _entry(args.ref)
+    shown = skill_install.preview(entry)
+    if command == "show-remote":
+        print(f"{args.ref}  {shown.size} bytes  licence: {shown.licence}  commit: {shown.commit[:12]}")
+        print(f"Files: {', '.join(f'{n} ({b})' for n, b in shown.files) or '(none)'}")
+        for warning in shown.warnings:
+            print(f"Warning: {warning}")
+        print()
+        print(shown.skill_md)
+        return EXIT_OK
+    print(f"{args.ref}  {shown.size} bytes  licence: {shown.licence}")
+    for warning in shown.warnings:
+        print(f"Warning: {warning}")
+    if not _ask(args.yes):
+        print("Nothing installed.")
+        return EXIT_OK
+    print(f"Installed {skill_install.install(entry, name=args.as_name).ref}.")
+    return EXIT_OK
 
 
 def _text(value: str | None) -> str | None:
     return sys.stdin.read() if value == "-" else value
 
 
+_REMOTE = ("sources", "browse", "show-remote", "install", "update")
+
+
 def _skills(args: argparse.Namespace) -> int:
     command = args.skills_command
     root = Path.cwd()
     try:
+        if command in _REMOTE:
+            return _skills_remote(args)
         if command == "list":
             found = skills.find(root)
             if not found:
@@ -176,7 +298,7 @@ def _skills(args: argparse.Namespace) -> int:
         return EXIT_OK
     except KeyError:
         print(f"No skill {getattr(args, 'ref', '')}.", file=sys.stderr)
-    except ValueError as error:
+    except (ValueError, RuntimeError) as error:
         print(str(error), file=sys.stderr)
     return EXIT_ERROR
 

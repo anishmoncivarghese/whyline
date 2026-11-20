@@ -1386,6 +1386,8 @@ class SkillPickScreen(ModalScreen):
         "SkillPickScreen VerticalScroll { height: auto; max-height: 20; }"
         " SkillPickScreen Checkbox { border: none; height: 1; padding: 0 1; width: auto; }"
         " SkillPickScreen Checkbox:focus { border: none; }"
+        " SkillPickScreen VerticalGroup { height: auto; }"
+        " SkillPickScreen .sk-desc { height: auto; padding: 0 3 0 4; color: $text-muted; }"
         " SkillPickScreen #sp-size { height: auto; }"
         " SkillPickScreen #sp-error { height: auto; color: $error; }"
     )
@@ -1400,20 +1402,27 @@ class SkillPickScreen(ModalScreen):
     def _widgets(self) -> list:
         from whyline.tools import skills
 
-        self._skills = skills.find(None if self._scope == "personal" else self._root)
-        boxes = []
+        found = skills.find(None if self._scope == "personal" else self._root)
+        self._skills = [s for s in found if not s.broken] + [s for s in found if s.broken]
+        rows = []
         for i, skill in enumerate(self._skills):
-            label = f"{skill.name} ({skill.origin})"
-            if skill.description:
-                label += f" · {skill.description}"
-            if skill.broken:
-                label += f" · broken: {skill.problem}"
-            boxes.append(Checkbox(
-                label, value=skill.ref in self._chosen and not skill.broken,
+            note = f"Broken: {skill.problem}" if skill.broken else skill.description
+            row = [Checkbox(
+                f"{skill.name} · {skill.origin}",
+                value=skill.ref in self._chosen and not skill.broken,
                 id=f"sk-{i}", disabled=skill.broken,
-            ))
-        return [VerticalScroll(*boxes) if boxes else Static(
+            )]
+            if note:
+                row.append(Static(note, id=f"sk-d-{i}", classes="sk-desc", markup=False))
+            rows.append(VerticalGroup(*row, id=f"sk-r-{i}"))
+        return [VerticalScroll(*rows) if rows else Static(
             "No skills found. Make one in Tools.", id="sk-none")]
+
+    def _filter(self) -> None:
+        words = self.query_one("#sk-search", Input).value.lower().split()
+        for i, skill in enumerate(self._skills):
+            text = f"{skill.name} {skill.description}".lower()
+            self.query_one(f"#sk-r-{i}").display = all(w in text for w in words)
 
     def compose(self) -> ComposeResult:
         widgets = self._widgets()
@@ -1422,6 +1431,7 @@ class SkillPickScreen(ModalScreen):
         yield Vertical(
             Label("Add skills"),
             Static("Skills come from your library.", id="sk-hint", markup=False),
+            Input("", id="sk-search", placeholder="Search skills"),
             Vertical(*widgets, id="sk-body"),
             Static(self._size_text(initial), id="sp-size", markup=False),
             Static("", id="sp-error", markup=False),
@@ -1436,7 +1446,12 @@ class SkillPickScreen(ModalScreen):
         body = self.query_one("#sk-body")
         await body.remove_children()
         await body.mount(*self._widgets())
+        self._filter()
         self._show_size()
+
+    def on_input_changed(self, event) -> None:
+        event.stop()
+        self._filter()
 
     def _show_size(self) -> None:
         self.query_one("#sp-size", Static).update(

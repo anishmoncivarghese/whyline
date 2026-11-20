@@ -48092,3 +48092,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4f2fbc1a3ce04ab599afb99fa81a882b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-20T04:06:11.797Z"} -->
+
+## 2026-11-20 — Skill picker filters by hiding rows, not rebuilding them
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SKC-6
+
+**Because:** hidden checkboxes stay mounted so ticks survive filtering and _picked/size need no change
+
+**Rejected:**
+
+- rebuild list per keystroke — loses ticks unless tracked separately
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 9c466f95e6ac4ad988f996da104047eb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T04:08:44.147Z"} -->
+
+## 2026-11-20 — Pass SKC-6: SkillPickScreen search and skill source CLI commands verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SKC-6
+
+**Because:** SkillPickScreen search filters by name and description keeping ticks, rows display name · origin with wrapped description, broken skills are disabled and listed last with reasons; CLI sources (add/remove/refresh/list), browse, show-remote with preview and warnings, install and update with prompt confirmation and diff verified; all console and tools unit tests pass
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: a78ed1a5ff454f6a97fdf6b64511e802 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T05:02:59.174Z"} -->
+
+## 2026-11-20 — Approve SKC-6: Skill picker search and skills remote/sources CLI commands
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** SKC-6
+
+**Because:** SkillPickScreen implements search filtering by name and description with persistent ticks, row display with name · origin and wrapped descriptions, and broken skills disabled and ordered last; CLI tools skills sources (add/remove/refresh/list), browse, show-remote, install with warnings and confirmation, and update with diff and confirmation are implemented and verified by comprehensive test suites
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: 63da6326f35440b081d985daad0242ed -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T05:57:08.855Z"} -->

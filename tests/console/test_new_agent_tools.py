@@ -91,8 +91,8 @@ async def test_skill_picker_shows_origin_and_size(tmp_path):
         app.push_screen(SkillPickScreen(tmp_path, []), results.append)
         await pilot.pause()
         s = app.screen
-        label = str(s.query_one("#sk-0", tui.Checkbox).label)
-        assert "notes (whyline)" in label and "Take notes" in label
+        assert str(s.query_one("#sk-0", tui.Checkbox).label) == "notes · whyline"
+        assert str(s.query_one("#sk-d-0").renderable) == "Take notes"
         assert str(skills.AGENT_SKILLS_LIMIT) in str(s.query_one("#sp-size").renderable)
         s.query_one("#sk-0", tui.Checkbox).value = True
         await pilot.pause()
@@ -100,6 +100,41 @@ async def test_skill_picker_shows_origin_and_size(tmp_path):
         await pilot.click("#sk-done")
         await pilot.pause()
     assert results == [["whyline:notes"]]
+
+
+async def test_skill_picker_filter_keeps_ticks_and_lists_broken_last(tmp_path):
+    from whyline.console.agents_screens import SkillPickScreen
+    from whyline.tools import skills
+
+    home = tmp_path / "home" / ".whyline" / "skills"
+    (home / "aaa").mkdir(parents=True)
+    (home / "aaa" / "SKILL.md").write_text("no front matter")
+    skills.create("notes", "Take notes " + "word " * 60, "Be brief.")
+    skills.create("pdf", "Read pdf files", "Read.")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    results = []
+    async with app.run_test(size=(60, 100)) as pilot:
+        app.push_screen(SkillPickScreen(tmp_path, []), results.append)
+        await pilot.pause()
+        s = app.screen
+        names = [str(c.label) for c in s.query(tui.Checkbox)]
+        assert names == ["notes · whyline", "pdf · whyline", "aaa · whyline"]
+        broken = s.query_one("#sk-2", tui.Checkbox)
+        assert broken.disabled
+        assert "Broken:" in str(s.query_one("#sk-d-2").renderable)
+        assert s.query_one("#sk-d-0").size.height > 1  # wrapped, not cut off
+        s.query_one("#sk-0", tui.Checkbox).value = True
+        s.query_one("#sk-search", tui.Input).value = "read"
+        await pilot.pause()
+        assert not s.query_one("#sk-r-0").display
+        assert s.query_one("#sk-r-1").display
+        s.query_one("#sk-1", tui.Checkbox).value = True
+        s.query_one("#sk-search", tui.Input).value = ""
+        await pilot.pause()
+        assert s.query_one("#sk-r-0").display
+        await pilot.click("#sk-done")
+        await pilot.pause()
+    assert results == [["whyline:notes", "whyline:pdf"]]
 
 
 async def test_each_section_saves_through_definitions(tmp_path):
