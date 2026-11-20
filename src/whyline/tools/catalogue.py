@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import re
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+
+from whyline import credentials as keychain
+from whyline.tools import mcp_config
 
 NOT_CHECKED = "not checked by whyline yet"
 
@@ -95,3 +98,53 @@ def search(text: str, entries: list[Entry] | None = None) -> list[Entry]:
         if all(w in hay for w in words):
             found.append(e)
     return found
+
+
+def credential_name(entry: Entry, var: str) -> str:
+    """The Keychain name for one of an entry's credentials."""
+    return f"{entry.name}-{var.lower().replace('_', '-')}"
+
+
+def added(entry: Entry) -> bool:
+    return entry.name in mcp_config.load()
+
+
+def command_line(entry: Entry) -> str:
+    return " ".join([entry.command, *entry.args])
+
+
+def check(entry: Entry, credentials: dict[str, str], *, test=mcp_config.test_server) -> tuple[bool, str]:
+    """Store the credentials, save the server disabled and test it. The server
+    stays disabled; ``add`` and ``enable`` turn it on. Returns (passed, message)."""
+    if added(entry) and mcp_config.load()[entry.name].enabled:
+        raise ValueError(f"{entry.name} is already added")
+    missing = [c.var for c in entry.credentials if not credentials.get(c.var)]
+    if missing:
+        raise ValueError(f"needs a value for {', '.join(missing)}")
+    env: dict[str, str] = {}
+    for c in entry.credentials:
+        name = credential_name(entry, c.var)
+        keychain.save(keychain.Credential(name=name, kind="env"), credentials[c.var])
+        env[c.var] = name
+    mcp_config.save_server(mcp_config.Server(
+        name=entry.name, command=entry.command, args=entry.args, env=env, enabled=False))
+    try:
+        return True, test(entry.name)
+    except Exception as error:  # the reason is shown, whatever the server did
+        return False, str(error) or type(error).__name__
+
+
+def enable(name: str) -> None:
+    servers = mcp_config.load()
+    if name not in servers:
+        raise KeyError(name)
+    mcp_config.save_server(replace(servers[name], enabled=True))
+
+
+def add(entry: Entry, credentials: dict[str, str], *, test=mcp_config.test_server) -> str:
+    """Add a connector from the catalogue. It is enabled only when its test
+    passed; otherwise it stays saved and disabled and the message is the reason."""
+    passed, message = check(entry, credentials, test=test)
+    if passed:
+        enable(entry.name)
+    return message

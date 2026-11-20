@@ -48178,3 +48178,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 8e4cd9ce3f704763a25a1fcd07519341 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-20T06:50:38.065Z"} -->
+
+## 2026-11-20 — Catalogue add split into check (store, save disabled, test) and enable; add = check then enable
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CON-2
+
+**Because:** the console needs Test to pass before Add, so enabling is a separate step; add() keeps the one-call form for the CLI and scripts
+
+**Rejected:**
+
+- Test button calling add() — it would enable the server before the person pressed Add
+
+**Files:** src/whyline/tools/catalogue.py
+
+<!-- whyline-event: ea580679bf0d4c4487d4053422a637bf -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T06:53:43.336Z"} -->
+
+## 2026-11-20 — Pass CON-2 catalogue add implementation and tests
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CON-2
+
+**Because:** catalogue.add/check/enable store credentials in Keychain, save disabled, test, and enable on pass; console has Add from catalogue with search, entry details, credential inputs with Open, Test, and gated Add; CLI supports listing, search, and non-echoing add; all 5489 project tests pass
+
+**Files:** src/whyline/tools/catalogue.py, src/whyline/console/tools_screens.py, src/whyline/tools/cli.py, tests/tools/test_catalogue_add.py, tests/console/test_tools_screens.py
+
+<!-- whyline-event: 32a2d0b1c98a461aac8e261d33860381 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T07:21:12.848Z"} -->
+
+## 2026-11-20 — Approve CON-2 connector catalogue add implementation, UI, CLI and tests
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** CON-2
+
+**Because:** catalogue.add, check, and enable store credentials securely in Keychain, keep servers disabled until testing passes, and record failures with reasons; console CataloguePickScreen and CatalogueEntryScreen implement search, tool risk display, credential inputs with Open links, and test-gated Add; CLI provides catalogue search and non-echoing add; focused tests in test_catalogue_add.py and test_tools_screens.py pass completely
+
+**Files:** src/whyline/tools/catalogue.py, src/whyline/console/tools_screens.py, src/whyline/tools/cli.py, tests/tools/test_catalogue_add.py, tests/console/test_tools_screens.py
+
+<!-- whyline-event: 5cbae8ce250b48608bf71d76a5416b0b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T07:49:49.221Z"} -->

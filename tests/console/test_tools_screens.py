@@ -988,3 +988,50 @@ async def test_draft_failure_is_shown_and_keeps_the_box(home, tmp_path, monkeypa
         assert isinstance(app.screen, DraftScreen)
         assert "front matter" in text(box, "#dr-status")
     assert skills.find(tmp_path) == []
+
+
+async def test_catalogue_add_needs_a_passing_test_then_enables(home, stored, tmp_path):
+    from whyline.console.tools_screens import CatalogueEntryScreen, CataloguePickScreen
+    from whyline.tools import catalogue
+
+    results = iter([RuntimeError("no luck"), "1 tools: a"])
+
+    def fake_test(name):
+        value = next(results)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    entry = next(e for e in catalogue.load() if e.credentials)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 60)) as pilot:
+        screen = await open_tools(pilot, app, test_fn=fake_test)
+        await pilot.click("#tl-catalogue")
+        await pilot.pause()
+        assert isinstance(app.screen, CataloguePickScreen)
+        app.screen.dismiss(entry.name)
+        await pilot.pause()
+        form = app.screen
+        assert isinstance(form, CatalogueEntryScreen)
+        assert form.query_one("#ce-add").disabled
+        for index, c in enumerate(entry.credentials):
+            form.query_one(f"#ce-cred-{index}").value = SECRET
+        form.query_one("#ce-test").press()
+        await pilot.pause(0.5)
+        assert "no luck" in text(form, "#ce-result")
+        assert form.query_one("#ce-add").disabled
+        assert mcp_config.load()[entry.name].enabled is False
+        form.query_one("#ce-test").press()
+        await pilot.pause(0.5)
+        assert not form.query_one("#ce-add").disabled
+        form.query_one("#ce-add").press()
+        await pilot.pause()
+        assert app.screen is screen
+        assert mcp_config.load()[entry.name].enabled is True
+        assert set(stored.values()) == {SECRET}
+        await pilot.click("#tl-catalogue")
+        await pilot.pause()
+        app.screen.dismiss(entry.name)
+        await pilot.pause()
+        assert app.screen is screen
+        assert "already added" in text(screen, "#tl-status")

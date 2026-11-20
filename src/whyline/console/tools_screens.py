@@ -23,7 +23,7 @@ from textual.widgets.option_list import Option
 from whyline import credentials
 from whyline.agents import capabilities
 from whyline.console.agents_screens import tool_kind
-from whyline.tools import knowledge, mcp, mcp_config, skill_draft, skill_install, skill_sources, skills, users
+from whyline.tools import catalogue, knowledge, mcp, mcp_config, skill_draft, skill_install, skill_sources, skills, users
 
 _SETUP = (("grok", "Set up grok"), ("antigravity", "Set up Antigravity"))
 _NO_CRED = "(none)"
@@ -883,6 +883,127 @@ class BrowseScreen(ModalScreen):
             self._link()
 
 
+class CataloguePickScreen(ModalScreen):
+    """The connector catalogue with a search box. Picking one dismisses with its name."""
+
+    DEFAULT_CSS = _CSS.format(name="CataloguePickScreen") + "CataloguePickScreen OptionList { height: 16; }"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._shown: list[catalogue.Entry] = []
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label("Add from catalogue"),
+            Input(placeholder="search", id="cp-search"),
+            OptionList(id="cp-list"),
+            Horizontal(Button("Cancel", id="cp-cancel")),
+        )
+
+    def on_mount(self) -> None:
+        self._fill("")
+
+    def _fill(self, text: str) -> None:
+        self._shown = catalogue.search(text)
+        listing = self.query_one("#cp-list", OptionList)
+        listing.clear_options()
+        for e in self._shown:
+            state = "added" if catalogue.added(e) else e.status
+            listing.add_option(Option(Text(f"{e.title}  {state}  {e.about}")))
+
+    def on_input_changed(self, event: "Input.Changed") -> None:
+        event.stop()
+        self._fill(event.value)
+
+    def on_option_list_option_selected(self, event: "OptionList.OptionSelected") -> None:
+        event.stop()
+        self.dismiss(self._shown[event.option_index].name)
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        self.dismiss(None)
+
+
+class CatalogueEntryScreen(ModalScreen):
+    """One catalogue entry: what it runs, its tools, a box per credential, Test, the
+    result. Add stays off until a Test has passed."""
+
+    DEFAULT_CSS = _CSS.format(name="CatalogueEntryScreen") + (
+        "CatalogueEntryScreen VerticalScroll { height: auto; max-height: 30; }")
+
+    def __init__(self, entry: catalogue.Entry, *, test_fn=None) -> None:
+        super().__init__()
+        self._entry = entry
+        self._test_fn = test_fn or mcp_config.test_server
+        self._passed = False
+
+    def compose(self) -> ComposeResult:
+        e = self._entry
+        tools = "\n".join(f"  {t.name}  {t.risk}" for t in e.tools) or "  (none listed)"
+        rows: list = []
+        for index, c in enumerate(e.credentials):
+            rows.append(Label(Text(f"{c.label} ({c.var})")))
+            rows.append(Static(c.where, markup=False))
+            rows.append(Horizontal(
+                Input(placeholder=c.var, password=True, id=f"ce-cred-{index}"),
+                Button("Open", id=f"ce-open-{index}"),
+            ))
+        yield Vertical(
+            Label(Text(e.title)),
+            Static(f"Will run: {catalogue.command_line(e)}\nTools:\n{tools}", id="ce-about", markup=False),
+            VerticalScroll(*rows),
+            Static("", id="ce-result", markup=False),
+            Horizontal(
+                Button("Test", id="ce-test"),
+                Button("Add", id="ce-add", variant="primary", disabled=True),
+                Button("Cancel", id="ce-cancel"),
+            ),
+        )
+
+    def _values(self) -> dict[str, str]:
+        return {c.var: self.query_one(f"#ce-cred-{i}", Input).value
+                for i, c in enumerate(self._entry.credentials)}
+
+    def on_input_changed(self, event: "Input.Changed") -> None:
+        event.stop()
+        self._passed = False
+        self.query_one("#ce-add", Button).disabled = True
+
+    def _test(self) -> None:
+        values = self._values()
+        self.query_one("#ce-result", Static).update("Testing…")
+
+        def in_thread() -> None:
+            try:
+                passed, message = catalogue.check(self._entry, values, test=self._test_fn)
+            except (ValueError, KeyError, credentials.Locked) as error:
+                passed, message = False, str(error)
+            self.app.call_from_thread(self._tested, passed, message)
+
+        self.run_worker(in_thread, thread=True, group="ce-test")
+
+    def _tested(self, passed: bool, message: str) -> None:
+        if not self.is_attached:
+            return
+        self._passed = passed
+        self.query_one("#ce-add", Button).disabled = not passed
+        self.query_one("#ce-result", Static).update(
+            f"Passed: {message}" if passed else f"Test failed: {message}")
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        button_id = event.button.id or ""
+        if button_id == "ce-cancel":
+            self.dismiss(None)
+        elif button_id == "ce-test":
+            self._test()
+        elif button_id.startswith("ce-open-"):
+            webbrowser.open(self._entry.credentials[int(button_id.removeprefix("ce-open-"))].where)
+        elif button_id == "ce-add" and self._passed:
+            catalogue.enable(self._entry.name)
+            self.dismiss(self._entry.name)
+
+
 class ToolsScreen(ModalScreen):
     """Connectors, Skills, Knowledge and Credentials in one place."""
 
@@ -915,6 +1036,7 @@ class ToolsScreen(ModalScreen):
                     yield Horizontal(
                         Button("Add", id="tl-add"),
                         Button("Import…", id="tl-import"),
+                        Button("Add from catalogue…", id="tl-catalogue"),
                         Button("Test", id="tl-test"),
                         Button("Remove", id="tl-remove", variant="error"),
                         classes="tl-row",
@@ -1009,6 +1131,25 @@ class ToolsScreen(ModalScreen):
                 self._say(f"Added MCP server {name}.")
 
         self.app.push_screen(AddServerScreen(), added)
+
+    def _catalogue(self) -> None:
+        def chosen(name: str | None) -> None:
+            entry = next((e for e in catalogue.load() if e.name == name), None)
+            if entry is None:
+                return
+            if catalogue.added(entry):
+                self._reload(entry.name)
+                self._say(f"{entry.title} is already added.")
+                return
+
+            def done(added: str | None) -> None:
+                if added:
+                    self._reload(added)
+                    self._say(f"Added MCP server {added}.")
+
+            self.app.push_screen(CatalogueEntryScreen(entry, test_fn=self._test_fn), done)
+
+        self.app.push_screen(CataloguePickScreen(), chosen)
 
     def _import(self) -> None:
         def done(names: list[str] | None) -> None:
@@ -1372,6 +1513,8 @@ class ToolsScreen(ModalScreen):
             self._add()
         elif button_id == "tl-import":
             self._import()
+        elif button_id == "tl-catalogue":
+            self._catalogue()
         elif button_id == "tl-test":
             self._test()
         elif button_id == "tl-remove":

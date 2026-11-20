@@ -34,6 +34,9 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     imp.add_argument("names", nargs="*")
     test = sub.add_parser("test", help="Start a server, list its tools and store them")
     test.add_argument("name")
+    cat = tools_sub.add_parser("catalogue", help="Connectors you can add: list, or add one by name")
+    cat.add_argument("words", nargs="*", metavar="TEXT",
+                     help="words to search for, or: add <name>")
     tools_sub.add_parser("serve", help="Run whyline's MCP server for an agent run (stdio)")
     for cli in _SAVED_SETUP:
         setup = tools_sub.add_parser(f"setup-{cli}", help=f"Add whyline's tools to {cli} (once)")
@@ -393,7 +396,55 @@ def _import(args: argparse.Namespace) -> int:
     return status
 
 
+def _catalogue(args: argparse.Namespace) -> int:
+    from whyline.tools import catalogue
+
+    words = list(args.words)
+    if words[:1] != ["add"]:
+        found = catalogue.search(" ".join(words))
+        if not found:
+            print("Nothing in the catalogue matches.")
+        for e in found:
+            state = "added" if catalogue.added(e) else e.status
+            print(f"{e.name}  {e.title}  {state}  {e.about}")
+        return EXIT_OK
+    if len(words) != 2:
+        print("Usage: whyline tools catalogue add <name>", file=sys.stderr)
+        return EXIT_USAGE
+    entry = next((e for e in catalogue.load() if e.name == words[1]), None)
+    if entry is None:
+        print(f"No catalogue entry named {words[1]}.", file=sys.stderr)
+        return EXIT_ERROR
+    if catalogue.added(entry) and mcp_config.load()[entry.name].enabled:
+        print(f"{entry.name} is already added.")
+        return EXIT_OK
+    print(f"Will run: {catalogue.command_line(entry)}")
+    for t in entry.tools:
+        print(f"  {t.name}  {t.risk}")
+    import getpass
+
+    values: dict[str, str] = {}
+    for c in entry.credentials:
+        if c.where:
+            print(f"{c.label}: get it at {c.where}")
+        values[c.var] = getpass.getpass(f"{c.label} ({c.var}): ")
+    try:
+        passed, message = catalogue.check(entry, values, test=lambda n: mcp_config.test_server(n))
+        if passed:
+            catalogue.enable(entry.name)
+    except (ValueError, KeyError, RuntimeError) as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+    if not passed:
+        print(f"Test failed: {message}. {entry.name} is saved and left off.", file=sys.stderr)
+        return EXIT_ERROR
+    print(f"Added {entry.name}. {message}")
+    return EXIT_OK
+
+
 def run(args: argparse.Namespace) -> int:
+    if args.tools_command == "catalogue":
+        return _catalogue(args)
     if args.tools_command == "serve":
         from whyline.tools import serve
 
