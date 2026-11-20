@@ -47910,3 +47910,51 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 04df163eec3d46b793b2e8b2a8871748 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-20T00:23:22.881Z"} -->
+
+## 2026-11-20 — Skill install reads the source commit with git rev-parse (injectable run) and hashes only whyline-origin skills that have source.toml
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SKC-3
+
+**Because:** install must record the commit without refetching; other origins are read in place and have no source.toml
+
+**Rejected:**
+
+- parsing .git/HEAD directly — packed refs and detached heads make it fragile
+
+**Files:** src/whyline/tools/skill_install.py
+
+<!-- whyline-event: ed9dfff7bd9a47379b9c0f165e58079d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T00:26:57.242Z"} -->
+
+## 2026-11-20 — Verify check, preview, install, update_diff, update, and definition_hash for skills
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SKC-3
+
+**Because:** All unit tests in test_skill_install and test_definitions pass along with full pytest suite; check warnings, preview structure, install safeguards (symlink refusal, boundary checking, size limits, name collision, front matter renaming), update_diff unified diffing, update replacement, and _skills_hash calculation behave strictly as specified
+
+**Files:** src/whyline/tools/skill_install.py, src/whyline/agents/definitions.py, tests/tools/test_skill_install.py, tests/agents/test_definitions.py
+
+<!-- whyline-event: 486fa82fee4149e48c1f2cca2867d42e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T00:54:33.080Z"} -->
+
+## 2026-11-20 — Approve SKC-3 skill check, preview, install, update, and definition_hash
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SKC-3
+
+**Because:** The diff implements every SKC-3 case; 59 focused tests pass including test_install_stays_inside_the_skill_folder and test_changed_installed_skill_needs_accepting; install refuses symlinks and records source.toml; definition_hash adds _skills_hash only for whyline skills with source.toml. Full pytest had one unrelated NotesReviewScreen flake that passed on retry.
+
+**Rejected:**
+
+- reject for the full-suite TUI flake — it is outside SKC-3 files and passed when re-run
+- reject for preview following symlink files — outside the install-refusal bar; follow-up instead
+
+**Files:** src/whyline/tools/skill_install.py, src/whyline/agents/definitions.py, tests/tools/test_skill_install.py, tests/agents/test_definitions.py
+
+<!-- whyline-event: 59baab793d7b406899bbd624e371fdce -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T01:24:49.029Z"} -->

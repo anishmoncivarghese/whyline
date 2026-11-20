@@ -83,6 +83,35 @@ def test_hash_ignores_formatting_but_not_content():
     assert d.definition_hash(a) != d.definition_hash(a.replace('"y"', '"z"'))
 
 
+_SKILL_AGENT = 'name = "x"\ninstructions = "y"\nrunner = "claude"\nskills = ["whyline:pdf"]\n'
+
+
+def _skill_folder(tmp_path, monkeypatch, text="v1"):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    folder = tmp_path / ".whyline/skills/pdf"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text(text)
+    return folder
+
+
+def test_changed_installed_skill_needs_accepting(tmp_path, monkeypatch):
+    folder = _skill_folder(tmp_path, monkeypatch)
+    plain = d.definition_hash(_SKILL_AGENT)
+    (folder / "source.toml").write_text('source = "anthropic"\n')
+    with_source = d.definition_hash(_SKILL_AGENT)
+    assert with_source != plain
+    (folder / "SKILL.md").write_text("v2")
+    assert d.definition_hash(_SKILL_AGENT) != with_source
+
+
+def test_skill_with_no_source_keeps_the_hash(tmp_path, monkeypatch):
+    folder = _skill_folder(tmp_path, monkeypatch)
+    before = d.definition_hash(_SKILL_AGENT)
+    (folder / "SKILL.md").write_text("v2")
+    assert d.definition_hash(_SKILL_AGENT) == before
+
+
 def test_resolve_sources(repo, home):
     a = d.parse(REPO_TOML, kind="repo", path=repo / ".whyline/agents/r.toml", repo_root=repo)
     assert d.resolve_sources(a) == [repo / "docs/notes.md"]

@@ -478,6 +478,19 @@ def definition_hash(text: str) -> str:
         used = sorted({key.partition(".")[0] for key in tools})
         raw = {**raw, "_tools_hash": {
             name: servers[name].tools_hash if name in servers else "" for name in used}}
+    named = raw.get("skills")
+    if isinstance(named, list) and named:
+        # An installed skill whose files changed is a different agent until accepted again.
+        from whyline.tools import skill_install
+
+        held = {}
+        for ref in sorted({str(r) for r in named}):
+            origin, _, skill = ref.partition(":")
+            digest = skill_install.files_hash(skill) if origin == "whyline" and skill else None
+            if digest is not None:
+                held[ref] = digest
+        if held:
+            raw = {**raw, "_skills_hash": held}
     canonical = json.dumps(raw, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
