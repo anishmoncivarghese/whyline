@@ -151,7 +151,7 @@ Rules every task keeps:
   4. The Tools library's Skills tab shows the origin for each, and **Copy to whyline** for any that is not whyline's.
   Tests: both new places found, the copy from each, the duplicate listed once and the differing pair kept, and a personal agent still getting no repository skill.
 
-- [ ] SKC-2: Skill sources
+- [x] SKC-2: Skill sources
   Create `src/whyline/tools/skill_sources.py` and `tests/tools/test_skill_sources.py` only.
   1. `Source`: `name`, `url`, `path` (the folder inside the repository that holds the skill folders, `""` for the top), `branch`, `licence`, `kind` (`skills` or `directory`), `builtin`.
   2. `BUILTIN`: `anthropic` (`https://github.com/anthropics/skills`, `skills`, no licence stated), `agentic` (`https://github.com/sickn33/agentic-awesome-skills`, `skills`, `MIT, text CC BY 4.0`), `composio` (`https://github.com/ComposioHQ/awesome-claude-skills`, top level, no licence stated), and two of kind `directory` that are only opened in the browser: `https://github.com/VoltAgent/awesome-agent-skills` and `https://github.com/heilcheng/awesome-agent-skills`.
