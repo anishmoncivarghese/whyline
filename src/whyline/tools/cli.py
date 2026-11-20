@@ -36,7 +36,7 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     test.add_argument("name")
     cat = tools_sub.add_parser("catalogue", help="Connectors you can add: list, or add one by name")
     cat.add_argument("words", nargs="*", metavar="TEXT",
-                     help="words to search for, or: add <name>")
+                     help="words to search for, or: add <name>, or: search <text> (public registry)")
     tools_sub.add_parser("serve", help="Run whyline's MCP server for an agent run (stdio)")
     for cli in _SAVED_SETUP:
         setup = tools_sub.add_parser(f"setup-{cli}", help=f"Add whyline's tools to {cli} (once)")
@@ -400,6 +400,16 @@ def _catalogue(args: argparse.Namespace) -> int:
     from whyline.tools import catalogue
 
     words = list(args.words)
+    if words[:1] == ["search"]:
+        from whyline.tools import registry
+
+        found = registry.search(" ".join(words[1:]))
+        print(registry.HEADING)
+        if not found:
+            print(registry.last_error() or "Nothing in the public registry matches.")
+        for e in found:
+            print(f"{e.name}  {e.title}  {e.refused or e.status}  {e.about}")
+        return EXIT_ERROR if registry.last_error() else EXIT_OK
     if words[:1] != ["add"]:
         found = catalogue.search(" ".join(words))
         if not found:

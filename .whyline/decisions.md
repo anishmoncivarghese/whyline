@@ -48221,3 +48221,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 5cbae8ce250b48608bf71d76a5416b0b -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-20T07:49:49.221Z"} -->
+
+## 2026-11-20 — Registry results reuse catalogue.Entry with a new refused field; remote servers are refused, npm/pypi packages map to npx/uvx
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CON-3
+
+**Because:** one four-part screen serves catalogue and registry entries; only stdio npm/pypi packages can run as a local command
+
+**Rejected:**
+
+- separate registry entry type — would duplicate the entry screen
+
+**Files:** src/whyline/tools/registry.py
+
+<!-- whyline-event: 273bbd24812746eb997ca40f7b90a35c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T07:53:08.885Z"} -->
+
+## 2026-11-20 — Verify CON-3 public registry search implementation, console UI, CLI, and test suite
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CON-3
+
+**Because:** registry.search queries REGISTRY_URL with a 10s timeout, parses stdio npm/pypi packages into unchecked catalogue entries, marks remote servers as refused with reason, reports errors via last_error, integrates into console CataloguePickScreen via Search more… button and RegistrySearchScreen, and supports CLI search command; all 186 tools and screens tests pass, full test suite verified
+
+**Files:** src/whyline/tools/registry.py
+
+<!-- whyline-event: a981a72db5cc4510bd4a10b0466b94b5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T08:20:50.149Z"} -->
+
+## 2026-11-20 — Approve CON-3 public registry search endpoint, remote refusal, console UI, and CLI
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** CON-3
+
+**Because:** registry.search queries REGISTRY_URL with a 10s timeout, parses stdio npm/pypi packages into unchecked entries, refuses remote servers, surfaces errors via last_error, console UI integrates Search more… into CatalogueEntryScreen, CLI supports catalogue search, and tests comprehensively cover all requirements
+
+**Files:** src/whyline/tools/registry.py
+
+<!-- whyline-event: 31008d717c424da3bec25c49e35ce334 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T09:12:59.160Z"} -->

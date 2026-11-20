@@ -1,0 +1,43 @@
+{
+  "servers": [
+    {
+      "server": {
+        "name": "io.github.example/weather",
+        "description": "Weather forecasts for any city",
+        "version": "1.2.0",
+        "repository": {"url": "https://github.com/example/weather-mcp", "source": "github"},
+        "packages": [
+          {
+            "registryType": "npm",
+            "identifier": "@example/weather-mcp",
+            "version": "1.2.0",
+            "runtimeHint": "npx",
+            "transport": {"type": "stdio"},
+            "environmentVariables": [
+              {"name": "WEATHER_API_KEY", "description": "Your weather API key", "isRequired": true, "isSecret": true}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "server": {
+        "name": "io.github.example/notes-py",
+        "description": "Notes in a local folder",
+        "version": "0.4.0",
+        "packages": [
+          {"registryType": "pypi", "identifier": "notes-mcp", "version": "0.4.0", "transport": {"type": "stdio"}}
+        ]
+      }
+    },
+    {
+      "server": {
+        "name": "com.example/hosted",
+        "description": "A hosted server",
+        "version": "2.0.0",
+        "remotes": [{"type": "streamable-http", "url": "https://mcp.example.com/mcp"}]
+      }
+    }
+  ],
+  "metadata": {"count": 3}
+}

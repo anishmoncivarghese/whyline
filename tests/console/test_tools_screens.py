@@ -990,6 +990,40 @@ async def test_draft_failure_is_shown_and_keeps_the_box(home, tmp_path, monkeypa
     assert skills.find(tmp_path) == []
 
 
+async def test_search_more_shows_registry_results_under_the_heading(home, stored, tmp_path, monkeypatch):
+    import json
+    from pathlib import Path
+
+    from whyline.console.tools_screens import CatalogueEntryScreen, RegistrySearchScreen
+    from whyline.tools import registry
+
+    data = json.loads((Path(__file__).parents[1] / "tools" / "fixtures" / "registry_search.json").read_text())
+    real = registry.search
+    monkeypatch.setattr(registry, "search", lambda text, **kw: real(text, get=lambda url, *, timeout: data))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(120, 60)) as pilot:
+        await open_tools(pilot, app)
+        await pilot.click("#tl-catalogue")
+        await pilot.pause()
+        await pilot.click("#cp-more")
+        await pilot.pause()
+        results = app.screen
+        assert isinstance(results, RegistrySearchScreen)
+        assert text(results, "#rs-heading") == "From the public registry · not checked by whyline"
+        results.query_one("#rs-search").value = "weather"
+        await results.query_one("#rs-search").action_submit()
+        await pilot.pause(0.5)
+        listing = results.query_one("#rs-list")
+        assert listing.option_count == 3
+        assert "needs a browser sign-in" in str(listing.get_option_at_index(2).prompt)
+        assert listing.get_option_at_index(2).disabled
+        listing.highlighted = 0
+        listing.action_select()
+        await pilot.pause()
+        assert isinstance(app.screen, CatalogueEntryScreen)
+        assert "npx -y @example/weather-mcp" in text(app.screen, "#ce-about")
+
+
 async def test_catalogue_add_needs_a_passing_test_then_enables(home, stored, tmp_path):
     from whyline.console.tools_screens import CatalogueEntryScreen, CataloguePickScreen
     from whyline.tools import catalogue

@@ -45,6 +45,7 @@ class Entry:
     tools: tuple[Tool, ...]
     source: str
     checked: str
+    refused: str = ""
 
     @property
     def status(self) -> str:

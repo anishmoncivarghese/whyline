@@ -23,7 +23,7 @@ from textual.widgets.option_list import Option
 from whyline import credentials
 from whyline.agents import capabilities
 from whyline.console.agents_screens import tool_kind
-from whyline.tools import catalogue, knowledge, mcp, mcp_config, skill_draft, skill_install, skill_sources, skills, users
+from whyline.tools import catalogue, knowledge, mcp, mcp_config, registry, skill_draft, skill_install, skill_sources, skills, users
 
 _SETUP = (("grok", "Set up grok"), ("antigravity", "Set up Antigravity"))
 _NO_CRED = "(none)"
@@ -897,7 +897,7 @@ class CataloguePickScreen(ModalScreen):
             Label("Add from catalogue"),
             Input(placeholder="search", id="cp-search"),
             OptionList(id="cp-list"),
-            Horizontal(Button("Cancel", id="cp-cancel")),
+            Horizontal(Button("Search more…", id="cp-more"), Button("Cancel", id="cp-cancel")),
         )
 
     def on_mount(self) -> None:
@@ -918,6 +918,68 @@ class CataloguePickScreen(ModalScreen):
     def on_option_list_option_selected(self, event: "OptionList.OptionSelected") -> None:
         event.stop()
         self.dismiss(self._shown[event.option_index].name)
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        if event.button.id == "cp-more":
+            def picked(entry: "catalogue.Entry | None") -> None:
+                if entry:
+                    self.dismiss(entry)
+
+            self.app.push_screen(RegistrySearchScreen(), picked)
+            return
+        self.dismiss(None)
+
+
+class RegistrySearchScreen(ModalScreen):
+    """Results from the public registry, not checked by whyline. Picking a usable one
+    dismisses with its entry; refused results show their reason and cannot be picked."""
+
+    DEFAULT_CSS = _CSS.format(name="RegistrySearchScreen") + "RegistrySearchScreen OptionList { height: 16; }"
+
+    def __init__(self, *, search_fn=None) -> None:
+        super().__init__()
+        self._search_fn = search_fn or registry.search
+        self._shown: list[catalogue.Entry] = []
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label(registry.HEADING, id="rs-heading"),
+            Input(placeholder="search, then press Enter", id="rs-search"),
+            Static("", id="rs-note", markup=False),
+            OptionList(id="rs-list"),
+            Horizontal(Button("Cancel", id="rs-cancel")),
+        )
+
+    def on_input_submitted(self, event: "Input.Submitted") -> None:
+        event.stop()
+        text = event.value
+        self.query_one("#rs-note", Static).update("Searching…")
+
+        def in_thread() -> None:
+            found = self._search_fn(text)
+            self.app.call_from_thread(self._found, found, registry.last_error())
+
+        self.run_worker(in_thread, thread=True, group="rs-search")
+
+    def _found(self, found: list[catalogue.Entry], error: str) -> None:
+        if not self.is_attached:
+            return
+        self._shown = found
+        self.query_one("#rs-note", Static).update(error or ("" if found else "Nothing matches."))
+        listing = self.query_one("#rs-list", OptionList)
+        listing.clear_options()
+        for e in found:
+            if e.refused:
+                listing.add_option(Option(Text(f"{e.title}  {e.refused}  {e.about}"), disabled=True))
+            else:
+                listing.add_option(Option(Text(f"{e.title}  {e.status}  {e.about}")))
+
+    def on_option_list_option_selected(self, event: "OptionList.OptionSelected") -> None:
+        event.stop()
+        entry = self._shown[event.option_index]
+        if not entry.refused:
+            self.dismiss(entry)
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         event.stop()
@@ -1133,8 +1195,11 @@ class ToolsScreen(ModalScreen):
         self.app.push_screen(AddServerScreen(), added)
 
     def _catalogue(self) -> None:
-        def chosen(name: str | None) -> None:
-            entry = next((e for e in catalogue.load() if e.name == name), None)
+        def chosen(picked: "str | catalogue.Entry | None") -> None:
+            if isinstance(picked, catalogue.Entry):
+                entry = picked
+            else:
+                entry = next((e for e in catalogue.load() if e.name == picked), None)
             if entry is None:
                 return
             if catalogue.added(entry):
