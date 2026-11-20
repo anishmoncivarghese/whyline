@@ -1521,8 +1521,10 @@ class ToolPickScreen(ModalScreen):
         " ToolPickScreen .tp-warning { height: auto; color: $warning; }"
     )
 
-    def __init__(self, chosen: dict[str, str]) -> None:
+    def __init__(self, chosen: dict[str, str], *, on_skill=None, test_fn=None) -> None:
         super().__init__()
+        self._on_skill = on_skill  # called with a skill ref the agent should get
+        self._test_fn = test_fn
         self._chosen = dict(chosen)
         self._perms = dict(chosen)  # permission of every tool seen, ticked or not
         self._keys: list[tuple[str, object]] = []  # index -> (key, Tool)
@@ -1569,10 +1571,46 @@ class ToolPickScreen(ModalScreen):
                 id="tl-none", markup=False), *lines]
         return [VerticalScroll(*sections), *lines]
 
+    def _found_hit(self, hit) -> str:
+        """The button on a Find result."""
+        from whyline.console import tools_screens as ts
+        from whyline.tools import mcp_config
+
+        if hit.kind == "connector":
+            ticked = 0
+            for i, (key, _tool) in enumerate(self._keys):
+                if key.startswith(f"{hit.ref}.") and self.query(f"#tl-c-{i}"):
+                    self.query_one(f"#tl-c-{i}", Checkbox).value = True
+                    ticked += 1
+            return f"Ticked {ticked} tools of {hit.ref}." if ticked else (
+                f"{hit.ref} has no tools to tick yet. Test it in Tools first.")
+        if hit.kind in ("catalogue", "registry"):
+            def added(name) -> None:
+                if name:
+                    self._chosen = self._collect()
+                    self.call_later(self._rebuild)
+
+            test_fn = self._test_fn or mcp_config.test_server
+            return ts.open_entry(self, hit.item, test_fn, added)
+        if self._on_skill is None:
+            return "Add skills from the Add skills screen."
+        if hit.kind == "skill":
+            self._on_skill(hit.ref)
+            return f"Added skill {hit.title}."
+
+        def installed(skill) -> None:
+            self._on_skill(skill.ref)
+            self._chosen = self._collect()
+
+        return ts.open_preview(self, hit.item, installed)
+
     def compose(self) -> ComposeResult:
+        from whyline.console.tools_screens import FindBox
+
         widgets = self._widgets()
         yield Vertical(
             Label("Add tools"),
+            FindBox(self._found_hit, prefix="tl-find"),
             Static(
                 "Tools come from your connectors. Tick the ones this agent may use, "
                 "and choose Allowed or Ask first for each.", id="tl-hint", markup=False),
@@ -2499,7 +2537,7 @@ class NewAgentScreen(ModalScreen):
             self._skills.clear()
             self._refresh_list("#na-skills-list", self._skills_text())
         elif button_id == "na-add-tools":
-            self.app.push_screen(ToolPickScreen(self._tools), self._tools_done)
+            self.app.push_screen(ToolPickScreen(self._tools, on_skill=self._add_skill), self._tools_done)
         elif button_id == "na-clear-tools":
             self._tools.clear()
             self._tools_changed()
@@ -2698,6 +2736,11 @@ class NewAgentScreen(ModalScreen):
             return
         self._skills[:] = refs
         self._refresh_list("#na-skills-list", self._skills_text())
+
+    def _add_skill(self, ref: str) -> None:
+        if ref not in self._skills:
+            self._skills.append(ref)
+            self._refresh_list("#na-skills-list", self._skills_text())
 
     def _tools_done(self, picked) -> None:
         if not isinstance(picked, dict):

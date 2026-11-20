@@ -13,7 +13,7 @@ from pathlib import Path
 
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Horizontal, HorizontalGroup, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import (
     Button, Checkbox, DataTable, Input, Label, OptionList, Select, Static, TabbedContent, TabPane, TextArea, Tree,
@@ -24,6 +24,7 @@ from whyline import credentials
 from whyline.agents import capabilities
 from whyline.console.agents_screens import tool_kind
 from whyline.tools import catalogue, knowledge, mcp, mcp_config, registry, skill_draft, skill_install, skill_sources, skills, users
+from whyline.tools import find as tools_find
 
 _SETUP = (("grok", "Set up grok"), ("antigravity", "Set up Antigravity"))
 _NO_CRED = "(none)"
@@ -1066,6 +1067,135 @@ class CatalogueEntryScreen(ModalScreen):
             self.dismiss(self._entry.name)
 
 
+_FIND_BUTTON = {
+    "connector": "Tick its tools", "catalogue": "Add…", "skill": "Add skill",
+    "remote-skill": "Preview…", "registry": "Add…",
+}
+_FIND_HEADING = {
+    "connector": "Connectors you have", "catalogue": "Catalogue", "skill": "Your skills",
+    "remote-skill": "Skills in your sources", "registry": "Public registry (not checked by whyline)",
+}
+_COMING = "Coming in this release"
+
+
+class FindBox(Vertical):
+    """`What should the agent be able to do?` One search over connectors, catalogue,
+    skills and sources. Nothing goes to the network until the registry button is pressed.
+    ``on_hit(hit)`` does the host's action and may return a line to show."""
+
+    DEFAULT_CSS = """
+    FindBox { height: auto; border: round $primary; padding: 0 1; }
+    FindBox Horizontal, FindBox HorizontalGroup { height: auto; }
+    FindBox Button { margin-right: 1; }
+    FindBox .fb-hits { height: auto; max-height: 12; }
+    FindBox .fb-line { width: 1fr; }
+    FindBox .fb-note { height: auto; }
+    """
+
+    def __init__(self, on_hit, *, prefix: str = "fb", registry_search=None, root=None) -> None:
+        super().__init__()
+        self._on_hit = on_hit
+        self._p = prefix
+        self._registry_search = registry_search or registry.search
+        self._root = root or (lambda: None)
+        self._hits: list[tools_find.Hit] = []
+
+    def compose(self) -> ComposeResult:
+        p = self._p
+        yield Label("What should the agent be able to do?")
+        yield Horizontal(
+            Input(placeholder="for example: send email, read a spreadsheet", id=f"{p}-q"),
+            Button("Find", id=f"{p}-find", variant="primary"),
+            Button("Search the registry too", id=f"{p}-reg"),
+        )
+        yield VerticalScroll(id=f"{p}-hits", classes="fb-hits")
+        yield Static("", id=f"{p}-note", markup=False, classes="fb-note")
+
+    def _say(self, text: str) -> None:
+        self.query_one(f"#{self._p}-note", Static).update(text)
+
+    async def _show(self, hits: list[tools_find.Hit], note: str = "") -> None:
+        self._hits = hits
+        box = self.query_one(f"#{self._p}-hits", VerticalScroll)
+        await box.remove_children()
+        widgets: list = []
+        last = ""
+        for i, hit in enumerate(hits):
+            if hit.kind != last:
+                last = hit.kind
+                widgets.append(Static(_FIND_HEADING[hit.kind], markup=False))
+            widgets.append(HorizontalGroup(
+                Static(f"{hit.title}  {hit.about}", classes="fb-line", markup=False),
+                Button(_FIND_BUTTON[hit.kind], id=f"{self._p}-hit-{i}"),
+            ))
+        if not hits:
+            make = Button("Make a tool…", id=f"{self._p}-make", disabled=True)
+            make.tooltip = _COMING
+            widgets += [
+                Static(tools_find.NOTHING, id=f"{self._p}-none", markup=False),
+                HorizontalGroup(make, Static(_COMING, markup=False)),
+            ]
+        await box.mount(*widgets)
+        self._say(note)
+
+    async def _find(self, *, registry_too: bool) -> None:
+        text = self.query_one(f"#{self._p}-q", Input).value.strip()
+        if not text:
+            self._say("Say what it should do first.")
+            return
+        hits = tools_find.match(text, root=self._root())
+        if not registry_too:
+            await self._show(hits)
+            return
+        await self._show(hits, "Searching the public registry…")
+
+        def in_thread() -> None:
+            found = tools_find.match(text, registry_search=self._registry_search, root=self._root())
+            self.app.call_from_thread(self._found, found, registry.last_error())
+
+        self.run_worker(in_thread, thread=True, group=f"{self._p}-search")
+
+    async def _found(self, hits: list[tools_find.Hit], error: str) -> None:
+        if self.is_attached:
+            await self._show(hits, error)
+
+    async def on_input_submitted(self, event: "Input.Submitted") -> None:
+        event.stop()
+        await self._find(registry_too=False)
+
+    async def on_button_pressed(self, event: "Button.Pressed") -> None:
+        button_id = event.button.id or ""
+        if not button_id.startswith(f"{self._p}-"):
+            return
+        event.stop()
+        if button_id == f"{self._p}-find":
+            await self._find(registry_too=False)
+        elif button_id == f"{self._p}-reg":
+            await self._find(registry_too=True)
+        elif "-hit-" in button_id:
+            hit = self._hits[int(button_id.rsplit("-", 1)[1])]
+            self._say(self._on_hit(hit) or "")
+
+
+def open_entry(screen, entry: catalogue.Entry, test_fn, done) -> str:
+    """The four-part screen for a catalogue or registry entry; ``done(name)`` runs once
+    it is added. Returns a line to show when there is nothing to open."""
+    if catalogue.added(entry):
+        return f"{entry.title} is already added."
+    screen.app.push_screen(CatalogueEntryScreen(entry, test_fn=test_fn), done)
+    return ""
+
+
+def open_preview(screen, entry: skill_sources.Entry, done) -> str:
+    """Preview a skill in a source; ``done(skill)`` runs when it is installed."""
+    try:
+        shown = skill_install.preview(entry)
+    except (ValueError, OSError, RuntimeError) as error:
+        return f"Can't open {entry.name}: {error}"
+    screen.app.push_screen(PreviewScreen(entry, shown), lambda skill: done(skill) if skill else None)
+    return ""
+
+
 class ToolsScreen(ModalScreen):
     """Connectors, Skills, Knowledge and Credentials in one place."""
 
@@ -1092,6 +1222,7 @@ class ToolsScreen(ModalScreen):
     def compose(self) -> ComposeResult:
         with Vertical():
             yield Label("Tools", id="tl-title")
+            yield FindBox(self._found_hit, prefix="tl-find", root=self._root)
             with TabbedContent(id="tl-tabs"):
                 with TabPane("Connectors", id="tl-connectors"):
                     yield Tree("Connectors", id="tl-tree")
@@ -1178,7 +1309,7 @@ class ToolsScreen(ModalScreen):
         if select:
             for node in tree.root.children:
                 if node.data == select:
-                    tree.move_cursor(node)
+                    self.call_after_refresh(tree.move_cursor, node)
 
     def _selected(self) -> str | None:
         node = self.query_one("#tl-tree", Tree).cursor_node
@@ -1200,21 +1331,46 @@ class ToolsScreen(ModalScreen):
                 entry = picked
             else:
                 entry = next((e for e in catalogue.load() if e.name == picked), None)
-            if entry is None:
-                return
-            if catalogue.added(entry):
-                self._reload(entry.name)
-                self._say(f"{entry.title} is already added.")
-                return
-
-            def done(added: str | None) -> None:
-                if added:
-                    self._reload(added)
-                    self._say(f"Added MCP server {added}.")
-
-            self.app.push_screen(CatalogueEntryScreen(entry, test_fn=self._test_fn), done)
+            if entry is not None:
+                self._add_entry(entry)
 
         self.app.push_screen(CataloguePickScreen(), chosen)
+
+    def _add_entry(self, entry: catalogue.Entry) -> str:
+        def done(added: str | None) -> None:
+            if added:
+                self._reload(added)
+                self._say(f"Added MCP server {added}.")
+
+        said = open_entry(self, entry, self._test_fn, done)
+        if said:
+            self._reload(entry.name)
+            self._say(said)
+        return said
+
+    def _open_tab(self, tab: str) -> None:
+        self.query_one("#tl-tabs", TabbedContent).active = tab
+
+    def _found_hit(self, hit: "tools_find.Hit") -> str:
+        """The button on a Find result."""
+        if hit.kind == "connector":
+            self._open_tab("tl-connectors")
+            self._reload(hit.ref)
+            return f"{hit.ref} is in Connectors. Tick its tools when you add tools to an agent."
+        if hit.kind in ("catalogue", "registry"):
+            self._open_tab("tl-connectors")
+            return self._add_entry(hit.item)
+        if hit.kind == "skill":
+            self._open_tab("tl-skills")
+            self._reload_skills(hit.ref)
+            return f"{hit.title} is already in your skills. Tick it when you add skills to an agent."
+
+        def installed(skill) -> None:
+            self._open_tab("tl-skills")
+            self._reload_skills(skill.ref)
+            self._skill_say(f"Installed {skill.ref}.")
+
+        return open_preview(self, hit.item, installed)
 
     def _import(self) -> None:
         def done(names: list[str] | None) -> None:

@@ -48264,3 +48264,78 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 31008d717c424da3bec25c49e35ce334 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-20T09:12:59.160Z"} -->
+
+## 2026-11-20 — Find box is one FindBox widget shared by Add tools and the Tools library; hit buttons call a per-screen handler
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CON-4
+
+**Because:** one search and one set of buttons, each host decides what Tick/Add skill mean (Add tools gets an on_skill callback from NewAgentScreen)
+
+**Rejected:**
+
+- separate box per screen — duplicates search, button and empty-state logic
+
+**Files:** src/whyline/console/tools_screens.py
+
+<!-- whyline-event: f4883221787f4f50a0e012a8541d4ca1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T09:22:07.173Z"} -->
+
+## 2026-11-20 — Fail CON-4: test_library_hit_buttons_do_their_action failed on connector selection
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CON-4
+
+**Because:** tests/console/test_find_box.py::test_library_hit_buttons_do_their_action failed in full test run and standalone rerun: assert screen._selected() == 'mailbox' was None due to timing-sensitive nested call_after_refresh in ToolsScreen._found_hit and _reload
+
+**Test:** uv run pytest tests/console/test_find_box.py::test_library_hit_buttons_do_their_action: FAILED
+
+**Files:** tests/console/test_find_box.py, src/whyline/console/tools_screens.py
+
+<!-- whyline-event: de25490ce79a4155a453cc7e82e3b7b7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T09:51:43.084Z"} -->
+
+## 2026-11-20 — Find hit buttons reload the tree directly instead of via an extra call_after_refresh
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CON-4
+
+**Because:** the nested deferral raced the tab switch so the tree cursor was not on the connector when checked; _reload already defers the cursor move itself
+
+**Rejected:**
+
+- longer pause in the test — hides the race rather than removing it
+
+**Files:** src/whyline/console/tools_screens.py
+
+<!-- whyline-event: b698c00983e24a04ab6d7814449144e8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T09:55:26.077Z"} -->
+
+## 2026-11-20 — Pass CON-4: find box, hit actions, caps, ordering and CLI match specification
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CON-4
+
+**Because:** Full test suite (5509 passed) and targeted find tests (13 passed) verified; hit button action race condition resolved by direct reload in ToolsScreen
+
+**Files:** src/whyline/tools/find.py
+
+<!-- whyline-event: 1f4fedbe22fa443fb22b405778f9abab -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T10:33:04.095Z"} -->
+
+## 2026-11-20 — Approve CON-4: find.match search, console FindBox, actions and CLI verified
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** CON-4
+
+**Because:** Implementation completely matches spec with proper ordering, caps, hit action routing in both Tools and Add Tools screens, network gating for registry, and all tests pass (full suite exited 0)
+
+**Files:** src/whyline/tools/find.py
+
+<!-- whyline-event: dfc08c8b7dab476ca9c0909de8d6dcd5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T11:48:36.423Z"} -->

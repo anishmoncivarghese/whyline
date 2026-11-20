@@ -37,6 +37,9 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     cat = tools_sub.add_parser("catalogue", help="Connectors you can add: list, or add one by name")
     cat.add_argument("words", nargs="*", metavar="TEXT",
                      help="words to search for, or: add <name>, or: search <text> (public registry)")
+    find = tools_sub.add_parser("find", help="What should the agent be able to do? Search everything")
+    find.add_argument("text", nargs="+", metavar="TEXT")
+    find.add_argument("--registry", action="store_true", help="search the public registry too")
     tools_sub.add_parser("serve", help="Run whyline's MCP server for an agent run (stdio)")
     for cli in _SAVED_SETUP:
         setup = tools_sub.add_parser(f"setup-{cli}", help=f"Add whyline's tools to {cli} (once)")
@@ -452,9 +455,22 @@ def _catalogue(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _find(args: argparse.Namespace) -> int:
+    from whyline.tools import find, registry
+
+    hits = find.match(" ".join(args.text), registry_search=registry.search if args.registry else None)
+    if not hits:
+        print(find.NOTHING)
+    for h in hits:
+        print(f"{h.kind}  {h.ref}  {h.title}  {h.about}")
+    return EXIT_ERROR if args.registry and registry.last_error() else EXIT_OK
+
+
 def run(args: argparse.Namespace) -> int:
     if args.tools_command == "catalogue":
         return _catalogue(args)
+    if args.tools_command == "find":
+        return _find(args)
     if args.tools_command == "serve":
         from whyline.tools import serve
 
