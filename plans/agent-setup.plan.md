@@ -258,7 +258,7 @@ Rules every task keeps:
   6. CLI: `whyline tools made list | show <name> | new --from FILE | test <name> key=value… | accept <name> | remove <name>`, each asking `[y/N]` before sending or accepting unless `--yes`.
   Tests: the draft parsed and validated, the retry, no credential value in the prompt, Test showing the masked request and sending only after yes, Accept disabled until valid, an edit clearing acceptance, and the CLI.
 
-- [ ] RSK-1: A risk level on every tool
+- [x] RSK-1: A risk level on every tool
   Create `src/whyline/tools/risk.py` and `tests/tools/test_risk.py`. Edit `src/whyline/tools/mcp_config.py`, `src/whyline/tools/catalogue.py` and their tests.
   1. `risk.LEVELS = ("reads", "writes", "sends", "pays")`, in rising order.
   2. `risk.of(server, tool) -> str`: the user's own setting when there is one, else the catalogue entry's for that connector and tool, else `reads` when the tool states it only reads, else `writes`. A made tool's is its own `risk`.
