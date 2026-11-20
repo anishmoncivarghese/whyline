@@ -48135,3 +48135,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 63da6326f35440b081d985daad0242ed -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-20T05:57:08.855Z"} -->
+
+## 2026-11-20 — Catalogue ships 6 of 13 entries; the rest are left out until confirmed from their own pages
+
+**Actor:** claude
+**Role:** implementer
+**Task:** CON-1
+
+**Because:** Builder could not fetch and confirm Slack, Postgres, Linear, web search, Gmail, Calendar, Drive from their sources; web search options need paid keys
+
+**Rejected:**
+
+- fill from memory — the task forbids unconfirmed entries
+
+**Files:** src/whyline/tools/connectors.toml
+
+<!-- whyline-event: f8611491a4c04736a58dcd5d4a5e3b0f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T05:58:22.709Z"} -->
+
+## 2026-11-20 — Approve connector catalogue implementation for CON-1
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** CON-1
+
+**Because:** catalogue.py implements Entry/Credential/Tool dataclasses, load/parse with the 3 required refusals, and search; connectors.toml ships 6 confirmed un-paid entries with checked=''; wheel packaging ships the toml file; all 9 tests pass
+
+**Files:** src/whyline/tools/catalogue.py, src/whyline/tools/connectors.toml, tests/tools/test_catalogue.py
+
+<!-- whyline-event: e04fb9a27b134508959ae6b3484bc951 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T06:24:47.887Z"} -->
+
+## 2026-11-20 — Approve CON-1 connector catalogue and connectors data file
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** CON-1
+
+**Because:** catalogue.py implements Entry, Credential, Tool, parse, load, and search; loader rejects missing source, non-bare commands, and credential values; connectors.toml includes 6 verified entries with checked='' and no paying tools; connectors.toml is packaged in wheel; all tests pass
+
+**Files:** src/whyline/tools/catalogue.py, src/whyline/tools/connectors.toml, tests/tools/test_catalogue.py
+
+<!-- whyline-event: 8e4cd9ce3f704763a25a1fcd07519341 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T06:50:38.065Z"} -->

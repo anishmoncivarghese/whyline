@@ -1,0 +1,143 @@
+# Connector catalogue. Each entry's command and args are copied from the
+# project's own page, named in `source`. `checked` stays "" until a person has
+# run the entry's Test on a real account. No entry here has a tool that pays.
+
+[[connector]]
+name = "files"
+title = "Files"
+about = "Read and write files inside folders you choose"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "~/Documents"]
+source = "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem"
+checked = ""
+
+[[connector.tools]]
+name = "read_text_file"
+risk = "read"
+
+[[connector.tools]]
+name = "list_directory"
+risk = "read"
+
+[[connector.tools]]
+name = "write_file"
+risk = "write"
+
+[[connector.tools]]
+name = "edit_file"
+risk = "write"
+
+[[connector]]
+name = "fetch"
+title = "Web fetch"
+about = "Fetch a web page and return it as text"
+command = "uvx"
+args = ["mcp-server-fetch"]
+source = "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch"
+checked = ""
+
+[[connector.tools]]
+name = "fetch"
+risk = "read"
+
+[[connector]]
+name = "browser"
+title = "Browser"
+about = "Drive a real browser to open pages, click and read them"
+command = "npx"
+args = ["@playwright/mcp@latest"]
+source = "https://github.com/microsoft/playwright-mcp"
+checked = ""
+
+[[connector.tools]]
+name = "browser_navigate"
+risk = "read"
+
+[[connector.tools]]
+name = "browser_snapshot"
+risk = "read"
+
+[[connector.tools]]
+name = "browser_click"
+risk = "write"
+
+[[connector.tools]]
+name = "browser_type"
+risk = "write"
+
+[[connector]]
+name = "github"
+title = "GitHub"
+about = "Read repositories, issues and pull requests, and open issues"
+command = "docker"
+args = ["run", "-i", "--rm", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", "ghcr.io/github/github-mcp-server"]
+source = "https://github.com/github/github-mcp-server"
+checked = ""
+
+[[connector.credentials]]
+var = "GITHUB_PERSONAL_ACCESS_TOKEN"
+label = "GitHub personal access token"
+where = "https://github.com/settings/personal-access-tokens/new"
+
+[[connector.tools]]
+name = "get_file_contents"
+risk = "read"
+
+[[connector.tools]]
+name = "search_issues"
+risk = "read"
+
+[[connector.tools]]
+name = "create_issue"
+risk = "write"
+
+[[connector]]
+name = "notion"
+title = "Notion"
+about = "Search and read Notion pages, and add or edit them"
+command = "npx"
+args = ["-y", "@notionhq/notion-mcp-server"]
+source = "https://github.com/makenotion/notion-mcp-server"
+checked = ""
+
+[[connector.credentials]]
+var = "NOTION_TOKEN"
+label = "Notion integration token"
+where = "https://www.notion.so/profile/integrations"
+
+[[connector.tools]]
+name = "API-post-search"
+risk = "read"
+
+[[connector.tools]]
+name = "API-retrieve-a-page"
+risk = "read"
+
+[[connector.tools]]
+name = "API-post-page"
+risk = "write"
+
+[[connector]]
+name = "sqlite"
+title = "SQLite"
+about = "Query and edit a local SQLite database file"
+command = "uvx"
+args = ["mcp-server-sqlite", "--db-path", "~/data.db"]
+source = "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/sqlite"
+checked = ""
+
+[[connector.tools]]
+name = "read_query"
+risk = "read"
+
+[[connector.tools]]
+name = "list_tables"
+risk = "read"
+
+[[connector.tools]]
+name = "write_query"
+risk = "write"
+
+[[connector.tools]]
+name = "create_table"
+risk = "write"
