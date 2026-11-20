@@ -240,7 +240,7 @@ Rules every task keeps:
   4. `call(tool, args, *, get_credential, resolve, request) -> str`: checks the tool is accepted, fills the template (inputs are URL-encoded in the URL and query, JSON-encoded in the body), resolves the host with `resolve` and refuses a private, loopback, link-local or reserved address, sends with `request` (15 second timeout, no redirects followed to another host, at most 200,000 bytes read), and returns the picked part as text. A non-2xx answer returns `HTTP <code>` and the first 500 characters. The credential's value appears in no return value or error.
   Tests: `test_made_tool_refuses_private_addresses` (IP literal, `localhost`, a name resolving to `10.0.0.1`, `127.0.0.1`, `169.254.169.254` and `::1`, and a redirect to another host), `test_edited_tool_needs_accepting`, each `validate` refusal, the template filling and encoding, the size cap, `pick`, and the credential never in the output.
 
-- [ ] MKT-2: Made tools in every run
+- [x] MKT-2: Made tools in every run
   Edit `src/whyline/tools/serve.py`, `src/whyline/tools/mcp_config.py`, `src/whyline/agents/definitions.py` and their tests only.
   1. Accepted made tools appear as a built-in server named `made`, with one tool each (`made.<name>`), its inputs as the schema and `read_only` true only for risk `reads`. It is listed by the functions the pickers use, without an entry in `mcp.toml`.
   2. `whyline tools serve` answers a call to `made.<name>` with `made.call`, through the same approval and call-log path as any other tool.
