@@ -232,7 +232,7 @@ Rules every task keeps:
   4. CLI: `whyline tools find <text> [--registry]`.
   Tests: the order and the cap, no registry call without the flag or the button, each hit's button doing its action, and the empty state.
 
-- [ ] MKT-1: A made tool: a saved web request
+- [x] MKT-1: A made tool: a saved web request
   Create `src/whyline/tools/made.py` and `tests/tools/test_made.py` only.
   1. `MadeTool`: `name`, `about`, `method` (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`), `url` (with `{input}` places), `headers`, `query`, `body` (a JSON template), `inputs` (each `name`, `type` of `string`, `number` or `boolean`, `about`, `required`), `credential` (a Keychain name) and `credential_in` (`header:<Name>` or `query:<name>`), `pick` (a dotted path into a JSON answer, `""` for all), `risk`, `accepted_hash`.
   2. Stored one per file in `~/.whyline/tools/<name>.toml`. `load_all()`, `save(tool)`, `remove(name)`, `accept(name)` (stores the hash of everything but `accepted_hash`) and `accepted(tool) -> bool`.
