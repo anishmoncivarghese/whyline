@@ -224,7 +224,7 @@ Rules every task keeps:
   4. CLI: `whyline tools catalogue search <text>`.
   Tests: results mapped from a recorded response in `tests/tools/fixtures/`, remote results refused with the reason, a timeout giving an empty list and a reason, and the heading.
 
-- [ ] CON-4: What should the agent be able to do?
+- [x] CON-4: What should the agent be able to do?
   Create `src/whyline/tools/find.py` and `tests/tools/test_find.py`. Edit `src/whyline/console/agents_screens.py`, `src/whyline/console/tools_screens.py`, `src/whyline/tools/cli.py` and their tests.
   1. `find.match(text, *, registry_search=None) -> list[Hit]` (`kind`: `connector`, `catalogue`, `skill`, `remote-skill`, `registry`; `title`; `about`; `ref`), in that order: connectors already added (by tool name and description), catalogue entries, skills in the library, skills in fetched sources, and registry results only when `registry_search` is given. All words must match; at most 5 per kind.
   2. Add tools and the Tools library get a box `What should the agent be able to do?` with **Find**. Hits are listed by kind with one button each: **Tick its tools** (added connector), **Add…** (catalogue or registry, the four-part screen), **Add skill** (library), **Preview…** (remote skill). **Search the registry too** is a separate button, so nothing goes to the network unasked.
