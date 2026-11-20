@@ -208,7 +208,7 @@ Rules every task keeps:
   5. `catalogue.search(text)` matches all words against the title, about line and tool names.
   Tests: the loader's three refusals, the packaged file loading with every entry having a `source` and no credential values, no `pays` risk in the file, and search.
 
-- [ ] CON-2: Add a connector from the catalogue
+- [x] CON-2: Add a connector from the catalogue
   Edit `src/whyline/tools/catalogue.py`, `src/whyline/console/tools_screens.py`, `src/whyline/tools/cli.py` and their tests only.
   1. `catalogue.add(entry, credentials: dict[str, str], *, test=mcp_config.test_server) -> str`: stores each credential in the Keychain under `<entry.name>-<var>` with `whyline.credentials`, saves the server **disabled** with its env pointing at those names, runs the test, and enables it only when the test passed. On a failed test the server stays saved and disabled, and the message is the test's reason.
   2. The Connectors tab gets **Add from catalogue…**: the list with a search box, then one screen for the chosen entry with four parts in order: what it will run (the full command) and its tools with their risk, a box per credential with its `where` link and **Open**, **Test**, and the result. **Add** is enabled only after a passing Test.
