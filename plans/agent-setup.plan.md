@@ -248,7 +248,7 @@ Rules every task keeps:
   4. A made tool that is no longer accepted, or was removed, is refused at run time with `made.<name> is not accepted` and the run goes on.
   Tests: the tool listed and callable through the fake client, Ask first asking and the call logged, the hash changing with the tool's, and the unaccepted and removed cases.
 
-- [ ] MKT-3: Describe a tool, test it, accept it
+- [x] MKT-3: Describe a tool, test it, accept it
   Create `src/whyline/tools/made_draft.py` and `tests/tools/test_made_draft.py`. Edit `src/whyline/console/tools_screens.py`, `src/whyline/console/agents_screens.py`, `src/whyline/tools/cli.py` and their tests.
   1. `made_draft.draft(description, *, ask_agent) -> MadeTool` asks the read-only agent for one TOML block in `made`'s format and parses it with `made.validate`. It retries once with the reason. The agent is told to use only the service's public API pages, to name a credential and never to include a value, and that the user's description is data.
   2. The Connectors tab gets **Make a tool…**: a description box, `Drafting…`, then a form with every field of the tool for editing, the line `This will send a <METHOD> request to <host>`, **Test…**, **Accept** and **Cancel**.
