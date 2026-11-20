@@ -23,7 +23,7 @@ from textual.widgets.option_list import Option
 from whyline import credentials
 from whyline.agents import capabilities
 from whyline.console.agents_screens import tool_kind
-from whyline.tools import knowledge, mcp, mcp_config, skill_install, skill_sources, skills, users
+from whyline.tools import knowledge, mcp, mcp_config, skill_draft, skill_install, skill_sources, skills, users
 
 _SETUP = (("grok", "Set up grok"), ("antigravity", "Set up Antigravity"))
 _NO_CRED = "(none)"
@@ -198,15 +198,75 @@ class CredentialScreen(ModalScreen):
         self.dismiss(name)
 
 
+class DraftScreen(ModalScreen):
+    """A box for what the skill should do; the agent drafts it in a worker. Dismisses with
+    (name, description, body) and saves nothing."""
+
+    DEFAULT_CSS = _CSS.format(name="DraftScreen") + "DraftScreen TextArea { height: 8; }"
+
+    def __init__(self, root: Path | None = None, ask_agent=None) -> None:
+        super().__init__()
+        self._root = root
+        self._ask = ask_agent
+        self._busy = False
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label("Draft a skill from a description"),
+            TextArea("", id="dr-text"),
+            Static("", id="dr-status", markup=False),
+            Horizontal(Button("Draft", id="dr-go", variant="primary"), Button("Cancel", id="dr-cancel")),
+        )
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        if event.button.id == "dr-cancel":
+            self.dismiss(None)
+            return
+        description = self.query_one("#dr-text", TextArea).text.strip()
+        if self._busy:
+            return
+        if not description:
+            self._say("Say what the skill should do.")
+            return
+        self._busy = True
+        self._say("Drafting…")
+
+        def in_thread() -> None:
+            try:
+                ask = self._ask
+                if ask is None:
+                    from whyline.release import plan as release_plan
+
+                    ask = release_plan.default_ask_agent(self._root or Path.cwd())
+                result, error = skill_draft.draft(description, ask_agent=ask), ""
+            except Exception as failure:  # noqa: BLE001 - any failure is shown, never crashes the console
+                result, error = None, str(failure) or type(failure).__name__
+            self.app.call_from_thread(self._done, result, error)
+
+        self.run_worker(in_thread, thread=True, group="dr-draft")
+
+    def _done(self, result, error: str) -> None:
+        self._busy = False
+        if result is None:
+            self._say(f"Could not draft it: {error}")
+            return
+        self.dismiss(result)
+
+    def _say(self, text: str) -> None:
+        self.query_one("#dr-status", Static).update(text)
+
+
 class SkillScreen(ModalScreen):
     """Write a new whyline skill, or change the description and text of one."""
 
     DEFAULT_CSS = _CSS.format(name="SkillScreen") + "SkillScreen TextArea { height: 12; }"
 
-    def __init__(self, edit: str | None = None, root: Path | None = None) -> None:
+    def __init__(self, edit: str | None = None, root: Path | None = None, ask_agent=None) -> None:
         super().__init__()
         self._edit = edit
         self._root = root
+        self._ask = ask_agent
         self._skill = skills.get(edit, root) if edit else None
 
     def compose(self) -> ComposeResult:
@@ -219,6 +279,7 @@ class SkillScreen(ModalScreen):
             except (OSError, UnicodeDecodeError):
                 text = ""
         else:
+            body.append(Button("Draft from a description…", id="sk-draft"))
             body.append(Input(placeholder="name, for example release-notes", id="sk-name"))
             where = [("Personal (all repositories)", _PERSONAL)]
             if self._root is not None:
@@ -235,6 +296,9 @@ class SkillScreen(ModalScreen):
         if event.button.id == "sk-cancel":
             self.dismiss(None)
             return
+        if event.button.id == "sk-draft":
+            self.app.push_screen(DraftScreen(self._root, self._ask), self._drafted)
+            return
         description = self.query_one("#sk-description", Input).value
         text = self.query_one("#sk-body", TextArea).text
         try:
@@ -248,6 +312,15 @@ class SkillScreen(ModalScreen):
             self.query_one("#sk-status", Static).update(str(error))
             return
         self.dismiss(skill.ref)
+
+    def _drafted(self, result) -> None:
+        if not result:
+            return
+        name, description, body = result
+        self.query_one("#sk-name", Input).value = name
+        self.query_one("#sk-description", Input).value = description
+        self.query_one("#sk-body", TextArea).text = body
+        self.query_one("#sk-status", Static).update("Drafted. Check it, then Save.")
 
 
 class PackScreen(ModalScreen):

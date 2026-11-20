@@ -925,3 +925,66 @@ async def test_sources_list_add_toggle_remove_refresh_and_open(home, tmp_path, m
         await pilot.pause()
         assert "extra" not in {r.key.value for r in table.ordered_rows}
         assert not skill_sources.clone_dir(skill_sources.Source("extra", "https://x/y")).exists()
+
+
+async def test_new_skill_draft_fills_the_form_and_saves_nothing_until_save(home, tmp_path, monkeypatch):
+    from whyline.console.tools_screens import DraftScreen
+    from whyline.tools import skill_draft
+
+    seen = []
+
+    def fake_draft(description, *, ask_agent):
+        seen.append(description)
+        return "from-draft", "Drafted one", "Do the thing."
+
+    monkeypatch.setattr(skill_draft, "draft", fake_draft)
+    monkeypatch.setattr("whyline.release.plan.default_ask_agent", lambda root, **kw: (lambda prompt: ""))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 50)) as pilot:
+        screen = await open_tools(pilot, app, "tl-skills")
+        await pilot.click("#tl-skill-new")
+        await pilot.pause()
+        form = app.screen
+        assert isinstance(form, SkillScreen)
+        await pilot.click("#sk-draft")
+        await pilot.pause()
+        box = app.screen
+        assert isinstance(box, DraftScreen)
+        box.query_one("#dr-text").text = "make release notes"
+        await pilot.click("#dr-go")
+        await pilot.pause(0.5)
+        assert app.screen is form
+        assert seen == ["make release notes"]
+        assert form.query_one("#sk-name").value == "from-draft"
+        assert form.query_one("#sk-description").value == "Drafted one"
+        assert form.query_one("#sk-body").text == "Do the thing."
+        assert skills.find(tmp_path) == []
+        await pilot.click("#sk-save")
+        await pilot.pause()
+        assert app.screen is screen
+    assert "Do the thing." in (home / ".whyline" / "skills" / "from-draft" / "SKILL.md").read_text()
+
+
+async def test_draft_failure_is_shown_and_keeps_the_box(home, tmp_path, monkeypatch):
+    from whyline.console.tools_screens import DraftScreen
+    from whyline.tools import skill_draft
+
+    def broken(description, *, ask_agent):
+        raise skill_draft.DraftError("The answer has no front matter between --- lines.")
+
+    monkeypatch.setattr(skill_draft, "draft", broken)
+    monkeypatch.setattr("whyline.release.plan.default_ask_agent", lambda root, **kw: (lambda prompt: ""))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 50)) as pilot:
+        await open_tools(pilot, app, "tl-skills")
+        await pilot.click("#tl-skill-new")
+        await pilot.pause()
+        await pilot.click("#sk-draft")
+        await pilot.pause()
+        box = app.screen
+        box.query_one("#dr-text").text = "x"
+        await pilot.click("#dr-go")
+        await pilot.pause(0.5)
+        assert isinstance(app.screen, DraftScreen)
+        assert "front matter" in text(box, "#dr-status")
+    assert skills.find(tmp_path) == []

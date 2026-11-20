@@ -48049,3 +48049,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e0e693f6c5484edf8956f4a921c45d20 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-20T03:03:38.864Z"} -->
+
+## 2026-11-20 — Draft-from-description lives in a DraftScreen opened from the New skill form; the form is filled, not saved
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SKC-5
+
+**Because:** Keeps Save as the only write and reuses the form's validation
+
+**Rejected:**
+
+- Saving straight from the draft — user could not review agent text first
+
+**Files:** src/whyline/console/tools_screens.py
+
+<!-- whyline-event: 96a84b9772a643a1bb616e9ecd320b1a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T03:05:36.992Z"} -->
+
+## 2026-11-20 — Pass SKC-5: skill_draft prompt, parse, single retry on DraftError, and DraftScreen integration verified
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SKC-5
+
+**Because:** Verified prompt holds description as data block, parse handles whole answer or fenced block and validates name/description/length with DraftError, draft retries once on failure, DraftScreen populates New skill form without saving before Save, and full test suite passes (5469 tests)
+
+**Files:** src/whyline/tools/skill_draft.py
+
+<!-- whyline-event: 61e49bc8ac584a44b3d19906117d6a77 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T03:40:23.135Z"} -->
+
+## 2026-11-20 — Approve SKC-5: skill_draft prompt, parse, single retry on DraftError, and DraftScreen integration
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** SKC-5
+
+**Because:** Implemented skill_draft module with prompt containing data-labelled description, parse with fenced block/whole answer and validation errors, single retry on DraftError, and DraftScreen modal worker populating New skill form without saving before Save; full test suite passes
+
+**Files:** src/whyline/tools/skill_draft.py
+
+<!-- whyline-event: 4f2fbc1a3ce04ab599afb99fa81a882b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T04:06:11.797Z"} -->
