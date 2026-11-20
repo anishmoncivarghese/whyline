@@ -161,7 +161,7 @@ Rules every task keeps:
   6. `search(text) -> list[Entry]` over every fetched source: all words must appear in the name or description, name matches first, at most 200 results. `fetched(source) -> str | None` gives the time of the last fetch.
   Tests: `test_no_fetch_without_asking` (load, index and search call `run` zero times), the git argv, a bad URL refused, a built-in turned off, the index skipping symlinks and folders without `SKILL.md`, and the search order and cap.
 
-- [ ] SKC-3: Check, install and update a skill
+- [x] SKC-3: Check, install and update a skill
   Create `src/whyline/tools/skill_install.py` and `tests/tools/test_skill_install.py`. Edit `src/whyline/agents/definitions.py` and its tests.
   1. `check(folder) -> list[str]`, plain warnings from fixed rules, none of which block:
      - `contains scripts: <names>` for `.py`, `.sh`, `.js`, `.rb`, `.ps1` and files with an executable bit
