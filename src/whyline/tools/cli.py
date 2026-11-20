@@ -46,6 +46,7 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
         setup.add_argument("--yes", action="store_true", help="do not ask first")
     _add_skills_parser(tools_sub)
     _add_knowledge_parser(tools_sub)
+    _add_made_parser(tools_sub)
 
 
 _SAVED_SETUP = ("grok", "antigravity")
@@ -161,11 +162,123 @@ def _add_skills_parser(tools_sub: "argparse._SubParsersAction") -> None:
     update.add_argument("--yes", action="store_true", help="do not ask")
 
 
-def _ask(yes: bool) -> bool:
+def _add_made_parser(tools_sub: "argparse._SubParsersAction") -> None:
+    parser = tools_sub.add_parser("made", help="Tools you made: a saved web request an agent can call")
+    sub = parser.add_subparsers(dest="made_command", required=True)
+    sub.add_parser("list", help="Made tools and whether each is accepted")
+    show = sub.add_parser("show", help="Show one made tool")
+    show.add_argument("name")
+    new = sub.add_parser("new", help="Save a made tool from a TOML file (not accepted yet)")
+    new.add_argument("--from", dest="source", required=True, metavar="FILE")
+    test = sub.add_parser("test", help="Show the request, then send it once when you say yes")
+    test.add_argument("name")
+    test.add_argument("values", nargs="*", metavar="key=value")
+    test.add_argument("--yes", action="store_true", help="do not ask")
+    accept = sub.add_parser("accept", help="Accept a made tool so agents may call it")
+    accept.add_argument("name")
+    accept.add_argument("--yes", action="store_true", help="do not ask")
+    remove = sub.add_parser("remove", help="Delete a made tool")
+    remove.add_argument("name")
+
+
+def _made_values(pairs: list[str]) -> dict:
+    values = {}
+    for pair in pairs:
+        key, sep, value = pair.partition("=")
+        if not sep or not key:
+            raise ValueError(f"Give inputs as key=value, not {pair!r}.")
+        values[key] = value
+    return values
+
+
+def _made_show(tool) -> None:
+    from whyline.tools import made
+
+    state = "accepted" if made.accepted(tool) else "not accepted"
+    print(f"{tool.name}  {state}  risk {tool.risk}")
+    print(f"  {tool.about}")
+    print(f"  {tool.method} {tool.url}")
+    for name, value in tool.headers.items():
+        print(f"  header {name}: {value}")
+    for name, value in tool.query.items():
+        print(f"  query {name}={value}")
+    if tool.body:
+        print(f"  body {tool.body}")
+    if tool.credential:
+        print(f"  credential {tool.credential} ({tool.credential_in})")
+    if tool.pick:
+        print(f"  pick {tool.pick}")
+    for item in tool.inputs:
+        print(f"  input {item.name} ({item.type}{'' if item.required else ', optional'}) {item.about}")
+
+
+def _made(args: argparse.Namespace) -> int:
+    from whyline import credentials
+    from whyline.tools import made, made_draft
+
+    command = args.made_command
+    try:
+        if command == "list":
+            tools = made.load_all()
+            if not tools:
+                print("No made tools.")
+            for t in tools:
+                print(f"{t.name}  {'accepted' if made.accepted(t) else 'not accepted'}  {t.risk}  {t.about}")
+            return EXIT_OK
+        if command == "new":
+            tool = made_draft.parse_toml(Path(args.source).read_text(encoding="utf-8"))
+            made.save(tool)
+            print(f"Saved made tool {tool.name}. It is not accepted yet: test it, then accept it.")
+            return EXIT_OK
+        tool = made.load(args.name)
+        if tool is None:
+            print(f"No made tool named {args.name}.", file=sys.stderr)
+            return EXIT_ERROR
+        if command == "show":
+            _made_show(tool)
+        elif command == "remove":
+            made.remove(args.name)
+            print(f"Removed made tool {args.name}.")
+        elif command == "test":
+            values = _made_values(args.values)
+            made.validate(tool)
+            print(made_draft.send_line(tool))
+            print(made_draft.preview(tool, values))
+            if made_draft.really_does_it(tool):
+                print(made_draft.really_does_it(tool))
+            if not _ask(args.yes, "Send it? [y/N] "):
+                print("Not sent.")
+                return EXIT_ERROR
+            print(made_draft.send_test(tool, values, get_credential=_cred_value(credentials)))
+        else:
+            made.validate(tool)
+            _made_show(tool)
+            if not _ask(args.yes, f"Accept {tool.name} so agents may call it? [y/N] "):
+                print("Not accepted.")
+                return EXIT_ERROR
+            made.accept(args.name)
+            print(f"Accepted made tool {args.name}.")
+        return EXIT_OK
+    except (made.MadeToolError, made_draft.DraftError, ValueError, OSError, credentials.Locked) as error:
+        print(str(error), file=sys.stderr)
+    return EXIT_ERROR
+
+
+def _cred_value(credentials):
+    def get(name: str):
+        try:
+            return credentials.value(name)
+        except (KeyError, ValueError, credentials.Locked):
+            return None
+
+    return get
+
+
+def _ask(yes: bool, question: str = "Continue? [y/N] ") -> bool:
     if yes:
         return True
     try:
-        return input("Continue? [y/N] ").strip().lower() in ("y", "yes")
+        return input(question).strip().lower() in ("y", "yes")
     except EOFError:
         return False
 
@@ -481,6 +594,8 @@ def run(args: argparse.Namespace) -> int:
         return _skills(args)
     if args.tools_command == "knowledge":
         return _knowledge(args)
+    if args.tools_command == "made":
+        return _made(args)
     if args.tools_command != "mcp":
         return EXIT_USAGE
     command = args.mcp_command

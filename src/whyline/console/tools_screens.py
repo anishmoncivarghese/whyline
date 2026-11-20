@@ -23,7 +23,7 @@ from textual.widgets.option_list import Option
 from whyline import credentials
 from whyline.agents import capabilities
 from whyline.console.agents_screens import tool_kind
-from whyline.tools import catalogue, knowledge, mcp, mcp_config, registry, skill_draft, skill_install, skill_sources, skills, users
+from whyline.tools import catalogue, knowledge, made, made_draft, mcp, mcp_config, registry, skill_draft, skill_install, skill_sources, skills, users
 from whyline.tools import find as tools_find
 
 _SETUP = (("grok", "Set up grok"), ("antigravity", "Set up Antigravity"))
@@ -1078,6 +1078,337 @@ _FIND_HEADING = {
 _COMING = "Coming in this release"
 
 
+def _lines(text: str) -> list[str]:
+    return [line.strip() for line in text.splitlines() if line.strip()]
+
+
+def _pairs(text: str, sep: str, what: str) -> dict[str, str]:
+    found: dict[str, str] = {}
+    for line in _lines(text):
+        key, found_sep, value = line.partition(sep)
+        if not found_sep or not key.strip():
+            raise made.MadeToolError(f"Write each {what} as name{sep}value, not {line!r}.")
+        found[key.strip()] = value.strip()
+    return found
+
+
+def _inputs_from(text: str) -> list[made.ToolInput]:
+    items = []
+    for line in _lines(text):
+        name, type_, required, about = ([*(p.strip() for p in line.split("|", 3)), "", "", ""][:4])
+        items.append(made.ToolInput(name, type_ or "string", about, required.lower() != "optional"))
+    return items
+
+
+def _inputs_text(items: list[made.ToolInput]) -> str:
+    return "\n".join(
+        f"{i.name} | {i.type} | {'required' if i.required else 'optional'} | {i.about}" for i in items
+    )
+
+
+def _stored_credential(name: str) -> str | None:
+    try:
+        return credentials.value(name)
+    except (KeyError, ValueError, credentials.Locked):
+        return None
+
+
+class TestToolScreen(ModalScreen):
+    """Ask for a value per input, show the exact request, ask `Send it?`, show the answer."""
+
+    __test__ = False
+    DEFAULT_CSS = _CSS.format(name="TestToolScreen") + "TestToolScreen .tt-box { height: auto; }"
+
+    def __init__(self, tool: made.MadeTool, *, get_credential=None, resolve=None, request=None) -> None:
+        super().__init__()
+        self._tool = tool
+        self._get = get_credential or _stored_credential
+        self._send_kw = {k: v for k, v in (("resolve", resolve), ("request", request)) if v}
+        self._values: dict = {}
+        self._busy = False
+
+    def compose(self) -> ComposeResult:
+        rows: list = [Label(f"Test {self._tool.name}"), Static(made_draft.send_line(self._tool), markup=False)]
+        for i, item in enumerate(self._tool.inputs):
+            rows.append(Input(placeholder=f"{item.name} ({item.type}) {item.about}".strip(), id=f"tt-in-{i}"))
+        rows += [
+            Static("", id="tt-request", markup=False, classes="tt-box"),
+            Static("", id="tt-warn", markup=False, classes="tt-box"),
+            Static("", id="tt-answer", markup=False, classes="tt-box"),
+            Horizontal(
+                Button("Show request", id="tt-show", variant="primary"),
+                Button("Yes, send it", id="tt-send", disabled=True),
+                Button("Close", id="tt-close"),
+            ),
+        ]
+        yield Vertical(*rows)
+
+    def _say(self, widget: str, text: str) -> None:
+        self.query_one(widget, Static).update(text)
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        button = event.button.id
+        if button == "tt-close":
+            self.dismiss(None)
+        elif button == "tt-show":
+            self._show()
+        elif button == "tt-send" and not self._busy:
+            self._send()
+
+    def _show(self) -> None:
+        values = {}
+        for i, item in enumerate(self._tool.inputs):
+            text = self.query_one(f"#tt-in-{i}", Input).value
+            if text or item.required:
+                values[item.name] = text
+        self.query_one("#tt-send", Button).disabled = True
+        self._say("#tt-answer", "")
+        try:
+            shown = made_draft.preview(self._tool, values)
+        except made.MadeToolError as error:
+            self._say("#tt-request", str(error))
+            self._say("#tt-warn", "")
+            return
+        self._values = values
+        self._say("#tt-request", f"{shown}\n\nSend it?")
+        self._say("#tt-warn", made_draft.really_does_it(self._tool))
+        self.query_one("#tt-send", Button).disabled = False
+
+    def _send(self) -> None:
+        self._busy = True
+        self.query_one("#tt-send", Button).disabled = True
+        self._say("#tt-answer", "Sending…")
+
+        def in_thread() -> None:
+            try:
+                answer = made_draft.send_test(self._tool, self._values, get_credential=self._get,
+                                              **self._send_kw)
+            except Exception as failure:  # noqa: BLE001 - shown, never crashes the console
+                answer = f"It failed: {failure}"
+            self.app.call_from_thread(self._answered, answer)
+
+        self.run_worker(in_thread, thread=True, group="tt-send")
+
+    def _answered(self, answer: str) -> None:
+        self._busy = False
+        self._say("#tt-answer", answer)
+
+
+class MakeToolScreen(ModalScreen):
+    """Describe a tool, let the agent draft it, edit every field, Test it, then Accept it.
+    ``edit`` opens a saved tool instead. Dismisses with the tool name once saved."""
+
+    DEFAULT_CSS = _CSS.format(name="MakeToolScreen") + """
+    MakeToolScreen > Vertical { height: 100%; }
+    MakeToolScreen TextArea { height: 5; }
+    MakeToolScreen #mk-form { height: 1fr; }
+    """
+
+    def __init__(self, description: str = "", *, edit: str | None = None, root: Path | None = None,
+                 ask_agent=None, get_credential=None, resolve=None, request=None) -> None:
+        super().__init__()
+        self._description = description
+        self._edit = edit
+        self._root = root
+        self._ask = ask_agent
+        self._test_kw = dict(get_credential=get_credential, resolve=resolve, request=request)
+        self._old_name = edit or ""
+        self._saved: made.MadeTool | None = made.load(edit) if edit else None
+        self._ready = False
+        self._busy = False
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label("Make a tool"),
+            Label("What should the tool do?"),
+            TextArea(self._description, id="mk-desc"),
+            Horizontal(Button("Draft", id="mk-draft", variant="primary"), id="mk-draft-row"),
+            VerticalScroll(
+                Input(placeholder="name", id="mk-name"),
+                Input(placeholder="what it does", id="mk-about"),
+                Select([(m, m) for m in made.METHODS], value="GET", allow_blank=False, id="mk-method"),
+                Input(placeholder="https://api.example.com/v1/{input}", id="mk-url"),
+                Label("Headers, one per line: Name: value"),
+                TextArea("", id="mk-headers"),
+                Label("Query, one per line: name=value"),
+                TextArea("", id="mk-query"),
+                Label("Body (JSON, or empty)"),
+                TextArea("", id="mk-body"),
+                Label("Inputs, one per line: name | string, number or boolean | required or optional | about"),
+                TextArea("", id="mk-inputs"),
+                Input(placeholder="credential name (never its value)", id="mk-credential"),
+                Input(placeholder="where it goes: header:Authorization or query:key", id="mk-credential-in"),
+                Input(placeholder="pick: dotted path into the answer, or empty", id="mk-pick"),
+                Select([(r, r) for r in made.RISKS], value="reads", allow_blank=False, id="mk-risk"),
+                id="mk-form",
+            ),
+            Static("", id="mk-send", markup=False),
+            Static("", id="mk-status", markup=False),
+            Horizontal(
+                Button("Test…", id="mk-test"),
+                Button("Save", id="mk-save"),
+                Button("Accept", id="mk-accept", variant="primary", disabled=True),
+                Button("Cancel", id="mk-cancel"),
+                id="mk-buttons",
+            ),
+        )
+
+    def on_mount(self) -> None:
+        for widget in ("#mk-form", "#mk-send", "#mk-buttons"):
+            self.query_one(widget).display = False
+        if self._saved is not None:
+            self.query_one("#mk-desc").display = False
+            self.query_one("#mk-draft-row").display = False
+            self._fill(self._saved)
+        elif self._description.strip():
+            self.query_one("#mk-draft", Button).focus()
+
+    # form <-> tool --------------------------------------------------------
+
+    def _fill(self, tool: made.MadeTool) -> None:
+        self._ready = False
+        self.query_one("#mk-name", Input).value = tool.name
+        self.query_one("#mk-about", Input).value = tool.about
+        self.query_one("#mk-method", Select).value = tool.method if tool.method in made.METHODS else "GET"
+        self.query_one("#mk-url", Input).value = tool.url
+        self.query_one("#mk-headers", TextArea).text = "\n".join(f"{k}: {v}" for k, v in tool.headers.items())
+        self.query_one("#mk-query", TextArea).text = "\n".join(f"{k}={v}" for k, v in tool.query.items())
+        self.query_one("#mk-body", TextArea).text = tool.body
+        self.query_one("#mk-inputs", TextArea).text = _inputs_text(tool.inputs)
+        self.query_one("#mk-credential", Input).value = tool.credential
+        self.query_one("#mk-credential-in", Input).value = tool.credential_in
+        self.query_one("#mk-pick", Input).value = tool.pick
+        self.query_one("#mk-risk", Select).value = tool.risk if tool.risk in made.RISKS else "reads"
+        for widget in ("#mk-form", "#mk-send", "#mk-buttons"):
+            self.query_one(widget).display = True
+        self._ready = True
+        self._refresh()
+
+    def _tool(self) -> made.MadeTool:
+        text = lambda w: self.query_one(w, TextArea).text  # noqa: E731
+        value = lambda w: self.query_one(w, Input).value.strip()  # noqa: E731
+        return made.MadeTool(
+            name=value("#mk-name"),
+            about=value("#mk-about"),
+            method=str(self.query_one("#mk-method", Select).value),
+            url=value("#mk-url"),
+            headers=_pairs(text("#mk-headers"), ":", "header"),
+            query=_pairs(text("#mk-query"), "=", "query"),
+            body=text("#mk-body").strip(),
+            inputs=_inputs_from(text("#mk-inputs")),
+            credential=value("#mk-credential"),
+            credential_in=value("#mk-credential-in"),
+            pick=value("#mk-pick"),
+            risk=str(self.query_one("#mk-risk", Select).value),
+            accepted_hash=self._saved.accepted_hash if self._saved else "",
+        )
+
+    def _check(self) -> tuple[made.MadeTool | None, str]:
+        try:
+            tool = self._tool()
+            made.validate(tool)
+        except made.MadeToolError as error:
+            return None, str(error)
+        return tool, ""
+
+    def _refresh(self) -> None:
+        if not self._ready:
+            return
+        tool, problem = self._check()
+        self.query_one("#mk-accept", Button).disabled = tool is None
+        self.query_one("#mk-test", Button).disabled = tool is None
+        self.query_one("#mk-send", Static).update(made_draft.send_line(tool) if tool else "")
+        if tool is None:
+            self._say(problem)
+        elif made.accepted(tool):
+            self._say("Accepted.")
+        else:
+            self._say("Not accepted yet. Test it, then press Accept.")
+
+    def on_input_changed(self, event: "Input.Changed") -> None:
+        self._refresh()
+
+    def on_text_area_changed(self, event: "TextArea.Changed") -> None:
+        self._refresh()
+
+    def on_select_changed(self, event: "Select.Changed") -> None:
+        self._refresh()
+
+    def _say(self, text: str) -> None:
+        self.query_one("#mk-status", Static).update(text)
+
+    # actions --------------------------------------------------------------
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        button = event.button.id
+        if button == "mk-cancel":
+            self.dismiss(None)
+        elif button == "mk-draft":
+            self._draft()
+        elif button == "mk-test":
+            tool, problem = self._check()
+            if tool is None:
+                self._say(problem)
+            else:
+                self.app.push_screen(TestToolScreen(tool, **{k: v for k, v in self._test_kw.items() if v}))
+        elif button in ("mk-save", "mk-accept"):
+            self._save(accept=button == "mk-accept")
+
+    def _save(self, *, accept: bool) -> None:
+        tool, problem = self._check()
+        if tool is None:
+            self._say(problem)
+            return
+        try:
+            saved = made_draft.save_edit(tool, self._old_name)
+            if accept:
+                saved = made.accept(saved.name)
+        except (made.MadeToolError, OSError) as error:
+            self._say(str(error))
+            return
+        self._saved = saved
+        self._old_name = saved.name
+        if accept:
+            self.dismiss(saved.name)
+        else:
+            self._refresh()
+            self._say("Saved. Not accepted until you press Accept." if not made.accepted(saved) else "Saved.")
+
+    def _draft(self) -> None:
+        description = self.query_one("#mk-desc", TextArea).text.strip()
+        if self._busy:
+            return
+        if not description:
+            self._say("Say what the tool should do.")
+            return
+        self._busy = True
+        self._say("Drafting…")
+
+        def in_thread() -> None:
+            try:
+                ask = self._ask
+                if ask is None:
+                    from whyline.release import plan as release_plan
+
+                    ask = release_plan.default_ask_agent(self._root or Path.cwd())
+                result, error = made_draft.draft(description, ask_agent=ask), ""
+            except Exception as failure:  # noqa: BLE001 - any failure is shown, never crashes the console
+                result, error = None, str(failure) or type(failure).__name__
+            self.app.call_from_thread(self._drafted, result, error)
+
+        self.run_worker(in_thread, thread=True, group="mk-draft")
+
+    def _drafted(self, result, error: str) -> None:
+        self._busy = False
+        if result is None:
+            self._say(f"Could not draft it: {error}")
+            return
+        self._fill(result)
+        self._say("Drafted. Check every field, Test it, then Accept.")
+
+
 class FindBox(Vertical):
     """`What should the agent be able to do?` One search over connectors, catalogue,
     skills and sources. Nothing goes to the network until the registry button is pressed.
@@ -1092,9 +1423,11 @@ class FindBox(Vertical):
     FindBox .fb-note { height: auto; }
     """
 
-    def __init__(self, on_hit, *, prefix: str = "fb", registry_search=None, root=None) -> None:
+    def __init__(self, on_hit, *, prefix: str = "fb", registry_search=None, root=None,
+                 on_make=None) -> None:
         super().__init__()
         self._on_hit = on_hit
+        self._on_make = on_make
         self._p = prefix
         self._registry_search = registry_search or registry.search
         self._root = root or (lambda: None)
@@ -1129,12 +1462,13 @@ class FindBox(Vertical):
                 Button(_FIND_BUTTON[hit.kind], id=f"{self._p}-hit-{i}"),
             ))
         if not hits:
-            make = Button("Make a tool…", id=f"{self._p}-make", disabled=True)
-            make.tooltip = _COMING
-            widgets += [
-                Static(tools_find.NOTHING, id=f"{self._p}-none", markup=False),
-                HorizontalGroup(make, Static(_COMING, markup=False)),
-            ]
+            make = Button("Make a tool…", id=f"{self._p}-make", disabled=self._on_make is None)
+            widgets.append(Static(tools_find.NOTHING, id=f"{self._p}-none", markup=False))
+            if self._on_make is None:
+                make.tooltip = _COMING
+                widgets.append(HorizontalGroup(make, Static(_COMING, markup=False)))
+            else:
+                widgets.append(HorizontalGroup(make))
         await box.mount(*widgets)
         self._say(note)
 
@@ -1172,6 +1506,9 @@ class FindBox(Vertical):
             await self._find(registry_too=False)
         elif button_id == f"{self._p}-reg":
             await self._find(registry_too=True)
+        elif button_id == f"{self._p}-make" and self._on_make is not None:
+            text = self.query_one(f"#{self._p}-q", Input).value.strip()
+            self._say(self._on_make(text) or "")
         elif "-hit-" in button_id:
             hit = self._hits[int(button_id.rsplit("-", 1)[1])]
             self._say(self._on_hit(hit) or "")
@@ -1209,20 +1546,22 @@ class ToolsScreen(ModalScreen):
     }
     ToolsScreen TabbedContent { height: 1fr; }
     ToolsScreen Tree, ToolsScreen DataTable { height: 1fr; }
+    ToolsScreen #tl-made { height: 6; }
     ToolsScreen .tl-row { height: auto; margin-top: 1; }
     ToolsScreen Button { margin-right: 1; }
     ToolsScreen .tl-status { height: auto; }
     """
 
-    def __init__(self, *, test_fn=None) -> None:
+    def __init__(self, *, test_fn=None, ask_agent=None) -> None:
         super().__init__()
         self._test_fn = test_fn or mcp_config.test_server
+        self._ask_agent = ask_agent
         self._ready: dict[str, bool] = {}
 
     def compose(self) -> ComposeResult:
         with Vertical():
             yield Label("Tools", id="tl-title")
-            yield FindBox(self._found_hit, prefix="tl-find", root=self._root)
+            yield FindBox(self._found_hit, prefix="tl-find", root=self._root, on_make=self._make_tool)
             with TabbedContent(id="tl-tabs"):
                 with TabPane("Connectors", id="tl-connectors"):
                     yield Tree("Connectors", id="tl-tree")
@@ -1236,6 +1575,13 @@ class ToolsScreen(ModalScreen):
                     )
                     yield Horizontal(
                         *[Button(label, id=f"tl-setup-{cli}") for cli, label in _SETUP],
+                        classes="tl-row",
+                    )
+                    yield DataTable(id="tl-made", cursor_type="row")
+                    yield Horizontal(
+                        Button("Make a tool…", id="tl-make"),
+                        Button("Open", id="tl-made-open"),
+                        Button("Remove", id="tl-made-remove", variant="error"),
                         classes="tl-row",
                     )
                     yield Static("", id="tl-setup-note", markup=False, classes="tl-status")
@@ -1279,11 +1625,13 @@ class ToolsScreen(ModalScreen):
 
     def on_mount(self) -> None:
         self.query_one("#tl-creds", DataTable).add_columns("Name", "Kind", "Last used")
+        self.query_one("#tl-made", DataTable).add_columns("Tool you made", "State", "About")
         self.query_one("#tl-skill-table", DataTable).add_columns("Origin", "Name", "Size", "Description")
         self._reload()
         self._reload_skills()
         self._reload_packs()
         self._reload_creds()
+        self._reload_made()
         self._setup_buttons()
 
     def action_close(self) -> None:
@@ -1490,6 +1838,51 @@ class ToolsScreen(ModalScreen):
             return
         self._say(message)
         self._check_ready(cli)
+
+    # Made tools ---------------------------------------------------------
+
+    def _reload_made(self, select: str | None = None) -> None:
+        table = self.query_one("#tl-made", DataTable)
+        table.clear()
+        for tool in made.load_all():
+            table.add_row(tool.name, "Accepted" if made.accepted(tool) else "Not accepted", tool.about,
+                          key=tool.name)
+        if select and select in {t.name for t in made.load_all()}:
+            table.move_cursor(row=table.get_row_index(select))
+
+    def _made_selected(self) -> str | None:
+        table = self.query_one("#tl-made", DataTable)
+        if table.row_count == 0 or not table.is_valid_coordinate((table.cursor_row, 0)):
+            return None
+        return table.coordinate_to_cell_key((table.cursor_row, 0)).row_key.value
+
+    def _make_tool(self, description: str, edit: str | None = None) -> str:
+        """Open the Make a tool screen; returns a line to show."""
+        def done(name: str | None) -> None:
+            self._reload_made(name)
+            if name:
+                self._open_tab("tl-connectors")
+                self._say(f"Accepted made tool {name}.")
+
+        self.app.push_screen(
+            MakeToolScreen(description, edit=edit, root=self._root(), ask_agent=self._ask_agent), done)
+        return ""
+
+    def _open_made(self) -> None:
+        name = self._made_selected()
+        if name is None:
+            self._say("Pick a made tool first.")
+            return
+        self._make_tool("", edit=name)
+
+    def _remove_made(self) -> None:
+        name = self._made_selected()
+        if name is None:
+            self._say("Pick a made tool first.")
+            return
+        made.remove(name)
+        self._reload_made()
+        self._say(f"Removed made tool {name}.")
 
     # Skills -------------------------------------------------------------
 
@@ -1740,6 +2133,12 @@ class ToolsScreen(ModalScreen):
             self._test()
         elif button_id == "tl-remove":
             self._remove()
+        elif button_id == "tl-make":
+            self._say(self._make_tool(""))
+        elif button_id == "tl-made-open":
+            self._open_made()
+        elif button_id == "tl-made-remove":
+            self._remove_made()
         elif button_id.startswith("tl-setup-"):
             self._setup(button_id.removeprefix("tl-setup-"))
         elif button_id == "tl-skill-new":

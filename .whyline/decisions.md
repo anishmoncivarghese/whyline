@@ -48426,3 +48426,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 2a3a1d1dba034f6dbc6dbff0ae4ea0a4 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-20T20:57:05.622Z"} -->
+
+## 2026-11-20 — Test sends a not-yet-accepted tool by hashing it in memory for made.call, never saving it; preview swaps in a placeholder credential and clears pick
+
+**Actor:** claude
+**Role:** implementer
+**Task:** MKT-3
+
+**Because:** made.call refuses unaccepted tools but Test must run before Accept; a placeholder masks the credential without reading the keychain, and pick would fail on the empty captured answer
+
+**Rejected:**
+
+- Add a skip-acceptance flag to made.call — widens the safety gate every agent call goes through
+
+**Files:** src/whyline/tools/made_draft.py
+
+<!-- whyline-event: 566342b1fd8a4df1afe57279d87ca372 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T21:03:12.266Z"} -->
+
+## 2026-11-20 — Approve MKT-3: tool drafting, editing, masked testing, acceptance lifecycle, and CLI
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** MKT-3
+
+**Because:** Full test suite (5591 passed) and all MKT-3 unit/screen/CLI tests pass; draft with retry and data safety verified, console drafting and testing screens function with masked credentials and risk warnings, edits clear acceptance until re-accepted, and whyline tools made CLI commands ask confirmation properly
+
+**Files:** src/whyline/tools/made_draft.py
+
+<!-- whyline-event: 10d69fddfd3141b0b6aba09c55c1b885 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T21:28:29.333Z"} -->
+
+## 2026-11-20 — Approve MKT-3: tool drafting, editing, masked preview testing, acceptance lifecycle, and CLI
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** MKT-3
+
+**Because:** Drafting, editing, testing with masked credentials and risk warnings, acceptance invalidation on edit, console integration, and CLI commands all meet task requirements and pass tests
+
+**Files:** src/whyline/tools/made_draft.py
+
+<!-- whyline-event: 7c5a54e9036a42f897dd485f07460072 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T21:56:28.138Z"} -->

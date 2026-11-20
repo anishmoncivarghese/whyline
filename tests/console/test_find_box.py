@@ -98,7 +98,7 @@ async def test_library_hit_buttons_do_their_action(tmp_path, registry_calls):
         assert isinstance(app.screen, PreviewScreen)
 
 
-async def test_nothing_found_offers_a_disabled_make_a_tool(tmp_path, registry_calls):
+async def test_nothing_found_offers_make_a_tool_with_the_search_text(tmp_path, registry_calls):
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(140, 70)) as pilot:
         app.push_screen(ToolsScreen())
@@ -107,8 +107,13 @@ async def test_nothing_found_offers_a_disabled_make_a_tool(tmp_path, registry_ca
         await _search(pilot, screen, "zzzzz")
         assert str(screen.query_one("#tl-find-none").render()) == find.NOTHING
         make = screen.query_one("#tl-find-make")
-        assert make.disabled and str(make.label) == "Make a tool…"
-        assert make.tooltip == "Coming in this release"
+        assert not make.disabled and str(make.label) == "Make a tool…"
+        make.press()
+        await pilot.pause()
+        from whyline.console.tools_screens import MakeToolScreen
+
+        assert isinstance(app.screen, MakeToolScreen)
+        assert app.screen.query_one("#mk-desc").text == "zzzzz"
 
 
 async def test_add_tools_screen_ticks_adds_and_gives_skills(tmp_path, registry_calls):

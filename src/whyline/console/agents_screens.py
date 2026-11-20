@@ -1571,6 +1571,18 @@ class ToolPickScreen(ModalScreen):
                 id="tl-none", markup=False), *lines]
         return [VerticalScroll(*sections), *lines]
 
+    def _make_tool(self, description: str) -> str:
+        """Make a tool from the search text; it shows among the connectors once accepted."""
+        from whyline.console import tools_screens as ts
+
+        def done(name) -> None:
+            if name:
+                self._chosen = self._collect()
+                self.call_later(self._rebuild)
+
+        self.app.push_screen(ts.MakeToolScreen(description), done)
+        return ""
+
     def _found_hit(self, hit) -> str:
         """The button on a Find result."""
         from whyline.console import tools_screens as ts
@@ -1610,7 +1622,7 @@ class ToolPickScreen(ModalScreen):
         widgets = self._widgets()
         yield Vertical(
             Label("Add tools"),
-            FindBox(self._found_hit, prefix="tl-find"),
+            FindBox(self._found_hit, prefix="tl-find", on_make=self._make_tool),
             Static(
                 "Tools come from your connectors. Tick the ones this agent may use, "
                 "and choose Allowed or Ask first for each.", id="tl-hint", markup=False),
