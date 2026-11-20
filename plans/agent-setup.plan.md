@@ -216,7 +216,7 @@ Rules every task keeps:
   4. CLI: `whyline tools catalogue [TEXT]` lists, `whyline tools catalogue add <name>` asks for each credential without echo, tests, and prints the result.
   Tests: `test_nothing_enabled_before_test`, a failed test leaving it disabled with the reason, credentials going only to the fake Keychain, the already-added line, and the CLI.
 
-- [ ] CON-3: Search the public registry
+- [x] CON-3: Search the public registry
   Create `src/whyline/tools/registry.py` and `tests/tools/test_registry.py`. Edit `src/whyline/console/tools_screens.py`, `src/whyline/tools/cli.py` and their tests.
   1. `registry.search(text, *, get, limit=20) -> list[Entry]` asks the public MCP registry (`REGISTRY_URL`, the registry's documented search endpoint, checked by the builder against its own documentation and recorded in a comment with the date) through `get` with a 10 second timeout, and turns each result that runs as a local command into a catalogue `Entry` with `checked = ""` and every tool's risk left to the Test. Results that are remote servers are returned with `refused = "needs a browser sign-in, which whyline can't do yet"`.
   2. Any failure returns an empty list and a reason (`registry.last_error()`); nothing is cached to disk.
