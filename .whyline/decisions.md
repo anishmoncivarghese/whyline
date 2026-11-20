@@ -48339,3 +48339,47 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: dfc08c8b7dab476ca9c0909de8d6dcd5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-20T11:48:36.423Z"} -->
+
+## 2026-11-20 — Made tool call() pins the connection to the checked IP, follows only same-host https redirects, and scrubs the credential from every return and error
+
+**Actor:** claude
+**Role:** implementer
+**Task:** MKT-1
+
+**Because:** Checking DNS then letting the HTTP library re-resolve allows rebinding; a redirect to another host would leak the credential
+
+**Rejected:**
+
+- urllib with default redirects — follows redirects to any host
+- Raising the library error text — can echo the credential
+
+**Files:** src/whyline/tools/made.py
+
+<!-- whyline-event: a349954d2ef54516b9662216f0550dc8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T11:50:56.177Z"} -->
+
+## 2026-11-20 — Pass MKT-1: MadeTool, TOML storage, validate, and call behave correctly
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** MKT-1
+
+**Because:** All 42 tests in tests/tools/test_made.py pass covering TOML storage, accept hashing, validation rules, private address refusal, same-host redirects, size caps, JSON picking, and credential scrubbing
+
+**Files:** src/whyline/tools/made.py
+
+<!-- whyline-event: 7eac477ffbef423391920e535838d965 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T12:17:30.416Z"} -->
+
+## 2026-11-20 — Approve MKT-1: MadeTool dataclass, TOML storage, validation, and SSRF-safe call execution
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** MKT-1
+
+**Because:** The implementation in src/whyline/tools/made.py satisfies all requirements: strict validation (https, non-IP/localhost host, forbidden headers, method-risk alignment), acceptance hashing, TOML storage, SSRF protection pinning connections to public IPs, same-host redirect safety, response capping, JSON picking, and credential scrubbing across results and errors; all 42 tests in tests/tools/test_made.py pass.
+
+**Files:** src/whyline/tools/made.py
+
+<!-- whyline-event: da69914fc4c44f418ad12b4a49044eb5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T12:44:40.266Z"} -->
