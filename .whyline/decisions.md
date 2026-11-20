@@ -47958,3 +47958,94 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 59baab793d7b406899bbd624e371fdce -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-20T01:24:49.029Z"} -->
+
+## 2026-11-20 — Browse/Sources/Update live in tools_screens.py; Update… diffs against the already-fetched copy and does not re-fetch
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SKC-4
+
+**Because:** update_diff reads the local clone by design; Sources → Refresh is the explicit way to fetch, and a hidden network call on Update would block the UI
+
+**Rejected:**
+
+- fetch inside Update — needs a worker and a failure path for a one-click diff
+
+**Files:** src/whyline/console/tools_screens.py
+
+<!-- whyline-event: 4ba17653f97b4094be8aed2431448238 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T01:35:08.932Z"} -->
+
+## 2026-11-20 — Pass SKC-4: Browse and Sources in the Tools library
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SKC-4
+
+**Because:** Verified Skills tab Browse…, Sources…, and Update… functionality including Sources list/add/toggle/remove/refresh/open in browser, Browse first-use fetch/cancel/offline fallback/search filtering, skill preview order with warnings first, Install and Install as…, GitHub skill folder link parsing/addition/preview, and Update diff/already up to date; all 41 console tool screens tests and 60 skill tool tests pass
+
+**Files:** src/whyline/console/tools_screens.py
+
+<!-- whyline-event: 8a65eb370c7a4da8951555309705346d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T02:03:14.965Z"} -->
+
+## 2026-11-20 — Reject SKC-4: Browse test hits GitHub; worker callbacks can crash after Close
+
+**Actor:** grok
+**Role:** reviewer
+**Task:** SKC-4
+
+**Because:** test_link_screen_refuses_a_bad_link opens Browse with built-ins still on and fetch unmocked, so first-use clones anthropic/agentic/composio from the network; SourcesScreen._refreshed and BrowseScreen fetch callbacks write to widgets without is_attached, unlike _tested in the same file. Required Browse/Sources/Update behaviour is otherwise in place and the 16 new tests pass. Full pytest had only the known unrelated test_notes_review_in_ask_mode flake.
+
+**Rejected:**
+
+- approve — the link-refusal test is not isolated and will hang or flake when GitHub is slow or offline
+- fail SKC-4 on test_notes_review_in_ask_mode — NotesReviewScreen, not this task, same flake SKC-2 and SKC-3 accepted
+
+**Files:** src/whyline/console/tools_screens.py, tests/console/test_tools_screens.py
+
+<!-- whyline-event: 28fa88364606453d8e3389b27df41469 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T02:32:37.842Z"} -->
+
+## 2026-11-20 — Guard Sources/Browse worker callbacks with is_attached; isolate bad-link test with only_mine
+
+**Actor:** claude
+**Role:** implementer
+**Task:** SKC-4
+
+**Because:** Close during fetch raised NoMatches; bad-link test cloned built-ins from GitHub
+
+**Rejected:**
+
+- cancel workers on dismiss — threads can't be interrupted, a guard is enough
+
+**Files:** src/whyline/console/tools_screens.py
+
+<!-- whyline-event: b00b7fdb1f044fef9eb2635b49c2058a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T02:34:03.312Z"} -->
+
+## 2026-11-20 — Pass SKC-4: Worker callbacks guarded by is_attached; bad-link test isolated; all 5457 tests pass
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** SKC-4
+
+**Because:** Verified that worker callbacks in SourcesScreen and BrowseScreen check is_attached before touching widgets, test_link_screen_refuses_a_bad_link uses only_mine to avoid network calls, and all unit and full test suite passes (5457 passed, 0 failed)
+
+**Files:** src/whyline/console/tools_screens.py
+
+<!-- whyline-event: ec5a1b389e0147298dcb40efe053d190 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T03:00:27.780Z"} -->
+
+## 2026-11-20 — Approve SKC-4: Browse and Sources in the Tools library
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** SKC-4
+
+**Because:** All requirements implemented in tools_screens.py: Browse, Sources, Add from a link, Preview with warnings first, and Update with diff; worker callbacks properly guarded with is_attached; bad-link test isolated; all 35 test_tools_screens tests pass
+
+**Files:** src/whyline/console/tools_screens.py
+
+<!-- whyline-event: e0e693f6c5484edf8956f4a921c45d20 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T03:03:38.864Z"} -->

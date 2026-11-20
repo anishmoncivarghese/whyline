@@ -3,20 +3,27 @@ Every action calls the same function the `whyline tools` and `whyline cred`
 commands call."""
 from __future__ import annotations
 
+import re
 import shlex
 import shutil
+import subprocess
+import threading
+import webbrowser
 from pathlib import Path
 
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static, TabbedContent, TabPane, TextArea, Tree
+from textual.widgets import (
+    Button, Checkbox, DataTable, Input, Label, OptionList, Select, Static, TabbedContent, TabPane, TextArea, Tree,
+)
+from textual.widgets.option_list import Option
 
 from whyline import credentials
 from whyline.agents import capabilities
 from whyline.console.agents_screens import tool_kind
-from whyline.tools import knowledge, mcp, mcp_config, skills, users
+from whyline.tools import knowledge, mcp, mcp_config, skill_install, skill_sources, skills, users
 
 _SETUP = (("grok", "Set up grok"), ("antigravity", "Set up Antigravity"))
 _NO_CRED = "(none)"
@@ -328,6 +335,481 @@ class PackItemScreen(ModalScreen):
         self.dismiss(added)
 
 
+_LINK_FORM = "https://github.com/<owner>/<repo>/tree/<branch>/<path to one skill folder>"
+_LINK = re.compile(
+    r"^https://github\.com/([A-Za-z0-9][A-Za-z0-9._-]*)/([A-Za-z0-9._-]+)/tree/([^/\s]+)/([^\s]+?)/?$")
+_FETCH_ERRORS = (RuntimeError, OSError, ValueError, subprocess.SubprocessError)
+
+
+def parse_link(text: str) -> tuple[str, str, str, str]:
+    """(owner, repo, branch, folder) from a GitHub link to one skill folder."""
+    match = _LINK.match(text.strip())
+    if match is None or ".." in match.group(4).split("/"):
+        raise ValueError(f"Expected a link like {_LINK_FORM}")
+    owner, repo, branch, folder = match.groups()
+    return owner, repo.removesuffix(".git"), branch, folder
+
+
+def _when(source: skill_sources.Source) -> str:
+    if source.kind != "skills":
+        return "not fetched (opens in the browser)"
+    return skill_sources.fetched(source) or "never"
+
+
+class AddSourceScreen(ModalScreen):
+    """A skill source of your own: a name, a repository URL and the folder holding the skills."""
+
+    DEFAULT_CSS = _CSS.format(name="AddSourceScreen")
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label("Add a skill source"),
+            Input(placeholder="name, for example my-skills", id="ss-name"),
+            Input(placeholder="https:// repository URL", id="ss-url"),
+            Input(placeholder="folder with the skills (optional)", id="ss-path"),
+            Static("", id="ss-status", markup=False),
+            Horizontal(Button("Add", id="ss-add", variant="primary"), Button("Cancel", id="ss-cancel")),
+        )
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        if event.button.id == "ss-cancel":
+            self.dismiss(None)
+            return
+        name = self.query_one("#ss-name", Input).value.strip()
+        try:
+            skill_sources.add(name, self.query_one("#ss-url", Input).value.strip(),
+                              self.query_one("#ss-path", Input).value.strip())
+        except (ValueError, OSError) as error:
+            self.query_one("#ss-status", Static).update(str(error))
+            return
+        self.dismiss(name)
+
+
+class SourcesScreen(ModalScreen):
+    """Where skills come from: each source with its kind, licence and last fetch."""
+
+    DEFAULT_CSS = _CSS.format(name="SourcesScreen") + "SourcesScreen DataTable { height: 10; }"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._busy = False
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label("Skill sources"),
+            DataTable(id="so-table", cursor_type="row"),
+            Horizontal(
+                Button("Add…", id="so-add"),
+                Button("Turn off", id="so-toggle"),
+                Button("Remove", id="so-remove", variant="error"),
+                Button("Refresh", id="so-refresh"),
+                Button("Open in browser", id="so-open"),
+            ),
+            Static("", id="so-status", markup=False),
+            Horizontal(Button("Close", id="so-close")),
+        )
+
+    def on_mount(self) -> None:
+        self.query_one("#so-table", DataTable).add_columns("Name", "Kind", "Licence", "Last fetch", "State")
+        self._reload()
+
+    def _say(self, text: str) -> None:
+        self.query_one("#so-status", Static).update(text)
+
+    def _reload(self, select: str | None = None) -> None:
+        table = self.query_one("#so-table", DataTable)
+        table.clear()
+        found = skill_sources.load()
+        for s in found:
+            kind = f"{s.kind} · {'built-in' if s.builtin else 'yours'}"
+            table.add_row(s.name, kind, s.licence or "not stated", _when(s),
+                          "on" if s.enabled else "off", key=s.name)
+        for index, s in enumerate(found):
+            if s.name == select:
+                table.move_cursor(row=index)
+        self._buttons()
+
+    def _selected(self) -> skill_sources.Source | None:
+        table = self.query_one("#so-table", DataTable)
+        if table.row_count == 0 or not table.is_valid_coordinate((table.cursor_row, 0)):
+            return None
+        name = table.coordinate_to_cell_key((table.cursor_row, 0)).row_key.value
+        return next((s for s in skill_sources.load() if s.name == name), None)
+
+    def _buttons(self) -> None:
+        source = self._selected()
+        toggle = self.query_one("#so-toggle", Button)
+        toggle.disabled = source is None or not source.builtin
+        toggle.label = "Turn on" if source is not None and not source.enabled else "Turn off"
+        self.query_one("#so-remove", Button).disabled = source is None or source.builtin
+        self.query_one("#so-refresh", Button).disabled = source is None or source.kind != "skills" or self._busy
+        self.query_one("#so-open", Button).disabled = source is None or source.kind != "directory"
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        if event.data_table.id == "so-table":
+            self._buttons()
+
+    def _add(self) -> None:
+        def added(name: str | None) -> None:
+            if name:
+                self._reload(name)
+                self._say(f"Added {name}. Refresh it to fetch its skills.")
+
+        self.app.push_screen(AddSourceScreen(), added)
+
+    def _toggle(self) -> None:
+        source = self._selected()
+        if source is None:
+            return
+        try:
+            skill_sources.set_enabled(source.name, not source.enabled)
+        except (ValueError, OSError) as error:
+            self._say(str(error))
+            return
+        self._reload(source.name)
+        self._say(f"Turned {source.name} {'off' if source.enabled else 'on'}.")
+
+    def _remove(self) -> None:
+        source = self._selected()
+        if source is None:
+            return
+        try:
+            skill_sources.remove(source.name)
+        except (ValueError, OSError) as error:
+            self._say(f"Not removed: {error}")
+            return
+        shutil.rmtree(skill_sources.clone_dir(source), ignore_errors=True)
+        skill_sources._stamp(source).unlink(missing_ok=True)
+        self._reload()
+        self._say(f"Removed {source.name}.")
+
+    def _refresh(self) -> None:
+        source = self._selected()
+        if source is None or self._busy:
+            return
+        self._busy = True
+        self._buttons()
+        self._say(f"Fetching {source.name}…")
+
+        def in_thread() -> None:
+            try:
+                skill_sources.fetch(source)
+                message = f"Fetched {source.name}."
+            except _FETCH_ERRORS as error:
+                message = f"Couldn't fetch {source.name}: {error}"
+            self.app.call_from_thread(self._refreshed, source.name, message)
+
+        self.run_worker(in_thread, thread=True, group="so-fetch")
+
+    def _refreshed(self, name: str, message: str) -> None:
+        if not self.is_attached:
+            return
+        self._busy = False
+        self._reload(name)
+        self._say(message)
+
+    def _open(self) -> None:
+        source = self._selected()
+        if source is not None and source.kind == "directory":
+            webbrowser.open(source.url)
+            self._say(f"Opened {source.url} in your browser.")
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        button_id = event.button.id
+        if button_id == "so-close":
+            self.dismiss(None)
+        elif button_id == "so-add":
+            self._add()
+        elif button_id == "so-toggle":
+            self._toggle()
+        elif button_id == "so-remove":
+            self._remove()
+        elif button_id == "so-refresh":
+            self._refresh()
+        elif button_id == "so-open":
+            self._open()
+
+
+class LinkScreen(ModalScreen):
+    """A link to one skill folder on GitHub."""
+
+    DEFAULT_CSS = _CSS.format(name="LinkScreen")
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label("Add a skill from a link"),
+            Input(placeholder=_LINK_FORM, id="lk-link"),
+            Static("", id="lk-status", markup=False),
+            Horizontal(Button("Add", id="lk-add", variant="primary"), Button("Cancel", id="lk-cancel")),
+        )
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        if event.button.id == "lk-cancel":
+            self.dismiss(None)
+            return
+        try:
+            parsed = parse_link(self.query_one("#lk-link", Input).value)
+        except ValueError as error:
+            self.query_one("#lk-status", Static).update(str(error))
+            return
+        self.dismiss(parsed)
+
+
+class PreviewScreen(ModalScreen):
+    """What a skill holds, before it is installed: warnings first, then the whole SKILL.md."""
+
+    DEFAULT_CSS = _CSS.format(name="PreviewScreen") + "PreviewScreen VerticalScroll { height: 14; border: round $primary; }"
+
+    def __init__(self, entry: skill_sources.Entry, preview: skill_install.Preview) -> None:
+        super().__init__()
+        self._entry = entry
+        self._preview = preview
+
+    def compose(self) -> ComposeResult:
+        p = self._preview
+        warnings = "\n".join(f"Warning: {w}" for w in p.warnings) or "No warnings."
+        files = ", ".join(f"{name} ({_size(size)})" for name, size in p.files)
+        yield Vertical(
+            Label(f"{self._entry.name} · {self._entry.source}"),
+            Static(warnings, id="pv-warnings", markup=False),
+            Static(f"Licence: {p.licence}", id="pv-licence", markup=False),
+            Static(f"Size: {_size(p.size)}", id="pv-size", markup=False),
+            Static(f"Files: {files}", id="pv-files", markup=False),
+            VerticalScroll(Static(p.skill_md, id="pv-text", markup=False)),
+            Input(value=self._entry.name, id="pv-name"),
+            Static("", id="pv-status", markup=False),
+            Horizontal(
+                Button("Install", id="pv-install", variant="primary"),
+                Button("Install as…", id="pv-as"),
+                Button("Close", id="pv-close"),
+            ),
+        )
+
+    def on_mount(self) -> None:
+        self.query_one("#pv-name", Input).display = False
+
+    def _install(self, name: str | None) -> None:
+        try:
+            skill = skill_install.install(self._entry, name=name)
+        except (ValueError, KeyError, OSError, RuntimeError) as error:
+            self.query_one("#pv-status", Static).update(f"Not installed: {error}")
+            return
+        self.dismiss(skill)
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        button_id = event.button.id
+        if button_id == "pv-close":
+            self.dismiss(None)
+        elif button_id == "pv-install":
+            self._install(None)
+        elif button_id == "pv-as":
+            field = self.query_one("#pv-name", Input)
+            if not field.display:
+                field.display = True
+                field.focus()
+                self.query_one("#pv-status", Static).update("Pick a name, then press Install as… again.")
+            else:
+                self._install(field.value.strip())
+
+
+class UpdateScreen(ModalScreen):
+    """The difference between an installed skill and its source."""
+
+    DEFAULT_CSS = _CSS.format(name="UpdateScreen") + "UpdateScreen VerticalScroll { height: 20; border: round $primary; }"
+
+    def __init__(self, name: str, diff: str) -> None:
+        super().__init__()
+        self._name = name
+        self._diff = diff
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label(f"Update {self._name}"),
+            VerticalScroll(Static(self._diff, id="up-diff", markup=False)),
+            Static("", id="up-status", markup=False),
+            Horizontal(Button("Update", id="up-update", variant="primary"), Button("Cancel", id="up-cancel")),
+        )
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        if event.button.id == "up-cancel":
+            self.dismiss(None)
+            return
+        try:
+            skill = skill_install.update(self._name)
+        except (ValueError, KeyError, OSError, RuntimeError) as error:
+            self.query_one("#up-status", Static).update(f"Not updated: {error}")
+            return
+        self.dismiss(skill)
+
+
+class BrowseScreen(ModalScreen):
+    """Search the skills in every turned-on source and open one to read before installing."""
+
+    DEFAULT_CSS = _CSS.format(name="BrowseScreen") + "BrowseScreen OptionList { height: 16; }"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._entries: list[skill_sources.Entry] = []
+        self._cancel = threading.Event()
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label("Browse skills"),
+            Input(placeholder="search by name or description", id="br-search"),
+            OptionList(id="br-results"),
+            Static("", id="br-status", markup=False),
+            Horizontal(
+                Button("Add from a link…", id="br-link"),
+                Button("Cancel", id="br-cancel"),
+                Button("Close", id="br-close"),
+            ),
+        )
+
+    def on_mount(self) -> None:
+        self.query_one("#br-cancel", Button).display = False
+        todo = [s for s in skill_sources.load()
+                if s.enabled and s.kind == "skills" and skill_sources.fetched(s) is None]
+        if todo:
+            self._fetch(todo)
+        else:
+            self._show()
+
+    def _say(self, text: str) -> None:
+        self.query_one("#br-status", Static).update(text)
+
+    def _show(self) -> None:
+        text = self.query_one("#br-search", Input).value
+        if text.split():
+            self._entries = skill_sources.search(text)
+        else:
+            self._entries = []
+            for source in skill_sources.load():
+                if source.enabled and skill_sources.fetched(source) is not None:
+                    self._entries.extend(skill_sources.index(source))
+            self._entries = self._entries[:skill_sources.MAX_RESULTS]
+        licences = {s.name: s.licence or "no licence stated" for s in skill_sources.load()}
+        results = self.query_one("#br-results", OptionList)
+        results.clear_options()
+        for e in self._entries:
+            head = Text(f"{e.name} · {e.source} · {licences.get(e.source, '')}", style="bold")
+            results.add_option(Option(Text("\n").join([head, Text(e.description)])))
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "br-search":
+            self._show()
+
+    def _start(self, work, first: str) -> None:
+        """Run ``work(cancel)`` in a worker with Cancel showing; nothing it reports after Cancel is used."""
+        self._cancel = cancel = threading.Event()
+        self.query_one("#br-cancel", Button).display = True
+        self._say(f"Fetching {first}…")
+        self.run_worker(lambda: work(cancel), thread=True, group="br-fetch")
+
+    def _fetch(self, todo: list[skill_sources.Source]) -> None:
+        def work(cancel: threading.Event) -> None:
+            failed: list[str] = []
+            for source in todo:
+                if cancel.is_set():
+                    return
+                self.app.call_from_thread(self._fetching, cancel, source.name)
+                try:
+                    skill_sources.fetch(source)
+                except _FETCH_ERRORS as error:
+                    failed.append(f"Couldn't fetch {source.name}: {error}")
+            if not cancel.is_set():
+                self.app.call_from_thread(self._fetched, cancel, failed)
+
+        self._start(work, todo[0].name)
+
+    def _fetching(self, cancel: threading.Event, name: str) -> None:
+        if self.is_attached and not cancel.is_set():
+            self._say(f"Fetching {name}…")
+
+    def _fetched(self, cancel: threading.Event, failed: list[str]) -> None:
+        if not self.is_attached or cancel.is_set():
+            return
+        self.query_one("#br-cancel", Button).display = False
+        self._say("\n".join(failed))
+        self._show()
+
+    def _stop(self) -> None:
+        self._cancel.set()
+        self.query_one("#br-cancel", Button).display = False
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        event.stop()
+        if 0 <= event.option_index < len(self._entries):
+            self._preview(self._entries[event.option_index])
+
+    def _preview(self, entry: skill_sources.Entry) -> None:
+        try:
+            shown = skill_install.preview(entry)
+        except (ValueError, OSError, RuntimeError) as error:
+            self._say(f"Can't open {entry.name}: {error}")
+            return
+
+        def closed(skill) -> None:
+            if skill is not None:
+                self.dismiss(skill.ref)
+
+        self.app.push_screen(PreviewScreen(entry, shown), closed)
+
+    def _link(self) -> None:
+        def given(parsed) -> None:
+            if parsed:
+                self._from_link(*parsed)
+
+        self.app.push_screen(LinkScreen(), given)
+
+    def _from_link(self, owner: str, repo: str, branch: str, folder: str) -> None:
+        name = f"{owner}-{repo}".lower()
+        try:
+            if not any(s.name == name for s in skill_sources.load()):
+                skill_sources.add(name, f"https://github.com/{owner}/{repo}", folder.rpartition("/")[0], branch)
+        except (ValueError, OSError) as error:
+            self._say(f"Not added: {error}")
+            return
+        source = next(s for s in skill_sources.load() if s.name == name)
+
+        def work(cancel: threading.Event) -> None:
+            try:
+                skill_sources.fetch(source)
+                error = ""
+            except _FETCH_ERRORS as caught:
+                error = f"Couldn't fetch {name}: {caught}"
+            if not cancel.is_set():
+                self.app.call_from_thread(self._linked, cancel, source, folder, error)
+
+        self._start(work, name)
+
+    def _linked(self, cancel: threading.Event, source: skill_sources.Source, folder: str, error: str) -> None:
+        if not self.is_attached or cancel.is_set():
+            return
+        self.query_one("#br-cancel", Button).display = False
+        self._say(error)
+        self._show()
+        if not error:
+            self._preview(skill_sources.Entry(source.name, folder.rpartition("/")[2], "", folder, 0, ()))
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        button_id = event.button.id
+        if button_id == "br-close":
+            self._stop()
+            self.dismiss(None)
+        elif button_id == "br-cancel":
+            self._stop()
+            self._say("Cancelled. Showing what is already there.")
+            self._show()
+        elif button_id == "br-link":
+            self._link()
+
+
 class ToolsScreen(ModalScreen):
     """Connectors, Skills, Knowledge and Credentials in one place."""
 
@@ -377,6 +859,12 @@ class ToolsScreen(ModalScreen):
                         Button("Copy to whyline", id="tl-skill-copy"),
                         Button("Edit", id="tl-skill-edit"),
                         Button("Remove", id="tl-skill-remove", variant="error"),
+                        classes="tl-row",
+                    )
+                    yield Horizontal(
+                        Button("Browse…", id="tl-skill-browse"),
+                        Button("Sources…", id="tl-skill-sources"),
+                        Button("Update…", id="tl-skill-update"),
                         classes="tl-row",
                     )
                     yield Static("", id="tl-skill-status", markup=False, classes="tl-status")
@@ -583,6 +1071,9 @@ class ToolsScreen(ModalScreen):
         found = skills.find(self._root())
         for s in found:
             detail = f"broken: {s.problem}" if s.broken else s.description
+            origin = skill_install.source_of(s.name) if s.origin == "whyline" else None
+            if origin and origin.get("source"):
+                detail = f"from {origin['source']} · {detail}"
             table.add_row(_ORIGIN_LABEL.get(s.origin, s.origin), s.name, _size(s.size), detail, key=s.ref)
         if select:
             for index, s in enumerate(found):
@@ -605,6 +1096,41 @@ class ToolsScreen(ModalScreen):
         self.query_one("#tl-skill-copy", Button).disabled = not other
         self.query_one("#tl-skill-edit", Button).disabled = not mine
         self.query_one("#tl-skill-remove", Button).disabled = not mine
+        self.query_one("#tl-skill-update", Button).disabled = not (
+            ref is not None and ref.startswith("whyline:") and skill_install.source_of(ref.partition(":")[2]))
+
+    def _skill_browse(self) -> None:
+        def installed(ref: str | None) -> None:
+            self._reload_skills(ref)
+            if ref:
+                self._skill_say(f"Installed {ref.partition(':')[2]}. Add it to an agent in New agent → Add skills.")
+
+        self.app.push_screen(BrowseScreen(), installed)
+
+    def _skill_sources(self) -> None:
+        self.app.push_screen(SourcesScreen())
+
+    def _skill_update(self) -> None:
+        ref = self._skill_selected()
+        if ref is None:
+            self._skill_say("Pick a skill first.")
+            return
+        name = ref.partition(":")[2]
+        try:
+            diff = skill_install.update_diff(name)
+        except (ValueError, OSError) as error:
+            self._skill_say(f"Not updated: {error}")
+            return
+        if not diff:
+            self._skill_say("Already up to date")
+            return
+
+        def updated(skill) -> None:
+            if skill is not None:
+                self._reload_skills(skill.ref)
+                self._skill_say(f"Updated {skill.name}.")
+
+        self.app.push_screen(UpdateScreen(name, diff), updated)
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         if event.data_table.id == "tl-skill-table":
@@ -787,6 +1313,12 @@ class ToolsScreen(ModalScreen):
             self._skill_edit()
         elif button_id == "tl-skill-remove":
             self._skill_remove()
+        elif button_id == "tl-skill-browse":
+            self._skill_browse()
+        elif button_id == "tl-skill-sources":
+            self._skill_sources()
+        elif button_id == "tl-skill-update":
+            self._skill_update()
         elif button_id == "tl-pack-new":
             self._pack_new()
         elif button_id == "tl-pack-files":

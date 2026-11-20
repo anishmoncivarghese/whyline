@@ -511,3 +511,417 @@ async def test_both_setup_buttons_ask_first(home, tmp_path, monkeypatch):
         await pilot.pause()
         assert done == ["antigravity"]
         assert "saved antigravity" in text(screen, "#tl-status")
+
+
+# Skill sources, Browse, preview and update -------------------------------------
+
+import threading
+
+from whyline.console import tools_screens
+from whyline.console.tools_screens import BrowseScreen, LinkScreen, PreviewScreen, SourcesScreen, UpdateScreen
+from whyline.tools import skill_install, skill_sources
+
+
+@pytest.fixture(autouse=True)
+def _no_git(monkeypatch):
+    monkeypatch.setattr(skill_install, "_commit", lambda source, run: "abc123")
+
+
+def put_clone(source, skill_name, body="Body.", description="Does a thing", extra=None):
+    folder = skill_sources.clone_dir(source) / source.path / skill_name
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "SKILL.md").write_text(f"---\nname: {skill_name}\ndescription: {description}\n---\n\n{body}\n")
+    for rel, content in (extra or {}).items():
+        (folder / rel).write_text(content)
+    stamp = skill_sources._stamp(source)
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    stamp.write_text("2026-11-20T10:00:00Z")
+
+
+def mine(path="skills"):
+    return skill_sources.add("mine", "https://github.com/o/r", path)
+
+
+def only_mine(monkeypatch):
+    """Only the user's own source is on, so Browse has one source to fetch."""
+    for builtin in skill_sources.BUILTIN:
+        skill_sources.set_enabled(builtin.name, False)
+
+
+async def open_browse(pilot, app):
+    screen = await open_tools(pilot, app, "tl-skills")
+    await pilot.click("#tl-skill-browse")
+    await pilot.pause()
+    assert isinstance(app.screen, BrowseScreen)
+    return app.screen
+
+
+def open_option(browse, index=0):
+    results = browse.query_one("#br-results")
+    results.highlighted = index
+    results.action_select()
+
+
+async def test_first_use_fetch_runs_in_a_worker_and_lists_results(home, tmp_path, monkeypatch):
+    only_mine(monkeypatch)
+    source = mine()
+    release = threading.Event()
+    seen = []
+
+    def fake_fetch(s, **kw):
+        seen.append(s.name)
+        release.wait(5)
+        put_clone(s, "notes", description="Takes notes")
+        return "abc"
+
+    monkeypatch.setattr(skill_sources, "fetch", fake_fetch)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 50)) as pilot:
+        browse = await open_browse(pilot, app)
+        await pilot.pause()
+        assert "Fetching mine…" in text(browse, "#br-status")
+        assert browse.query_one("#br-cancel").display
+        release.set()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert seen == ["mine"]
+        assert not browse.query_one("#br-cancel").display
+        assert browse.query_one("#br-results").option_count == 1
+        prompt = str(browse.query_one("#br-results").get_option_at_index(0).prompt)
+        assert prompt.splitlines() == ["notes · mine · no licence stated", "Takes notes"]
+
+
+async def test_cancel_stops_waiting_for_the_fetch(home, tmp_path, monkeypatch):
+    only_mine(monkeypatch)
+    mine()
+    release = threading.Event()
+
+    def slow(s, **kw):
+        release.wait(5)
+        put_clone(s, "late")
+
+    monkeypatch.setattr(skill_sources, "fetch", slow)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 50)) as pilot:
+        browse = await open_browse(pilot, app)
+        await pilot.pause()
+        await pilot.click("#br-cancel")
+        await pilot.pause()
+        assert "Cancelled" in text(browse, "#br-status")
+        assert not browse.query_one("#br-cancel").display
+        release.set()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert "Cancelled" in text(browse, "#br-status")
+        assert browse.query_one("#br-results").option_count == 0
+
+
+async def test_offline_says_so_and_lists_what_is_already_there(home, tmp_path, monkeypatch):
+    for builtin in skill_sources.BUILTIN:
+        skill_sources.set_enabled(builtin.name, False)
+    have = mine()
+    put_clone(have, "kept", description="Already here")
+    skill_sources.add("fresh", "https://github.com/o/fresh")
+
+    def offline(s, **kw):
+        raise RuntimeError("git clone failed: could not resolve host")
+
+    monkeypatch.setattr(skill_sources, "fetch", offline)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 50)) as pilot:
+        browse = await open_browse(pilot, app)
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert "Couldn't fetch fresh: git clone failed: could not resolve host" in text(browse, "#br-status")
+        assert browse.query_one("#br-results").option_count == 1
+        assert "kept · mine" in str(browse.query_one("#br-results").get_option_at_index(0).prompt)
+
+
+async def test_search_filters_results(home, tmp_path, monkeypatch):
+    only_mine(monkeypatch)
+    source = mine()
+    put_clone(source, "alpha", description="First")
+    put_clone(source, "beta", description="Second")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 50)) as pilot:
+        browse = await open_browse(pilot, app)
+        assert browse.query_one("#br-results").option_count == 2
+        browse.query_one("#br-search").value = "bet"
+        await pilot.pause()
+        assert browse.query_one("#br-results").option_count == 1
+
+
+async def test_preview_shows_warnings_first_then_licence_size_files_and_text(home, tmp_path, monkeypatch):
+    only_mine(monkeypatch)
+    source = mine()
+    put_clone(source, "risky", body="Whole body text.", extra={"run.sh": "echo hi\n"})
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 60)) as pilot:
+        browse = await open_browse(pilot, app)
+        open_option(browse)
+        await pilot.pause()
+        preview = app.screen
+        assert isinstance(preview, PreviewScreen)
+        order = [w.id for w in preview.query("Static") if w.id and w.id.startswith("pv-")]
+        assert order[:5] == ["pv-warnings", "pv-licence", "pv-size", "pv-files", "pv-text"]
+        assert "Warning: contains scripts: run.sh" in text(preview, "#pv-warnings")
+        assert "Licence: no licence stated" in text(preview, "#pv-licence")
+        assert "SKILL.md" in text(preview, "#pv-files") and "run.sh" in text(preview, "#pv-files")
+        assert "Whole body text." in text(preview, "#pv-text")
+        for button in ("#pv-install", "#pv-as", "#pv-close"):
+            assert preview.query_one(button)
+        await pilot.click("#pv-close")
+        await pilot.pause()
+        assert app.screen is browse
+        assert not (home / ".whyline" / "skills" / "risky").exists()
+
+
+async def test_install_adds_the_skill_and_says_where_to_use_it(home, tmp_path, monkeypatch):
+    only_mine(monkeypatch)
+    put_clone(mine(), "notes")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 60)) as pilot:
+        screen = await open_tools(pilot, app, "tl-skills")
+        await pilot.click("#tl-skill-browse")
+        await pilot.pause()
+        open_option(app.screen)
+        await pilot.pause()
+        await pilot.click("#pv-install")
+        await pilot.pause()
+        assert app.screen is screen
+        assert "Installed notes. Add it to an agent in New agent → Add skills." in text(screen, "#tl-skill-status")
+        assert (home / ".whyline" / "skills" / "notes" / "SKILL.md").is_file()
+        row = skill_rows(screen)["whyline:notes"]
+        assert row[3].startswith("from mine")
+
+
+async def test_install_as_uses_the_new_name(home, tmp_path, monkeypatch):
+    only_mine(monkeypatch)
+    put_clone(mine(), "notes")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 60)) as pilot:
+        screen = await open_tools(pilot, app, "tl-skills")
+        await pilot.click("#tl-skill-browse")
+        await pilot.pause()
+        open_option(app.screen)
+        await pilot.pause()
+        preview = app.screen
+        assert not preview.query_one("#pv-name").display
+        await pilot.click("#pv-as")
+        await pilot.pause()
+        assert preview.query_one("#pv-name").display
+        preview.query_one("#pv-name").value = "my-notes"
+        preview.query_one("#pv-as").press()
+        await pilot.pause()
+        assert app.screen is screen
+        assert "Installed my-notes." in text(screen, "#tl-skill-status")
+        assert (home / ".whyline" / "skills" / "my-notes").is_dir()
+        assert not (home / ".whyline" / "skills" / "notes").exists()
+
+
+async def test_install_refused_keeps_the_preview_open(home, tmp_path, monkeypatch):
+    only_mine(monkeypatch)
+    put_clone(mine(), "notes")
+    make_skill(home / ".whyline" / "skills", "notes")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 60)) as pilot:
+        browse = await open_browse(pilot, app)
+        open_option(browse)
+        await pilot.pause()
+        await pilot.click("#pv-install")
+        await pilot.pause()
+        assert isinstance(app.screen, PreviewScreen)
+        assert "already installed" in text(app.screen, "#pv-status")
+
+
+async def test_parse_link_takes_one_skill_folder_and_refuses_the_rest():
+    assert tools_screens.parse_link("https://github.com/Own/repo/tree/main/skills/pdf") == (
+        "Own", "repo", "main", "skills/pdf")
+    assert tools_screens.parse_link(" https://github.com/o/r/tree/dev/a/b/ ")[2:] == ("dev", "a/b")
+    for bad in ("https://github.com/o/r", "https://github.com/o/r/tree/main", "http://github.com/o/r/tree/main/x",
+                "https://gitlab.com/o/r/tree/main/x", "https://github.com/o/r/blob/main/x/SKILL.md",
+                "https://github.com/o/r/tree/main/../x", "not a link"):
+        with pytest.raises(ValueError, match="Expected a link like https://github.com/<owner>/<repo>/tree/"):
+            tools_screens.parse_link(bad)
+
+
+async def test_link_screen_refuses_a_bad_link(home, tmp_path, monkeypatch):
+    only_mine(monkeypatch)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 50)) as pilot:
+        screen = await open_tools(pilot, app, "tl-skills")
+        await pilot.click("#tl-skill-browse")
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        browse = app.screen
+        await pilot.click("#br-link")
+        await pilot.pause()
+        link = app.screen
+        assert isinstance(link, LinkScreen)
+        link.query_one("#lk-link").value = "https://example.com/x"
+        await pilot.click("#lk-add")
+        await pilot.pause()
+        assert app.screen is link
+        assert "Expected a link like https://github.com/<owner>/<repo>/tree/<branch>/" in text(link, "#lk-status")
+
+
+async def test_link_adds_its_repository_fetches_it_and_opens_the_preview(home, tmp_path, monkeypatch):
+    only_mine(monkeypatch)
+    fetched = []
+
+    def fake_fetch(s, **kw):
+        fetched.append((s.name, s.url, s.path, s.branch))
+        put_clone(s, "pdf", body="PDF text.")
+        return "abc"
+
+    monkeypatch.setattr(skill_sources, "fetch", fake_fetch)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 60)) as pilot:
+        browse = await open_browse(pilot, app)
+        await pilot.click("#br-link")
+        await pilot.pause()
+        app.screen.query_one("#lk-link").value = "https://github.com/Acme/tools/tree/main/skills/pdf"
+        await pilot.click("#lk-add")
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert ("acme-tools", "https://github.com/Acme/tools", "skills", "main") in fetched
+        assert any(s.name == "acme-tools" and not s.builtin for s in skill_sources.load())
+        assert isinstance(app.screen, PreviewScreen)
+        assert "PDF text." in text(app.screen, "#pv-text")
+
+
+async def test_update_shows_the_diff_then_applies_it(home, tmp_path, monkeypatch):
+    only_mine(monkeypatch)
+    source = mine()
+    put_clone(source, "notes", body="Old.")
+    entry = skill_sources.index(source)[0]
+    skill_install.install(entry)
+    put_clone(source, "notes", body="New and better.")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 60)) as pilot:
+        screen = await open_tools(pilot, app, "tl-skills")
+        pick_skill(screen, "whyline:notes")
+        await pilot.pause()
+        assert not screen.query_one("#tl-skill-update").disabled
+        await pilot.click("#tl-skill-update")
+        await pilot.pause()
+        update = app.screen
+        assert isinstance(update, UpdateScreen)
+        assert "+New and better." in text(update, "#up-diff")
+        assert "-Old." in text(update, "#up-diff")
+        await pilot.click("#up-update")
+        await pilot.pause()
+        assert app.screen is screen
+        assert "Updated notes." in text(screen, "#tl-skill-status")
+        assert "New and better." in (home / ".whyline" / "skills" / "notes" / "SKILL.md").read_text()
+
+
+async def test_update_cancel_leaves_the_skill_and_same_files_say_up_to_date(home, tmp_path, monkeypatch):
+    only_mine(monkeypatch)
+    source = mine()
+    put_clone(source, "notes", body="Old.")
+    skill_install.install(skill_sources.index(source)[0])
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 60)) as pilot:
+        screen = await open_tools(pilot, app, "tl-skills")
+        pick_skill(screen, "whyline:notes")
+        await pilot.pause()
+        await pilot.click("#tl-skill-update")
+        await pilot.pause()
+        assert app.screen is screen
+        assert text(screen, "#tl-skill-status") == "Already up to date"
+        put_clone(source, "notes", body="Changed.")
+        screen.query_one("#tl-skill-update").press()
+        await pilot.pause()
+        await pilot.click("#up-cancel")
+        await pilot.pause()
+        assert app.screen is screen
+        assert "Old." in (home / ".whyline" / "skills" / "notes" / "SKILL.md").read_text()
+
+
+async def test_update_is_off_for_a_skill_with_no_source(home, tmp_path):
+    make_skill(home / ".whyline" / "skills", "plain")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(140, 50)) as pilot:
+        screen = await open_tools(pilot, app, "tl-skills")
+        pick_skill(screen, "whyline:plain")
+        await pilot.pause()
+        assert screen.query_one("#tl-skill-update").disabled
+
+
+async def test_sources_list_add_toggle_remove_refresh_and_open(home, tmp_path, monkeypatch):
+    opened = []
+    monkeypatch.setattr(tools_screens.webbrowser, "open", lambda url: opened.append(url))
+    monkeypatch.setattr(skill_sources, "fetch", lambda s, **kw: put_clone(s, "x") or "abc")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(150, 60)) as pilot:
+        screen = await open_tools(pilot, app, "tl-skills")
+        await pilot.click("#tl-skill-sources")
+        await pilot.pause()
+        sources = app.screen
+        assert isinstance(sources, SourcesScreen)
+        table = sources.query_one("#so-table")
+        rows = {r.key.value: table.get_row(r.key) for r in table.ordered_rows}
+        assert set(rows) == {b.name for b in skill_sources.BUILTIN}
+        assert rows["agentic"][2] == "MIT, text CC BY 4.0"
+        assert rows["anthropic"][3] == "never"
+        assert rows["voltagent"][1].startswith("directory")
+
+        def cursor(name):
+            table.move_cursor(row=table.get_row_index(name))
+
+        # Add…
+        await pilot.click("#so-add")
+        await pilot.pause()
+        app.screen.query_one("#ss-name").value = "bad name"
+        app.screen.query_one("#ss-url").value = "https://github.com/o/r"
+        app.screen.query_one("#ss-add").press()
+        await pilot.pause()
+        assert isinstance(app.screen, tools_screens.AddSourceScreen)
+        app.screen.query_one("#ss-name").value = "extra"
+        app.screen.query_one("#ss-path").value = "skills"
+        app.screen.query_one("#ss-add").press()
+        await pilot.pause()
+        assert app.screen is sources
+        assert "extra" in {r.key.value for r in table.ordered_rows}
+        # a user's source cannot be turned off; a built-in cannot be removed
+        cursor("extra")
+        await pilot.pause()
+        assert sources.query_one("#so-toggle").disabled
+        assert not sources.query_one("#so-remove").disabled
+        cursor("anthropic")
+        await pilot.pause()
+        assert sources.query_one("#so-remove").disabled
+        assert sources.query_one("#so-open").disabled
+        # Turn off / on
+        await pilot.click("#so-toggle")
+        await pilot.pause()
+        assert table.get_row("anthropic")[4] == "off"
+        assert str(sources.query_one("#so-toggle").label) == "Turn on"
+        sources.query_one("#so-toggle").press()
+        await pilot.pause()
+        assert table.get_row("anthropic")[4] == "on"
+        # Refresh
+        cursor("extra")
+        await pilot.pause()
+        await pilot.click("#so-refresh")
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert "Fetched extra." in text(sources, "#so-status")
+        assert table.get_row("extra")[3].startswith("2026-")
+        # Open in browser (directories only)
+        cursor("voltagent")
+        await pilot.pause()
+        assert sources.query_one("#so-refresh").disabled
+        await pilot.click("#so-open")
+        await pilot.pause()
+        assert opened == ["https://github.com/VoltAgent/awesome-agent-skills"]
+        # Remove
+        cursor("extra")
+        await pilot.pause()
+        await pilot.click("#so-remove")
+        await pilot.pause()
+        assert "extra" not in {r.key.value for r in table.ordered_rows}
+        assert not skill_sources.clone_dir(skill_sources.Source("extra", "https://x/y")).exists()
