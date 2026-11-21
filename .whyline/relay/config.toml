@@ -1,7 +1,7 @@
 # whyline-relay configuration. Every key is optional.
 plan = "plans/agent-setup.plan.md"
 max_rounds = 24
-timeout_minutes = 60
+timeout_minutes = 0
 branch_prefix = "relay/"
 
 [agents.codex]
