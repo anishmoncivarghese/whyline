@@ -277,7 +277,7 @@ Rules every task keeps:
   6. A scheduled run's `pays` call waits for approval as other calls do, and is denied when the wait ends.
   Tests: `test_pays_is_never_allowed` (parse, a hand-edited file at run time, and the CLI), `test_pays_limits_are_enforced` (no limits, no hints, a bad amount, a wrong currency, over per call, over per day across two calls, and a new day), the approval fields for `pays` and `sends`, and no remembered answer for either.
 
-- [ ] RSK-3: Risk in the pickers, the library and approvals
+- [x] RSK-3: Risk in the pickers, the library and approvals
   Edit `src/whyline/console/agents_screens.py`, `src/whyline/console/tools_screens.py`, `src/whyline/tools/cli.py` and their tests only.
   1. Add tools and the Tools library show each tool's level (`reads`, `writes`, `sends`, `pays`, or `not stated`, which counts as `writes`).
   2. For a `pays` tool the permission dropdown holds only **Ask first**, and ticking it shows `Limit per call`, `Limit per day` and `Currency` boxes. Done is refused with `Set both limits for <tool>` while they are empty or not above zero.
