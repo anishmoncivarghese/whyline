@@ -20,6 +20,23 @@ async def _until(pilot, condition, what):
     raise AssertionError(f"never happened: {what}")
 
 
+def _selects_ready(screen):
+    """True once every dropdown on the screen has built its label.
+
+    A Select fills its label in its own mount handler.  Leaving run_test while
+    one is still mounting makes Textual raise NoMatches('#label') on teardown,
+    which failed the v0.3.76 release run once on Ubuntu 3.13.
+    """
+    from textual.widgets import Select
+    from textual.widgets._select import SelectCurrent
+
+    for select in screen.query(Select):
+        current = select.query(SelectCurrent)
+        if not current or not current.first().query("#label"):
+            return False
+    return True
+
+
 _CLIS = ("claude", "codex", "grok", "antigravity")
 HINT = "Enable {agent} in Settings or choose another provider."
 
@@ -207,6 +224,8 @@ async def test_review_back_reopens_the_form_with_the_delivery(tmp_path, monkeypa
         assert name.value == "jobs" and name.disabled
         assert app.screen.query_one("#na-email", tui.Input).value == "a@example.com"
         assert app.screen.query_one("#na-subject", tui.Input).value == "Daily"
+        await _until(pilot, lambda: _selects_ready(app.screen), "dropdowns mounted")
+        await pilot.pause()
 
 
 async def test_edit_renames_through_the_form_and_moves_deliveries(tmp_path, home, monkeypatch):

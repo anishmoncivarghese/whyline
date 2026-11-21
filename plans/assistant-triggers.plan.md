@@ -4,7 +4,7 @@
 Spec: `docs/superpowers/specs/2026-11-14-assistant-2-design.md`, Part 6. Read it before every task. Where this plan and the spec differ, this plan wins. In particular:
 - **No public webhook server and no tunnel.** GitHub, mail and calendar are watched through the check-in gates. The only inbound door is an endpoint on `127.0.0.1` for the user's own scripts.
 
-Runs after `plans/assistant-research.plan.md`, and before `plans/architecture.plan.md`. It needs the gates (`plans/watch-agents.plan.md`, CKN-1) and the action registry.
+Runs after `plans/assistant-memory.plan.md`, and before `plans/architecture.plan.md`. It needs the gates (`plans/watch-agents.plan.md`, CKN-1) and the action registry.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 

@@ -1,7 +1,7 @@
 <!-- whyline-plan v1 | source: hand | drafted-by: claude | created: 2026-11-15T00:20:00+05:30 -->
 # Telegram daily use and the plan queue: waiting cards, the queue, instant feedback and the router
 
-Runs after `plans/release-resolve.plan.md`, and before `plans/raaid-log.plan.md`.
+Runs after `plans/research.plan.md`, and before `plans/raaid-log.plan.md`.
 
 This file is the plan Relay runs. Each task is one `- [ ] ID: title` item. Detail lines stay indented. Do not add another checkbox line anywhere in this file. Do not implement from this plan until Relay starts the task.
 
@@ -137,13 +137,14 @@ It needs Part 3's turns (FB-4) and failure replies (FB-5).
 
 Spec: `docs/superpowers/specs/2026-11-14-assistant-2-design.md`, Part 1. Read it before every RT task. Where this plan and the spec differ, this plan wins. In particular:
 - **One model turn per message, not two.** For a `task` route the router's own block is validated and turned into a card or request by the code `assistant.propose` uses today. `propose` is not called again.
-- **`research` is not a route target yet.** It arrives with the research plan. Until then the router may only choose actions in `actions.REGISTRY`.
+- **`research` becomes a route in RT-8**, after `plans/research.plan.md` has added the engine and the `research` action. RT-1 to RT-7 use the six routes below.
 
 Why: `intent.route` treats text as an instruction only when it names an agent with a strong verb, or carries a time or a control word. Everything else is `capture`, so "what's on my calendar tomorrow" or "check why CI failed" becomes an idea card with Quick score and Brainstorm buttons.
 
 What the user gets:
 - A plain message is read by a router that picks: idea, brainstorm, task, question, chat, or unclear.
 - An unclear message comes back with three buttons: **Save as idea**, **Do it**, **Just answer**. The choice teaches the router.
+- A lookup question can go to research, and an idea that needs facts asks **Research**, **Brainstorm** or **Both** (RT-8).
 - A main and a backup agent. The backup takes over when the main fails or is out of usage, and the main is skipped until its usage resets.
 - If both fail, the message is saved as an idea with **Try again**, so nothing is lost.
 
@@ -174,6 +175,8 @@ Rules every task keeps:
 - Both agents failing saves the message as an idea with Try again; the text is never lost. RT-4, `test_both_fail_saves_as_idea`.
 - A `task` route for a writing action produces a request waiting for a tap, never a direct run. RT-3, `test_writing_task_needs_a_tap`.
 - Low confidence shows the three buttons and acts on nothing until one is tapped. RT-5, `test_unclear_asks_and_waits`.
+- An idea that needs facts starts nothing until a button is tapped, when the setting is Ask. RT-8, `test_needs_facts_asks_first`.
+- Automatic research is off until the user turns it on. RT-8, `test_auto_research_is_off_by_default`.
 
 ## Tasks
 
@@ -559,9 +562,22 @@ Rules every task keeps:
   4. Assistant screen: a **Routing** table of the last 50 rows (time, text, route, agent, seconds), and a **Wrong?** button on the selected row with the three routes, calling `refile`. The main and backup agent selects already on this screen get the line `Also used to route messages.`
   Tests: one row per turn, the 30-day trim, `route` does not record or act, CLI and console call `refile`, and an unknown route is refused.
 
+- [ ] RT-8: Research as a route, and research before a brainstorm
+  Edit `src/whyline/ideas/router.py`, `src/whyline/ideas/turn.py`, `src/whyline/ideas/bot.py`, `src/whyline/ideas/cli.py`, `src/whyline/console/assistant_screen.py` and their tests only. It needs `plans/research.plan.md` done (`whyline.research`, the `research` action and command, RSR-11).
+  1. `ROUTES` gains `research`. The prompt describes it as `a question about the outside world that needs looking up, with sources`. A `research` route carries `fields.question` (the text when empty) and `fields.depth` (`quick` unless the message asks for more).
+  2. A `brainstorm` route also carries `needs_facts: bool`: true when the idea depends on facts the user hasn't given (prices, competitors, laws, what exists already). `validate` keeps it only on `brainstorm`.
+  3. A setting `router_facts` in kv, saved by `router.set_facts(conn, value)`: `ask` (default), `both` or `brainstorm`. On a brainstorm route with `needs_facts`:
+     - `ask`: the reply `This may need some facts first.` with buttons **Research**, **Brainstorm** and **Both**, each a `confirm.issue` code bound to the turn. Nothing starts before a tap.
+     - `both`: capture the idea, start a Quick research job with `idea_id` set to it (RSR-11's path), and open its brainstorm card when the job ends.
+     - `brainstorm`: as RT-3 does today.
+  4. A setting `router_auto_research` in kv, saved by `router.set_auto_research(conn, on)`, off by default. When off, a `research` route with confidence below 0.9 is sent as a `question` reply with a **Research this** button under it; when on, it starts the job. A message starting with `research` is the command and never reaches the router.
+  5. **Research** and **Both** taps add the example `research` (RT-5's examples); **Brainstorm** adds `brainstorm`.
+  6. CLI: `whyline idea router facts ask|both|brainstorm` and `whyline idea router auto-research on|off`. Assistant screen: the two settings beside the router's agent selects, saving through the same functions.
+  Tests: `test_needs_facts_asks_first` (nothing is captured or started before a tap), each button's outcome and example, `both` attaching the job to the idea, `test_auto_research_is_off_by_default`, the low-confidence research route answered with **Research this**, and CLI and console calling the same setters.
+
 - [ ] RT-7: Help text, doctor and docs
   Edit `src/whyline/ideas/bot.py` (`help_text`), the assistant doctor in `src/whyline/ideas/cli.py`, `docs/assistant.md`, `README.md` and their tests only.
   1. Help: add `Just write what you want. Start with "idea:" to save an idea, or "?" to ask a question.`
   2. Doctor: `Router: <main>, backup <backup>` or `Router: no agent set — choose one in Assistant`, and `<agent> is out of usage until <time>` for each remembered limit.
-  3. Docs cover: the six routes, the three buttons, main and backup with the usage-limit skip, what happens when both fail, the shortcuts, and the Routing table with **Wrong?**.
+  3. Docs cover: the six routes and the research route, the three buttons, the Research / Brainstorm / Both choice and its setting, automatic research, main and backup with the usage-limit skip, what happens when both fail, the shortcuts, and the Routing table with **Wrong?**.
   Verify with `uv run pytest -q`.
