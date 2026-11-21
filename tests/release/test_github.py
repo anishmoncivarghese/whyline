@@ -91,6 +91,40 @@ def test_commit_adds_only_listed_paths(repo):
     assert s["commit"].done_check()
 
 
+def test_commit_is_done_when_main_was_merged_after_the_release_commit(repo):
+    # 0.3.77: main was merged on top of "chore: release v0.3.77", and every
+    # Resume re-ran the commit step and failed with "nothing to commit".
+    (repo / "pyproject.toml").write_text("v")
+    s = steps(repo, FakeGh(), changed_files=lambda: [repo / "pyproject.toml"])
+    s["commit"].run(EVENT)
+    (repo / "b.txt").write_text("from main")
+    git(repo, "add", "b.txt")
+    git(repo, "commit", "-m", "merge: bring main in")
+    s = steps(repo, FakeGh(), changed_files=lambda: [repo / "pyproject.toml"])
+    assert s["commit"].done_check()
+    s["commit"].run(EVENT)  # and running it anyway is not an error
+    assert git(repo, "log", "-1", "--format=%s") == "merge: bring main in"
+
+
+def test_commit_still_runs_when_release_files_changed_after_it(repo):
+    (repo / "pyproject.toml").write_text("v")
+    s = steps(repo, FakeGh(), changed_files=lambda: [repo / "pyproject.toml"])
+    s["commit"].run(EVENT)
+    git(repo, "commit", "--allow-empty", "-m", "merge: bring main in")
+    (repo / "pyproject.toml").write_text("v2")
+    s = steps(repo, FakeGh(), changed_files=lambda: [repo / "pyproject.toml"])
+    assert not s["commit"].done_check()
+    s["commit"].run(EVENT)
+    assert git(repo, "log", "-1", "--format=%s") == "chore: release v1.2.3"
+
+
+def test_commit_with_nothing_and_no_release_commit_still_fails(repo):
+    s = steps(repo, FakeGh())
+    assert not s["commit"].done_check()
+    with pytest.raises(StepError):
+        s["commit"].run(EVENT)
+
+
 def test_checks_stream_and_fail(repo):
     seen = []
     cfg = ReleaseConfig(checks=("echo hello",))

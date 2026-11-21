@@ -196,11 +196,7 @@ def build_steps(
     branch = cfg.branch
     detail = on_progress or (lambda text: None)
 
-    def committed() -> bool:
-        proc = _git(root, run, "log", "-1", "--format=%s")
-        return _ok(proc) and _out(proc) == message
-
-    def commit(cancel: threading.Event) -> None:
+    def release_paths() -> list[str]:
         paths = [*changed_files(), *([notes_path] if notes_path else []),
                  *release_config.pending(root)]
         wanted: list[str] = []
@@ -208,10 +204,39 @@ def build_steps(
             full = path if path.is_absolute() else root / path
             if full.exists() and str(full) not in wanted:
                 wanted.append(str(full))
+        return wanted
+
+    def release_commit_in_history() -> bool:
+        # The subject names the version, so a match anywhere in HEAD's history
+        # is this release's commit, even with a merge of main on top of it.
+        proc = _git(root, run, "log", "--format=%s", "--fixed-strings",
+                    f"--grep={message}", "HEAD")
+        return _ok(proc) and message in _out(proc).splitlines()
+
+    def committed() -> bool:
+        proc = _git(root, run, "log", "-1", "--format=%s")
+        if _ok(proc) and _out(proc) == message:
+            return True
+        if not release_commit_in_history():
+            return False
+        wanted = release_paths()
+        if not wanted:
+            return True
+        status = _git(root, run, "status", "--porcelain", "--", *wanted)
+        return _ok(status) and not _out(status)
+
+    def commit(cancel: threading.Event) -> None:
+        wanted = release_paths()
         if wanted:
             proc = _git(root, run, "add", "--", *wanted)
             if not _ok(proc):
                 raise StepError(f"git add failed: {_fail_text(proc)}")
+        staged = _git(root, run, "diff", "--cached", "--quiet")
+        if staged.returncode == 0 and release_commit_in_history():
+            # Nothing new to commit and the release commit is already made
+            # (main was merged after it): the step is done, not failed.
+            release_config.clear_pending(root)
+            return
         proc = _git(root, run, "commit", "-m", message)
         if not _ok(proc):
             raise StepError(f"git commit failed: {_fail_text(proc)}")
