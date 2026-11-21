@@ -856,6 +856,86 @@ def run_models(root: Path) -> dict[str, RunModel]:
     return models
 
 
+@dataclass(frozen=True)
+class RunSetting:
+    """One run setting of the running relay: the value in force, the configured
+    one, and whether a live change makes them differ."""
+
+    name: str
+    current: object
+    configured: object
+    changed: bool
+
+
+def run_settings(root: Path) -> dict[str, RunSetting]:
+    from whyline_relay import run_settings as live
+
+    settings = _settings(root)
+    effective = live.effective(root, settings)
+    configured = {
+        "timeout": settings.timeout_minutes,
+        "rounds": settings.max_rounds,
+        "backup": tuple(settings.backup_chain),
+    }
+    current = {
+        "timeout": effective.timeout_minutes,
+        "rounds": effective.max_rounds,
+        "backup": tuple(effective.backup_chain),
+    }
+    keys = {
+        "timeout": "timeout_minutes",
+        "rounds": "max_rounds",
+        "backup": "backup_chain",
+    }
+    return {
+        name: RunSetting(
+            name=name,
+            current=current[name],
+            configured=configured[name],
+            changed=keys[name] in effective.changed,
+        )
+        for name in ("timeout", "rounds", "backup")
+    }
+
+
+def set_run_timeout(root: Path, minutes: int, *, keep: bool) -> str:
+    """Apply a timeout from the next turn; with `keep`, also save it."""
+    from whyline_relay import run_settings as live
+
+    try:
+        return live.set_timeout(root, _settings(root), minutes, keep=keep)
+    except live.RunSettingsError as error:
+        raise ValueError(str(error)) from None
+
+
+def set_run_rounds(root: Path, rounds: int, *, keep: bool) -> str:
+    """Apply a round cap from the next check. A cap below the running task's
+    round is refused."""
+    from whyline_relay import run_settings as live, running
+
+    marker = running.live(root)
+    try:
+        return live.set_rounds(
+            root,
+            _settings(root),
+            rounds,
+            keep=keep,
+            current_round=None if marker is None else marker.round,
+        )
+    except live.RunSettingsError as error:
+        raise ValueError(str(error)) from None
+
+
+def set_run_backup(root: Path, chain: Sequence[str], *, keep: bool) -> str:
+    """Apply a backup chain from the next time a backup is needed."""
+    from whyline_relay import run_settings as live
+
+    try:
+        return live.set_backup(root, _settings(root), chain, keep=keep)
+    except live.RunSettingsError as error:
+        raise ValueError(str(error)) from None
+
+
 def save_release(root: Path, value: str) -> None:
     from whyline_relay import setup
 
@@ -907,10 +987,11 @@ def cached_model_options(agent: str, *, now: float | None = None) -> list[tuple[
     """
     if agent == "antigravity":
         if antigravity_models_status(now=now) == "ok":
-            return _catalog.antigravity_cached()
+            session = _catalog.antigravity_cached() or []
+            return _catalog._merge(session, _catalog.cached(agent))
         return None
     if agent in AGENT_MODELS:
-        return [(m, m) for m in AGENT_MODELS[agent]]
+        return _catalog.cached(agent)
     return None
 
 

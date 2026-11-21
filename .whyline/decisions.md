@@ -48616,3 +48616,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: f63504c746bf405a966ce3b537038782 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-21T04:42:47.558Z"} -->
+
+## 2026-11-21 — Antigravity model options merge the session cache with whyline.models' cached list
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LRV-1
+
+**Because:** keeps None-until-fetched behaviour existing screens rely on, while user additions and the shared file now show up
+
+**Rejected:**
+
+- return models.cached('antigravity') always — would hide the untried/failed state the UI distinguishes
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 57181ca5dcd84bbbb830ee1b48557d62 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-21T04:46:20.633Z"} -->
+
+## 2026-11-21 — LRV-1 passes testing; full-suite failures were flaky UI tests
+
+**Actor:** claude
+**Role:** tester
+**Task:** LRV-1
+
+**Because:** task tests pass; full run's only failures (test_notes_stop_cancels_without_a_failure_popup, test_no_question_without_notes_or_when_released) are Textual UI timing flakes that pass when rerun alone; neither touches relay_ops live settings
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: a93cd64eb5444bc286597bbb5dbe39f9 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-21T10:50:39.032Z"} -->
+
+## 2026-11-21 — Approve LRV-1 live run settings console functions
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** LRV-1
+
+**Because:** setters/run_settings wrap whyline_relay.run_settings with ValueError mapping and running round; model options read whyline.models; targeted tests pass (169); full suite's lone failure is a known flaky UI test. Cosmetic: prompt_toolkit line in pyproject.toml lost its indent
+
+**Files:** src/whyline/console/relay_ops.py
+
+<!-- whyline-event: 00a88d3679954a0d8eb2e0dd030bc7f1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-21T11:02:12.812Z"} -->
