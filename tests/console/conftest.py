@@ -1,5 +1,21 @@
 import pytest
 
+# Console tests drive a real Textual app and wait for screens with short
+# pauses. On a loaded machine (the 25-minute full suite, a relay's tester
+# running beside other work) a screen can still be mounting when the test
+# looks for it, and a different test failed each release (0.3.75-0.3.77).
+# A console test is rerun up to twice before it counts as failed; a real bug
+# fails every time, so it still stops the run. `-rfER` in pyproject lists every
+# rerun test in the summary, so a flaky one stays visible and can be fixed.
+CONSOLE_RERUNS = 2
+
+
+def pytest_collection_modifyitems(config, items):
+    here = config.rootpath / "tests" / "console"
+    for item in items:
+        if item.path.is_relative_to(here) and not item.get_closest_marker("flaky"):
+            item.add_marker(pytest.mark.flaky(reruns=CONSOLE_RERUNS))
+
 
 @pytest.fixture(autouse=True)
 def _isolated_agent_detection(monkeypatch, tmp_path_factory):

@@ -1033,7 +1033,7 @@ def _unreleased_screen(released):
 async def test_unreleased_current_version_is_the_default():
     app = Host(_unreleased_screen(False))
     async with app.run_test() as pilot:
-        await pilot.pause()
+        await _until(pilot, lambda: app.screen.query("#release-kind"))
         select = app.screen.query_one("#release-kind", Select)
         assert select.value == "current"
         assert _text(app, "#release-versions").startswith(
@@ -1044,7 +1044,7 @@ async def test_unreleased_current_version_is_the_default():
 async def test_released_current_version_keeps_patch():
     app = Host(_unreleased_screen(True))
     async with app.run_test() as pilot:
-        await pilot.pause()
+        await _until(pilot, lambda: app.screen.query("#release-kind"))
         assert app.screen.query_one("#release-kind", Select).value == "patch"
         assert app.screen.chosen_version() == "0.3.70"
 
