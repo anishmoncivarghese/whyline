@@ -2639,11 +2639,13 @@ async def test_setup_refresh_models_keeps_each_selection(tmp_path, monkeypatch):
         screen, _ = await _open(app, pilot)
         screen.query_one("#rs-model-claude", tui.Select).value = "old-1"
         screen.query_one("#rs-refresh-models", tui.Button).press()
-        await _wait_for(
-            pilot,
-            lambda: "new-2" in _option_values(screen.query_one("#rs-model-claude", tui.Select)),
-            "refreshed list",
-        )
+        # The refresh swaps in a new Select; it reads BLANK until it has mounted.
+        def refreshed_and_mounted():
+            select = screen.query_one("#rs-model-claude", tui.Select)
+            return select.is_mounted and "new-2" in _option_values(select)
+
+        await _wait_for(pilot, refreshed_and_mounted, "refreshed list")
+        await pilot.pause()
         assert screen.query_one("#rs-model-claude", tui.Select).value == "old-1"
         assert not screen.query_one("#rs-refresh-models", tui.Button).disabled
     assert "claude" in refreshed
