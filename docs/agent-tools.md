@@ -120,3 +120,147 @@ tool, arguments (credentials redacted, cut to 2,000 characters), decision
 (`allowed`, `approved`, `denied` or `timed out`), duration, result size and
 error. In **Agents → Runs**, a run's detail shows one line per call, for
 example `12:04 gmail__send_email · approved · 1.2s`.
+
+## Choosing a model per CLI
+
+In **New agent**, Main CLI and each ticked backup have their own model
+dropdown. It holds **Default (the CLI decides)**, the models whyline knows for
+that CLI, and **Other…** for an id you type. **Default** passes no model, so
+the CLI uses whatever it would use on its own. A CLI with no model setting
+shows a disabled dropdown. **Refresh models** asks each CLI for its current
+list (only Antigravity has one to ask for; the rest use whyline's built-in list
+plus your additions). The run uses the model of the CLI that actually runs, so
+a backup runs on its own model, not the main one's. If a CLI refuses a model
+(`model not found`, `unknown model`), the run is tried once more on that CLI's
+Default, and the run record says so, before any backup is tried.
+
+Terminal: `whyline agents models <cli> [--refresh] [--add ID | --remove ID]`
+and `--model-for <cli>=<id>` on `whyline agents new` and `edit`.
+
+## Browse and the default folder
+
+**Browse…** next to **Runs in**, and on knowledge **Add files**, opens a folder
+and file picker with Up, Home, New folder…, a path box (`~` works) and Show
+hidden. It only ever returns a folder or file that exists. A new agent starts
+in the **Default folder for new agents** (Settings → Agents, or
+`whyline agents settings default-folder [PATH]`); with none set, that is your
+home folder. Changing it does not touch existing agents.
+
+## Finding skills: sources, preview and install
+
+Skills are also read from `~/.agents/skills` and `~/.codex/skills`, after the
+four places above. The same skill in two places is listed once.
+
+**Skills → Browse…** searches public skill **sources**: repositories of skill
+folders. Built in are Anthropic's, `agentic-awesome-skills` and Composio's,
+plus two directories that only open in your browser. **Sources…** adds your
+own `https://` repository, turns one off, refreshes it or removes it. A source
+is downloaded (a shallow `git` clone under `~/.whyline/skill-sources/`) only
+when you first browse it or press Refresh, never in the background.
+
+Choosing a result opens a **preview** before anything is installed: the
+warnings first, then the licence, size, file list and the whole `SKILL.md`.
+Warnings never block; they are things to read before you decide:
+
+- `contains scripts: …`: the folder has `.py`, `.sh`, `.js`, `.rb` or `.ps1`
+  files, or executable files.
+- `tells the agent to ignore its instructions`: text such as "ignore previous
+  instructions".
+- `downloads and runs something`: `curl … | sh`, `pip install`, `npx` and the
+  like.
+- `long encoded text`: a long run of base64.
+- a secret-looking value, named by rule only.
+
+The **licence** shown is the source's; `no licence stated` means the source
+says none, so check the project before relying on it. **Install** and
+**Install as…** copy the folder to `~/.whyline/skills/<name>` and record where
+it came from. **Nothing from a skill is run.** Whyline copies the files and
+puts the `SKILL.md` text in the prompt; scripts in the folder are never
+executed by whyline. A folder with a symlink or a path that leaves it is
+refused. **Update…** shows a diff against the source; an agent using an
+installed skill whose text changed must be accepted again. **Add from a
+link…** takes a `https://github.com/<owner>/<repo>/tree/<branch>/<path>` link
+to one skill folder. **Draft from a description…** under New skill has an
+agent write a `SKILL.md` for you to edit; nothing is saved until Save.
+
+Terminal: `whyline tools skills sources|browse|show-remote|install|update`.
+
+## The connector catalogue
+
+**Connectors → Add from catalogue…** lists ready-made local connectors (files,
+web fetch and search, a browser, GitHub, Slack, Notion, Linear, Postgres,
+SQLite, Gmail, Google Calendar and Drive). Each shows the exact command it
+will run, its tools with their risk level, and a box for each credential with a
+link to where you get it. **Test** must pass before **Add** is enabled, and a
+connector is never turned on before its Test passed. If the Test fails it stays
+saved but off, with the reason.
+
+`not checked by whyline yet` means nobody has run that entry's Test against a
+real account. The command comes from the project's own page, but whyline has
+not confirmed it works; your own Test is the check. **Search more…** looks in
+the public MCP registry and lists results under `From the public registry ·
+not checked by whyline`. Registry servers that are remote (they need a browser
+sign-in) are listed with the reason and no button.
+
+Terminal: `whyline tools catalogue [TEXT]`, `catalogue add <name>`,
+`catalogue search <text>`.
+
+## Find
+
+The box `What should the agent be able to do?` (in Add tools and the Tools
+library) matches your words against connectors you have, the catalogue, skills
+in your library and skills in sources you already fetched, with up to five
+hits per kind and a button for each (**Tick its tools**, **Add…**, **Add
+skill**, **Preview…**). **Search the registry too** is a separate button, so
+nothing goes to the network unasked. With no hit, **Make a tool…** is offered.
+Terminal: `whyline tools find <text> [--registry]`.
+
+## Made tools
+
+A **made tool** is a saved web request, for a service with no connector.
+Describe it and an agent drafts it, or fill the form: method, `https` URL with
+`{input}` places, headers, query, a JSON body, its inputs, a credential (kept
+in the Keychain, sent in a header or query) and which part of the answer to
+return. Limits:
+
+- `https` only. A host that is an IP address, `localhost`, or resolves to a
+  private, loopback or link-local address is refused, and so is a redirect to
+  another host.
+- A request waits 15 seconds and reads at most 200,000 bytes.
+- A credential can't go in the URL path, and a tool that isn't `GET` is at
+  least `writes`.
+- A made tool can't run until you press **Accept**. Editing it clears the
+  acceptance, and agents using it need accepting again.
+
+**Test…** shows the exact request (the credential as `•••`), asks `Send it?`
+and shows the answer. **A Test really sends the request.** For a tool above
+`reads` it says `This test really does it`. Agents name a made tool as
+`made.<name>`. Terminal: `whyline tools made list|show|new|test|accept|remove`.
+
+## Risk levels and limits
+
+Every tool has one of four levels, rising in order:
+
+| Level | Meaning |
+|-------|---------|
+| `reads` | Looks only. |
+| `writes` | Changes something. A tool that doesn't say whether it reads is `not stated` and counts as `writes`. |
+| `sends` | Sends a message or email to someone. |
+| `pays` | Moves money. |
+
+A level can be raised (**Risk…**, `whyline tools risk <server>.<tool> [LEVEL]`),
+never lowered. A `sends` tool set to Allowed shows `This agent will be able to
+send without asking.` Approvals for `sends` show the recipient and full text.
+
+A `pays` tool can only be **Ask first**, in the form, a hand-edited file and
+the CLI, and each call asks, whatever you answered before. Ticking one needs a
+**Limit per call**, **Limit per day** and **Currency**
+(`whyline agents limit <agent> <server>.<tool> --per-call N --per-day N
+--currency C`). Without limits it can't be called. A call over a limit, in a
+different currency, with an amount whyline can't read, or with no `pay` hints
+for the tool is refused without asking. The approval shows `Pay 12.50 EUR to
+<payee> · today so far 30.00 of 100.00`.
+
+**Not in this release:** connectors that need a browser sign-in (remote
+servers), and catalogue entries that pay. Pay-capable tools can be added only
+as a connector you set up yourself, with limits.

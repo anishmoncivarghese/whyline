@@ -169,6 +169,12 @@ main CLI, backups and timeout:
   file, log or prompt). Each tool an agent may use is **Allowed** or **Ask
   first**; Ask first calls wait up to 10 minutes for **Approve** or **Deny**,
   and every call is logged. See [Tools for agents](docs/agent-tools.md).
+  Add skills from public sources (with a preview and warnings first, and
+  nothing from a skill is run), connectors from a catalogue (`not checked by
+  whyline yet` until someone has tested the entry), or a **made tool** (a saved
+  web request you Test and Accept). Tools have four risk levels, and a tool
+  that pays is always Ask first and needs limits. Each CLI gets its own model
+  (**Default** lets the CLI decide), and **Browse…** picks folders.
 
 - **Check-ins:** give an Agent a gate (`mail-from`, `event-soon`,
   `ci-failed`, `reminder-overdue` or `changed`) and it runs only when the
@@ -297,6 +303,9 @@ appears. A relay running in this checkout is left running. See
 In Relay, the **Chat** tab next to All files answers questions about a running
 relay from a read-only agent, and never stops or steers it. See
 [docs/relay-chat.md](docs/relay-chat.md); `whyline ask` does the same from a terminal.
+While a relay runs, **Agents for this run** also changes agents, models, backups,
+the timeout and the round cap; see
+[when each change applies](docs/relay-chat.md#changing-agents-while-a-relay-runs).
 
 Everything you set up or run is available in the console without a terminal.
 The CLI (`whyline --help`) exposes the same functions for scripts.

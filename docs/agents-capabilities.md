@@ -242,3 +242,15 @@ whyline agents watch off results
 - Addresses on a private network are refused.
 - The Mac has to be on and awake. A check due while it sleeps runs when it
   wakes.
+
+## Models, folders and tools in saved agents
+
+- **A model per CLI.** Each saved agent keeps one model for its main CLI and
+  one for each backup (`[models]` in its file; an older `model = "x"` still
+  means the main CLI's). **Default** means no model flag: the CLI chooses. A
+  refused model is retried once on that CLI's Default before a backup is tried.
+- **Folders.** **Browse…** picks the folder an agent runs in; new agents start
+  in the default folder set in Settings → Agents (your home folder if none).
+- **Skills, connectors and made tools** come from the Tools library, with
+  previews, `not checked by whyline yet` labels, four risk levels and limits
+  for tools that pay. See [Tools for agents](agent-tools.md).

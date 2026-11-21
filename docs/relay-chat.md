@@ -48,3 +48,26 @@ whyline ask --set-agent claude --set-timeout 300 --set-snapshot-chars 40000
 ```
 
 `--set-timeout` takes seconds; the console shows the same value in minutes.
+
+## Changing agents while a relay runs
+
+While a relay runs, **Agents for this run** (in Relay) changes who does the
+work without stopping it. Press Save and only what you changed is applied; if
+one change is refused, the message shows and the others still apply. Tick
+**Keep for future runs** to also write the change to the relay's
+`config.toml`; otherwise it lasts for this run.
+
+| Change | Applies |
+|--------|---------|
+| A role's agent (implementer, tester, reviewer) | From the next turn |
+| A role's or backup's model | From the next turn that agent takes |
+| Timeout (minutes, `0` for none) | From the next turn |
+| Round cap (1 to 99) | From the next check; a cap below the current round is refused |
+| Backups: order, and which are used | The next time a backup is needed |
+
+Every model dropdown has **Default** (the CLI decides), the models whyline
+knows for that agent, and **Other…** for a typed id. **Refresh models**
+refreshes the lists without losing your selection. A backup that also holds a
+role shows that role's model and `same as its role`. The plan itself stays as
+it is while the relay runs. Relay **Set up** offers the same model lists,
+including a model for each backup.

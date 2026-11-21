@@ -48745,3 +48745,29 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 4fca08daaff243cca5fe3f2984eab8e1 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-21T14:16:43.074Z"} -->
+
+## 2026-11-21 — DOC-1 testing passes: docs-only diff, no test depends on it
+
+**Actor:** claude
+**Role:** tester
+**Task:** DOC-1
+
+**Because:** git diff --check is clean and the diff touches only README.md and three docs pages. The full suite ran with -x and stopped at the first failure (test_notes_stop_cancels_without_a_failure_popup); a second batch of doc-referencing test files failed on test_setup_refresh_models_keeps_each_selection. Both are Textual UI timing tests and both pass when rerun alone. The full suite never ran to the end because of the -x stop and a 10-minute foreground timeout
+
+**Files:** docs/agent-tools.md
+
+<!-- whyline-event: f0a504561fdc4bc19c378547eaafa11a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-21T15:29:26.116Z"} -->
+
+## 2026-11-21 — Approve DOC-1 Round 3 documentation review
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** DOC-1
+
+**Because:** Docs-only diff covers every requested topic (model per CLI and Default, Browse and default folder, skill sources/warnings/licences/nothing run, catalogue and not checked by whyline yet, Find, made tools and Test sending, four risk levels, pay limits, not-in-release, relay live changes and when they apply). git diff --check clean; uv run pytest -q ran 26% before the 10-minute limit with no failures; earlier flakes were UI timing tests that pass alone
+
+**Files:** docs/agent-tools.md
+
+<!-- whyline-event: 13f206dbb3ce422a9a03d5e876caee33 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-21T15:39:48.565Z"} -->
