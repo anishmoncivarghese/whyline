@@ -296,7 +296,7 @@ Rules every task keeps:
   4. `model_options_for_agent` and `cached_model_options` read `whyline.models` (AMD-1), so the relay screens, Chat and New agent show one list.
   Tests: each setter writing `run-settings.json` and returning the relay's message, `keep` reaching `config.toml`, the round-cap refusal as a `ValueError`, `run_settings` after a change, and the model options coming from `whyline.models`.
 
-- [ ] LRV-2: Timeout, round cap, backups and their models in "Agents for this run"
+- [x] LRV-2: Timeout, round cap, backups and their models in "Agents for this run"
   Edit `src/whyline/console/relay_screens.py` (`RunAgentsScreen`), with tests in `tests/console/test_relay_screens.py`.
   1. The window becomes 110 columns wide (`max-width: 100%`) and scrolls when it is taller than the screen. Each role row is one line: the role, the agent dropdown, the model dropdown (LMD-2) and its reason line underneath.
   2. Under the roles, a **Backups** block: the backup order as the console's `OrderedChain` (tick to use, **Up** and **Down** to order), and a model dropdown beside each ticked backup. A backup that also holds a role shows that role's model and `same as its role`.
