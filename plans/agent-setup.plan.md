@@ -287,7 +287,7 @@ Rules every task keeps:
   6. CLI: `whyline tools risk <server>.<tool> [LEVEL]`, and `whyline agents limit <agent> <server>.<tool> --per-call N --per-day N --currency C`.
   Tests: the level shown, the single choice and the limit boxes for `pays`, Done refused without limits, the `sends` line, Risk offering no lower level, the approval lines, and the CLI.
 
-- [ ] LRV-1: Console functions for live run settings
+- [x] LRV-1: Console functions for live run settings
   Needs whyline-relay 0.2.45 on PyPI (whyline-relay's `plans/live-run-settings.plan.md`, LRS-4). When `uv lock` can't find it, stop and say so with `whyline handoff LRV-1 --issue "whyline-relay 0.2.45 is not on PyPI yet"`; do not lower the floor to make the lock pass.
   Edit `src/whyline/console/relay_ops.py` and `pyproject.toml` (and `uv.lock`), with tests in `tests/console/test_relay_ops_live_settings.py`.
   1. Both `whyline-relay>=…,<0.3` lines in `pyproject.toml` become `whyline-relay>=0.2.45,<0.3`, and `uv.lock` is refreshed.
