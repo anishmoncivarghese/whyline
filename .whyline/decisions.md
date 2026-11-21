@@ -48659,3 +48659,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 00a88d3679954a0d8eb2e0dd030bc7f1 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-21T11:02:12.812Z"} -->
+
+## 2026-11-21 — Run-agents backup model rows are pre-composed per agent and toggled, not rebuilt
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LRV-2
+
+**Because:** OrderedChain swallows Up/Down presses and reuses ids when rebuilding, so fixed rows plus a 0.3s poll of chain.order() avoid id clashes and stale rows
+
+**Rejected:**
+
+- rebuilding rows on every chain change — duplicate-id risk and Up/Down never reaches the screen
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 28321e952fb14d039b42114e831d15d1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-21T11:24:38.230Z"} -->
+
+## 2026-11-21 — LRV-2 passes testing: full suite green, all required tests present and passing
+
+**Actor:** claude
+**Role:** tester
+**Task:** LRV-2
+
+**Because:** uv run pytest -q -x exited 0; tests/console/test_relay_screens.py 28 passed, covering only-what-changed save, backup order/model, same as its role, Other…, Refresh, summary, Keep unticked, 80x24 scrolling
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 568478e62ace49859866bd2cb5aea179 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-21T12:13:25.124Z"} -->
+
+## 2026-11-21 — Approve LRV-2: run-agents screen with backups, timeout, round cap, model dropdowns
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** LRV-2
+
+**Because:** Diff matches the task: only-changed save order, per-call error isolation, Other…/Refresh, summary text, READ_ONLY text. Targeted tests pass; full suite showed no failures through 28% before I stopped waiting
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: e29bc8a17d5f497fbb2da0a4c89f25a2 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-21T12:29:21.940Z"} -->

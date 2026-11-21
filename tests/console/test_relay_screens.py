@@ -217,6 +217,8 @@ def _model_screen(tmp_path, model_calls, *, roles=None, models=None, fail=None):
 
 
 async def _save(pilot):
+    pilot.app.screen.query_one("#ra-save").scroll_visible(animate=False)
+    await pilot.pause()
     await pilot.click("#ra-save")
     await pilot.pause()
     await pilot.pause()
@@ -272,6 +274,7 @@ async def test_changing_agent_fills_that_agents_models(tmp_path):
             ("Default", ""),
             ("opus", "opus"),
             ("sonnet", "sonnet"),
+            ("Other…", RunAgentsScreen.OTHER),
         }
 
 
@@ -282,7 +285,8 @@ async def test_model_choices_keep_provider_labels(tmp_path):
     app = _Host(screen)
     async with app.run_test() as pilot:
         await pilot.pause()
-        assert screen._model_choices("antigravity") == [("Default", "")] + labelled
+        other = [("Other…", RunAgentsScreen.OTHER)]
+        assert screen._model_choices("antigravity") == [("Default", "")] + labelled + other
         screen.query_one("#ra-tester", tui.Select).value = "codex"
         await pilot.pause()
         screen.query_one("#ra-tester", tui.Select).value = "antigravity"
@@ -341,8 +345,11 @@ async def test_screen_fits_80x24(tmp_path):
             "#ra-back-tester",
             "#ra-back-reviewer",
         ):
-            assert screen.query_one(widget_id).display, widget_id
-            region = screen.query_one(widget_id).region
+            widget = screen.query_one(widget_id)
+            assert widget.display, widget_id
+            widget.scroll_visible(animate=False)  # the window scrolls when taller than the screen
+            await pilot.pause()
+            region = widget.region
             assert region.right <= 80 and region.bottom <= 24, (widget_id, region)
 
 
@@ -412,7 +419,7 @@ async def test_default_summary_reads_plan_steps(tmp_path, monkeypatch):
     summary = screen._read_summary()
     assert "Plan: p.plan.md" in summary
     assert "Steps: 1 of 3 done" in summary
-    assert "Stop the relay to change them." in RunAgentsScreen.READ_ONLY
+    assert RunAgentsScreen.READ_ONLY == "The plan stays as it is while the relay runs."
 
 
 # --- Set up labels agents that cannot run (SWP-2) ---
@@ -479,3 +486,233 @@ async def test_saving_a_limited_implementer_makes_check_warn(tmp_path, monkeypat
         assert f"warn  implementer is antigravity, which is {LIMITED}" in text
         assert "tester is" not in text
     assert ops[0][0] == "antigravity"
+
+
+# --- Timeout, round cap and backups in "Agents for this run" (LRV-2) ---
+
+from whyline.console.chain_editor import OrderedChain  # noqa: E402
+
+
+def _settings(**over):
+    state = {
+        "timeout": relay_ops.RunSetting("timeout", 30, 30, False),
+        "rounds": relay_ops.RunSetting("rounds", 8, 8, False),
+        "backup": relay_ops.RunSetting("backup", (), (), False),
+    }
+    state.update(over)
+    return state
+
+
+def _full_screen(tmp_path, log, *, settings=None, fail=None, refresh=None):
+    fail = fail or {}
+    state = {
+        "roles": [
+            RunRole("implementer", "claude", "claude", "", "", False),
+            RunRole("tester", "antigravity", "antigravity", "", "", False),
+            RunRole("reviewer", "claude", "claude", "", "", False),
+        ],
+        "models": _models(),
+        "settings": settings if settings is not None else _settings(),
+        "running": "JOB-1",
+    }
+
+    def call(name):
+        def run(*args, keep):
+            log.append((name, *args, keep))
+            if name in fail:
+                raise ValueError(fail[name])
+            return f"{name} done"
+
+        return run
+
+    screen = RunAgentsScreen(
+        tmp_path,
+        "JOB-1",
+        run_roles_fn=lambda: state["roles"],
+        switch_fn=call("role"),
+        choices_fn=lambda: CHOICES,
+        running_fn=lambda: state["running"],
+        summary_fn=lambda: "Plan: p.md",
+        models_fn=lambda: state["models"],
+        cached_options_fn=lambda agent: OPTIONS.get(agent),
+        options_fn=lambda agent: OPTIONS.get(agent),
+        switch_model_fn=call("model"),
+        settings_fn=lambda: state["settings"],
+        timeout_fn=call("timeout"),
+        rounds_fn=call("rounds"),
+        backup_fn=call("backup"),
+        add_model_fn=lambda agent, model: log.append(("add", agent, model)),
+        refresh_models_fn=refresh or (lambda agent: None),
+    )
+    return screen, state
+
+
+def _text(screen, widget_id):
+    return str(screen.query_one(widget_id, tui.Static).renderable)
+
+
+async def test_save_applies_only_what_changed(tmp_path):
+    log = []
+    screen, _ = _full_screen(tmp_path, log)
+    app = _Host(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen.query_one("#ra-timeout", tui.Input).value = "45"
+        await pilot.pause()
+        await _save(pilot)
+        assert log == [("timeout", 45, True)]
+        assert _text(screen, "#ra-timeout-was") == "was 30"
+
+    log.clear()
+    screen, _ = _full_screen(tmp_path, log, fail={"rounds": "round 6 is already running"})
+    app = _Host(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen.query_one("#ra-model-implementer", tui.Select).value = "opus"
+        screen.query_one("#ra-timeout", tui.Input).value = "45"
+        screen.query_one("#ra-rounds", tui.Input).value = "5"
+        await pilot.pause()
+        await _save(pilot)
+        assert log == [("model", "claude", "opus", True), ("timeout", 45, True), ("rounds", 5, True)]
+        assert "round 6 is already running" in _text(screen, "#ra-error")
+
+
+async def test_backup_order_and_a_backups_model_are_saved(tmp_path):
+    log = []
+    screen, _ = _full_screen(tmp_path, log)
+    app = _Host(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        chain = screen.query_one("#ra-chain", OrderedChain)
+        chain.load(["codex", "antigravity"])
+        await pilot.pause(0.5)
+        chain._move("antigravity", -1)
+        await pilot.pause(0.5)
+        assert chain.order() == ["antigravity", "codex"]
+        assert screen.query_one("#ra-brow-codex").display
+        screen.query_one("#ra-bmodel-codex", tui.Select).value = "gpt"
+        await pilot.pause()
+        assert "Backups antigravity, codex from the next time one is needed" in _text(
+            screen, "#ra-changes"
+        )
+        await _save(pilot)
+        assert log == [("model", "codex", "gpt", True), ("backup", ["antigravity", "codex"], True)]
+
+
+async def test_a_backup_holding_a_role_shows_its_roles_model(tmp_path):
+    screen, _ = _full_screen(tmp_path, [])
+    app = _Host(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen.query_one("#ra-chain", OrderedChain).load(["claude", "codex"])
+        await pilot.pause(0.5)
+        select = screen.query_one("#ra-bmodel-claude", tui.Select)
+        assert select.value == "sonnet" and select.disabled
+        assert _text(screen, "#ra-bnote-claude") == "same as its role"
+        assert _text(screen, "#ra-bnote-codex") == ""
+
+
+async def test_other_adds_the_model_and_selects_it(tmp_path):
+    log = []
+    screen, _ = _full_screen(tmp_path, log)
+    app = _Host(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen.query_one("#ra-model-implementer", tui.Select).value = screen.OTHER
+        await pilot.pause()
+        box = screen.query_one("#ra-other", tui.Input)
+        assert not box.has_class("-empty")
+        box.value = "claude-opus-5-5"
+        await box.action_submit()
+        await pilot.pause()
+        assert log == [("add", "claude", "claude-opus-5-5")]
+        assert screen.query_one("#ra-model-implementer", tui.Select).value == "claude-opus-5-5"
+        assert screen.query_one("#ra-model-reviewer", tui.Select).value == "claude-opus-5-5"
+        await _save(pilot)
+        assert log[-1] == ("model", "claude", "claude-opus-5-5", True)
+
+
+async def test_refresh_models_keeps_each_selection(tmp_path):
+    asked = []
+    newer = [("newer", "newer"), ("opus", "opus"), ("sonnet", "sonnet")]
+
+    def refresh(agent):
+        asked.append(agent)
+        return newer if agent == "claude" else None
+
+    screen, _ = _full_screen(tmp_path, [], refresh=refresh)
+    app = _Host(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen.query_one("#ra-model-implementer", tui.Select).value = "opus"
+        await pilot.pause()
+        screen._refresh_models()
+        await _until(pilot, lambda: ("newer", "newer") in screen._model_choices("claude"), "list")
+        assert sorted(asked) == ["antigravity", "claude", "codex"]
+        assert screen.query_one("#ra-model-implementer", tui.Select).value == "opus"
+        assert screen.query_one("#ra-model-tester", tui.Select).value == "flash"
+
+
+async def test_summary_says_what_changes_and_when(tmp_path):
+    screen, _ = _full_screen(tmp_path, [])
+    app = _Host(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen.query_one("#ra-timeout", tui.Input).value = "45"
+        screen.query_one("#ra-rounds", tui.Input).value = "5"
+        screen.query_one("#ra-chain", OrderedChain).load(["codex", "antigravity"])
+        await pilot.pause(0.5)
+        assert _text(screen, "#ra-changes") == (
+            "Timeout 45m from the next turn · Round cap 5 from the next check · "
+            "Backups codex, antigravity from the next time one is needed"
+        )
+
+
+async def test_keep_unticked_passes_keep_false_everywhere(tmp_path):
+    log = []
+    screen, _ = _full_screen(tmp_path, log)
+    app = _Host(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen.query_one("#ra-keep", tui.Checkbox).value = False
+        screen.query_one("#ra-implementer", tui.Select).value = "codex"
+        screen.query_one("#ra-model-tester", tui.Select).value = ""
+        screen.query_one("#ra-chain", OrderedChain).load(["codex"])
+        screen.query_one("#ra-timeout", tui.Input).value = "0"
+        screen.query_one("#ra-rounds", tui.Input).value = "9"
+        await pilot.pause(0.5)
+        await _save(pilot)
+        assert [entry[0] for entry in log] == ["role", "model", "backup", "timeout", "rounds"]
+        assert all(entry[-1] is False for entry in log)
+
+
+async def test_invalid_numbers_are_refused_and_the_rest_applies(tmp_path):
+    log = []
+    screen, _ = _full_screen(tmp_path, log)
+    app = _Host(screen)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen.query_one("#ra-timeout", tui.Input).value = "45"
+        screen.query_one("#ra-rounds", tui.Input).value = "100"
+        await pilot.pause()
+        await _save(pilot)
+        assert log == [("timeout", 45, True)]
+        assert "Round cap must be" in _text(screen, "#ra-error")
+
+
+async def test_full_screen_is_usable_at_80x24_by_scrolling(tmp_path):
+    log = []
+    screen, _ = _full_screen(tmp_path, log)
+    app = _Host(screen)
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        for widget_id in ("#ra-timeout", "#ra-rounds", "#ra-save"):
+            widget = screen.query_one(widget_id)
+            widget.scroll_visible(animate=False)
+            await pilot.pause()
+            region = widget.region
+            assert region.right <= 80 and region.bottom <= 24, (widget_id, region)
+        screen.query_one("#ra-rounds", tui.Input).value = "7"
+        await pilot.pause()
+        await _save(pilot)
+        assert log == [("rounds", 7, True)]
