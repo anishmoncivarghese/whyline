@@ -1506,7 +1506,7 @@ async def test_auto_launched_relay_pause_automatically_recovers_without_resolve_
         req = _auto_request()
         # 1. Start Auto run which calls launcher(["start"])
         app._plan_chosen((req, "fp123"))
-        for _ in range(20):
+        for _ in range(200):  # up to 10s: the Auto job runs in a worker
             await pilot.pause(0.05)
             if launched:
                 break
@@ -1910,6 +1910,12 @@ async def test_auto_never_presses_retry_stage_on_visit_cap(tmp_path, monkeypatch
             "Paused: TASK-1 hit stage 'review''s 3-visit cap without reaching \"@complete\"",
         )
 
+        # Wait until Auto has handled the pause (it turns itself off), then a
+        # little longer so a late `resume --retry-stage` would still be seen.
+        for _ in range(200):
+            await pilot.pause(0.05)
+            if getattr(app, "_auto_relay", False) is False:
+                break
         for _ in range(10):
             await pilot.pause(0.05)
 

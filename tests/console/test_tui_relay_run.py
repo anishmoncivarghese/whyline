@@ -956,13 +956,16 @@ async def test_notes_review_in_ask_mode(tmp_path, monkeypatch):
     app._release_open_file = lambda path: opened.append(path) or ""
     async with app.run_test() as pilot:
         await _begin(app, pilot, "ask")
-        await _until(pilot, lambda: _screen_is(app, NotesReviewScreen))
+        # Wait for the window's buttons, not just the screen: under the full
+        # suite the screen can be pushed before its children are mounted.
+        await _until(pilot, lambda: _screen_is(app, NotesReviewScreen)
+                     and app.screen.query("#release-notes-removed"))
         area = app.screen.query_one("#release-notes-text", tui.TextArea)
         assert area.read_only and "Users can do a thing" in area.text
         summary = app.screen.query_one("#release-notes-summary", tui.Static)
         assert "1 lines removed" in str(summary.renderable)
         app.screen.query_one("#release-notes-removed", tui.Button).press()
-        await pilot.pause()
+        await _until(pilot, lambda: app.screen.query("#release-notes-before"))
         before = app.screen.query_one("#release-notes-before", tui.TextArea).text
         after = app.screen.query_one("#release-notes-after", tui.TextArea).text
         assert "✗ - I fixed this" in before
@@ -972,7 +975,8 @@ async def test_notes_review_in_ask_mode(tmp_path, monkeypatch):
         assert results == ["used"]
 
         await _begin(app, pilot, "ask")
-        await _until(pilot, lambda: _screen_is(app, NotesReviewScreen))
+        await _until(pilot, lambda: _screen_is(app, NotesReviewScreen)
+                     and app.screen.query("#release-notes-edit"))
         app.screen.query_one("#release-notes-edit", tui.Button).press()
         await _until(pilot, lambda: bool(opened) and _screen_is(app, NotesReviewScreen)
                      and app.screen.query("#release-notes-use"))

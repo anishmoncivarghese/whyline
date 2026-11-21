@@ -82,11 +82,12 @@ only-include = ["src/whyline", "tests", "README.md", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q -rfER"
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=1.4.0",
+    "pytest-rerunfailures>=15",
     "whyline-relay>=0.2.45,<0.3",
 ]
