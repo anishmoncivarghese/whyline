@@ -14,10 +14,11 @@ import os
 import sys
 import time
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from whyline import credentials
-from whyline.tools import mcp, mcp_config
+from whyline.tools import mcp, mcp_config, risk
 
 ENV_VAR = "WHYLINE_TOOLS_RUN"
 PROTOCOL_VERSION = mcp.PROTOCOL_VERSION
@@ -29,7 +30,7 @@ TIMED_OUT_TEXT = "Not approved in time."
 class Server:
     def __init__(self, tools_file: Path | None, *, servers=None, session_factory=None,
                  redaction_values=credentials.redaction_values, ask=None,
-                 clock=time.monotonic):
+                 clock=time.monotonic, now=None):
         self.folder = tools_file.parent if tools_file else None
         self.run_id = ""
         self.agent = ""
@@ -39,6 +40,7 @@ class Server:
         self._redaction_values = redaction_values
         self._ask = ask or self._ask_first
         self._clock = clock
+        self._now = now or (lambda: datetime.now(timezone.utc))
         self._sessions: dict[str, mcp.Session] = {}
         if tools_file is not None:
             self._load(tools_file)
@@ -117,12 +119,110 @@ class Server:
             self._sessions[server_name] = session
         return session
 
-    def _ask_first(self, run_folder: Path, tool: str, arguments: dict) -> str:
+    def _ask_first(self, run_folder: Path, tool: str, arguments: dict, fields: dict | None = None) -> str:
         if run_folder is None:
             return "denied"
         from whyline.tools import approvals
 
-        return approvals.request(run_folder, tool, arguments, redact=self._redact).status
+        return approvals.request(run_folder, tool, arguments, redact=self._redact,
+                                 fields=fields).status
+
+    # -- risk -------------------------------------------------------------
+
+    @staticmethod
+    def _level(item: dict) -> str:
+        """The tool's level; a level in tools.json can only raise it."""
+        level = risk.of(item["server"], item["tool"])
+        named = item.get("risk")
+        if named in risk.LEVELS and risk.LEVELS.index(named) > risk.LEVELS.index(level):
+            level = named
+        return level
+
+    @staticmethod
+    def _hints(item: dict, kind: str) -> dict:
+        given = item.get("hints")
+        if isinstance(given, dict) and isinstance(given.get(kind), dict):
+            return given[kind]
+        return risk.hints(item["server"], item["tool"]).get(kind, {})
+
+    @staticmethod
+    def _number(value) -> Decimal | None:
+        if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+            return None
+        try:
+            number = Decimal(str(value).strip())
+        except InvalidOperation:
+            return None
+        return number if number.is_finite() and number > 0 else None
+
+    def _paid_today(self, name: str, currency: str) -> Decimal:
+        """What was approved for this tool today (the user's local day), from the
+        call logs of this run and every run folder."""
+        today = self._now().astimezone().date()
+        folders: dict[Path, None] = {}
+        if self.folder is not None:
+            folders[self.folder.resolve()] = None
+        try:
+            from whyline.agents import paths
+
+            for folder in paths.runs_dir().iterdir():
+                folders[folder.resolve()] = None
+        except OSError:
+            pass
+        total = Decimal(0)
+        for folder in folders:
+            try:
+                lines = (folder / "tool-calls.jsonl").read_text(encoding="utf-8").splitlines()
+            except OSError:
+                continue
+            for line in lines:
+                try:
+                    record = json.loads(line)
+                    paid = record["paid"]
+                    when = datetime.fromisoformat(record["time"]).astimezone().date()
+                    amount = Decimal(paid["amount"])
+                except (ValueError, KeyError, TypeError, InvalidOperation):
+                    continue
+                if (record.get("tool") == name and record.get("decision") == "approved"
+                        and when == today and paid.get("currency") == currency):
+                    total += amount
+        return total
+
+    def _pay_check(self, name: str, item: dict, arguments: dict) -> tuple[str, dict, dict]:
+        """(refusal, what the approval shows, what the log keeps) for a pays call."""
+        key = f"{item['server']}.{item['tool']}"
+        limit = item.get("limits")
+        per_call, per_day = (self._number(limit.get("per_call")), self._number(limit.get("per_day"))) \
+            if isinstance(limit, dict) else (None, None)
+        currency = str(limit.get("currency", "")).strip().upper() if isinstance(limit, dict) else ""
+        if not currency or (per_call is None and per_day is None):
+            return f"Set a limit for {key} first", {}, {}
+        hints = self._hints(item, "pay")
+        if not hints.get("amount_arg") or not hints.get("currency_arg"):
+            return f"{key} does not say which arguments hold the amount and currency", {}, {}
+        amount = self._number(arguments.get(hints["amount_arg"]))
+        if amount is None:
+            return f"The amount for {key} is not a number above zero", {}, {}
+        asked = str(arguments.get(hints["currency_arg"], "")).strip().upper()
+        if asked != currency:
+            return f"{key} is limited to {currency}, not {asked or 'no currency'}", {}, {}
+        if per_call is not None and amount > per_call:
+            return f"{amount} {currency} is over the {per_call} {currency} limit per call", {}, {}
+        today = self._paid_today(name, currency)
+        if per_day is not None and today + amount > per_day:
+            return (f"{amount} {currency} would take today's total ({today}) over the "
+                    f"{per_day} {currency} limit per day"), {}, {}
+        payee = arguments.get(hints["payee_arg"], "") if hints.get("payee_arg") else ""
+        shown = {"amount": str(amount), "currency": currency, "payee": str(payee),
+                 "today": str(today),
+                 "limits": {k: str(v) for k, v in (("per_call", per_call), ("per_day", per_day))
+                            if v is not None}}
+        return "", shown, {"amount": str(amount), "currency": currency}
+
+    def _send_fields(self, item: dict, arguments: dict) -> dict:
+        hints = self._hints(item, "send")
+        return {label: str(arguments[hints[key]]) for label, key in (("to", "to_arg"), ("text", "text_arg"))
+                if hints.get(key) and hints[key] in arguments}
 
     @staticmethod
     def _text_result(text: str) -> dict:
@@ -132,10 +232,21 @@ class Server:
         item = self.ticked[name]
         started = self._clock()
         decision, error, size = "allowed", "", 0
-        if item.get("permission") == "ask":
-            decision = {"approved": "approved", "timed out": "timed out"}.get(
-                self._ask(self.folder, name, arguments), "denied")
-        if decision == "denied":
+        level = self._level(item)
+        fields, paid, refusal = {}, {}, ""
+        if level == "pays":
+            refusal, fields, paid = self._pay_check(name, item, arguments)
+        elif level == "sends":
+            fields = self._send_fields(item, arguments)
+        if refusal:
+            decision = "denied"
+        elif item.get("permission") == "ask" or level == "pays":  # money is never allowed outright
+            asked = (self._ask(self.folder, name, arguments, fields=fields) if fields
+                     else self._ask(self.folder, name, arguments))
+            decision = {"approved": "approved", "timed out": "timed out"}.get(asked, "denied")
+        if refusal:
+            body, error = self._text_result(refusal), refusal
+        elif decision == "denied":
             body, error = self._text_result(DENIED_TEXT), DENIED_TEXT
         elif decision == "timed out":
             body, error = self._text_result(TIMED_OUT_TEXT), TIMED_OUT_TEXT
@@ -155,7 +266,7 @@ class Server:
                 self._drop(item["server"])
                 error = str(problem)
                 body = self._text_result(error)
-        self._log(name, item, arguments, decision, self._clock() - started, size, error)
+        self._log(name, item, arguments, decision, self._clock() - started, size, error, paid)
         return body
 
     def _call_made(self, name: str, arguments: dict) -> tuple[dict, str, int]:
@@ -201,7 +312,7 @@ class Server:
             text = text.replace(value, "[redacted]")
         return text
 
-    def _log(self, name, item, arguments, decision, seconds, size, error) -> None:
+    def _log(self, name, item, arguments, decision, seconds, size, error, paid=None) -> None:
         if self.folder is None:
             return
         try:
@@ -209,7 +320,7 @@ class Server:
         except (TypeError, ValueError):
             shown = str(arguments)
         record = {
-            "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "time": self._now().isoformat(timespec="seconds"),
             "tool": name,
             "arguments": self._redact(shown)[:ARGUMENTS_LIMIT],
             "decision": decision,
@@ -217,6 +328,8 @@ class Server:
             "result_size": size,
             "error": self._redact(error)[:ARGUMENTS_LIMIT],
         }
+        if paid:
+            record["paid"] = paid
         try:
             with open(self.folder / "tool-calls.jsonl", "a", encoding="utf-8") as handle:
                 handle.write(json.dumps(record, ensure_ascii=False) + "\n")

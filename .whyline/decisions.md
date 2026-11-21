@@ -48513,3 +48513,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 3428a94d89bb4af386f319bb2008af32 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-20T22:57:44.053Z"} -->
+
+## 2026-11-20 — Pays limits come from tools.json (item limits/hints/risk); serve recomputes risk itself and only lets tools.json raise it; daily total summed from tool-calls.jsonl 'paid' records across all runs
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSK-2
+
+**Because:** runner.py is outside RSK-2 scope so serve cannot read the agent definition; summing every run is stricter than per-agent and safe
+
+**Rejected:**
+
+- load AgentDef in serve — repo agents need a repo root serve does not have
+
+**Files:** src/whyline/tools/serve.py
+
+<!-- whyline-event: 4093ffa023e644e8bde8ce920882040c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T23:04:42.607Z"} -->
+
+## 2026-11-20 — Pass RSK-2: limits and permissions by risk enforced in definitions, approvals and serve
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RSK-2
+
+**Because:** All 814 tests in tests/tools and tests/agents pass, plus 16 new risk tests verifying pays permission restriction to ask, limits parsing/validation, daily and per-call spending enforcement, field formatting on approvals, and approval prompting without memory
+
+**Files:** src/whyline/tools/serve.py
+
+<!-- whyline-event: e11c7563575343a9b6d4651723c21313 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-20T23:31:59.320Z"} -->
+
+## 2026-11-21 — Approve RSK-2: limits and permissions by risk enforced in definitions, approvals, and serve
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** RSK-2
+
+**Because:** Verified that pays tools cannot have allowed permission, limits are parsed and enforced per-call and per-day across call logs, approval fields for pays and sends are rendered first, and all 814 tests in tests/tools and tests/agents pass
+
+**Files:** src/whyline/tools/serve.py
+
+<!-- whyline-event: b9ed6a4b17bf4467917556c76ebe2b6f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-21T00:00:25.234Z"} -->

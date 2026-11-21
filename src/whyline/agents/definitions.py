@@ -49,6 +49,17 @@ class Trigger:
 
 
 @dataclass(frozen=True)
+class Limit:
+    """What one agent may spend through one ``pays`` tool. 0 means not set."""
+    currency: str
+    per_call: float = 0
+    per_day: float = 0
+
+    def as_dict(self) -> dict:
+        return {"currency": self.currency, "per_call": self.per_call, "per_day": self.per_day}
+
+
+@dataclass(frozen=True)
 class AgentDef:
     name: str
     kind: str  # "repo" | "personal"
@@ -66,6 +77,7 @@ class AgentDef:
     skills: tuple[str, ...] = ()  # "origin:name"
     knowledge: tuple[str, ...] = ()  # paths, URLs and "pack:<name>"
     tools: dict[str, str] = field(default_factory=dict)  # "<server>.<tool>" -> allowed | ask
+    limits: dict[str, Limit] = field(default_factory=dict)  # "<server>.<tool>" -> Limit
     workdir: str = ""
     report_folder: str = ""
     timeout_minutes: int = 15
@@ -317,6 +329,7 @@ def parse(text: str, *, kind: str, path: Path, repo_root: Path | None = None) ->
         name=name, kind=kind, path=path, root=root, instructions=instructions,
         runner=runner, backup=backup, model=_str(raw, "model"), models=models, sources=sources,
         skills=_strs(raw, "skills"), knowledge=knowledge, tools=_tools(raw.get("tools", {})),
+        limits=_limits(raw.get("limits", {})),
         workdir=workdir, report_folder=_str(raw, "report_folder"),
         timeout_minutes=timeout, before=before, trigger=_trigger(raw.get("trigger", {})),
         gate=gate, gate_args=gate_args, active_hours=active_hours, silent=silent,
@@ -331,6 +344,31 @@ def _tools(raw: object) -> dict[str, str]:
     if not isinstance(raw, dict) or not all(isinstance(v, str) for v in raw.values()):
         raise DefinitionError("tools must be a table of allowed or ask")
     return dict(raw)
+
+
+def _limits(raw: object) -> dict[str, Limit]:
+    if not isinstance(raw, dict):
+        raise DefinitionError("limits must be a table per tool")
+    found: dict[str, Limit] = {}
+    for key, table in raw.items():
+        if "." not in key or not isinstance(table, dict):
+            raise DefinitionError(f'limits."{key}" must be a table named <server>.<tool>')
+        extra = set(table) - {"per_call", "per_day", "currency"}
+        if extra:
+            raise DefinitionError(f"limits.{key} has unknown {', '.join(sorted(extra))}")
+        currency = table.get("currency", "")
+        if not isinstance(currency, str) or not currency.strip():
+            raise DefinitionError(f"limits.{key} needs a currency")
+        amounts = {}
+        for field_name in ("per_call", "per_day"):
+            value = table.get(field_name, 0)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not value > 0 \
+                    or value == float("inf"):
+                if field_name in table:
+                    raise DefinitionError(f"limits.{key}.{field_name} must be a number above zero")
+            amounts[field_name] = float(value)
+        found[key] = Limit(currency.strip().upper(), amounts["per_call"], amounts["per_day"])
+    return found
 
 
 def _check_tools(defn: AgentDef) -> None:
@@ -360,6 +398,8 @@ def _check_tools(defn: AgentDef) -> None:
                 raise DefinitionError(f"unknown knowledge pack {pack}") from None
     if not defn.tools:
         return
+    from whyline.tools import risk
+
     servers = mcp_config.load()
     for key, permission in defn.tools.items():
         server_name, _, tool_name = key.partition(".")
@@ -372,6 +412,8 @@ def _check_tools(defn: AgentDef) -> None:
         if permission not in TOOL_PERMISSIONS:
             raise DefinitionError(
                 f"tool {key} must be {' or '.join(TOOL_PERMISSIONS)}, not {permission!r}")
+        if permission == "allowed" and risk.of(server_name, tool_name) == "pays":
+            raise DefinitionError(f"{key} moves money and can only be Ask first")
 
 
 def resolve_sources(defn: AgentDef) -> list[Path]:
@@ -419,6 +461,12 @@ def render(defn: AgentDef) -> str:
         lines += ["", "[models]"] + [f"{_q(k)} = {_q(v)}" for k, v in sorted(defn.models.items())]
     if defn.tools:
         lines += ["", "[tools]"] + [f"{_q(k)} = {_q(v)}" for k, v in sorted(defn.tools.items())]
+    for key, limit in sorted(defn.limits.items()):
+        lines += ["", f"[limits.{_q(key)}]", f"currency = {_q(limit.currency)}"]
+        if limit.per_call:
+            lines.append(f"per_call = {float(limit.per_call)!r}")
+        if limit.per_day:
+            lines.append(f"per_day = {float(limit.per_day)!r}")
     t = defn.trigger
     lines += ["", "[trigger]", f"kind = {_q(t.kind)}"]
     if t.at:

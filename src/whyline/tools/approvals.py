@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -33,6 +33,7 @@ class Pending:
     tool: str
     arguments: str
     asked_at: str
+    fields: dict = field(default_factory=dict)
 
 
 def _now() -> str:
@@ -65,8 +66,20 @@ def _create(folder: Path, data: dict) -> int:
             n += 1
 
 
-def request(run_folder: Path, tool: str, arguments: dict, *, redact=None,
+def _fields_text(fields: dict) -> str:
+    """The fields of a pays or sends call, as the first thing a person reads."""
+    parts = []
+    for key, value in fields.items():
+        if isinstance(value, dict):
+            value = " ".join(f"{k}={v}" for k, v in value.items())
+        parts.append(f"{key}={value}")
+    return "  ".join(parts)
+
+
+def request(run_folder: Path, tool: str, arguments: dict, *, redact=None, fields: dict | None = None,
             clock=time.monotonic, sleep=time.sleep, timeout: float = APPROVAL_TIMEOUT) -> Decision:
+    """Ask. ``fields`` (amount, payee, recipient, text...) are stored beside the
+    arguments and shown first. Every call asks: no answer is remembered."""
     try:
         shown = json.dumps(arguments, ensure_ascii=False, sort_keys=True)
     except (TypeError, ValueError):
@@ -74,7 +87,11 @@ def request(run_folder: Path, tool: str, arguments: dict, *, redact=None,
     if redact is not None:
         shown = redact(shown)
     folder = Path(run_folder) / "approvals"
-    n = _create(folder, {"tool": tool, "arguments": shown, "asked_at": _now(), "status": WAITING})
+    record = {"tool": tool, "arguments": shown, "asked_at": _now(), "status": WAITING}
+    if fields:
+        record["fields"] = {k: redact(v) if redact is not None and isinstance(v, str) else v
+                            for k, v in fields.items()}
+    n = _create(folder, record)
     path = folder / f"{n}.json"
     deadline = clock() + timeout
     while True:
@@ -114,8 +131,12 @@ def pending(run_id: str | None = None) -> list[Pending]:
         for path in sorted(files, key=lambda p: int(p.stem) if p.stem.isdigit() else 0):
             data = _read(path)
             if data and data.get("status") == WAITING and path.stem.isdigit():
+                fields = data.get("fields") if isinstance(data.get("fields"), dict) else {}
+                shown = str(data.get("arguments", ""))
+                if fields:
+                    shown = f"{_fields_text(fields)}  |  {shown}"
                 found.append(Pending(folder.name, int(path.stem), str(data.get("tool", "")),
-                                     str(data.get("arguments", "")), str(data.get("asked_at", ""))))
+                                     shown, str(data.get("asked_at", "")), fields))
     return found
 
 
