@@ -308,7 +308,7 @@ Rules every task keeps:
   8. With no relay running the screen is not offered, as today; Set up is used instead.
   Tests: `test_save_applies_only_what_changed` (change only the timeout: one call, to `set_run_timeout`; then make the round cap refuse and check the timeout and a model switch still applied), the backup order and a backup's model saved, `same as its role`, Other… adding and selecting, Refresh keeping selections, the summary line, Keep unticked passing `keep=False` everywhere, and the screen usable at 80x24 by scrolling.
 
-- [ ] LRV-3: The same model list in relay Set up
+- [x] LRV-3: The same model list in relay Set up
   Edit `src/whyline/console/relay_screens.py` (`RelaySetupScreen`) and its tests only.
   1. Set up's model pickers (`rs-model-<agent>`) read `whyline.models.cached`, with `Default`, `Other…` and a **Refresh models** button, as in LRV-2. The separate typed-model input (`rs-model-input-<agent>`) is replaced by `Other…`.
   2. The backup agents listed in Set up each get a model picker too, saved with `set_agent_model_in_toml`.
