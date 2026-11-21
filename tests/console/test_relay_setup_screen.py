@@ -2545,3 +2545,158 @@ async def test_fix_level_select_saves_and_reopening_shows_it(tmp_path, monkeypat
         await pilot.pause()
         screen2, _ = await _open(app, pilot)
         assert screen2.query_one("#rs-fix-level", tui.Select).value == fixmode.LEVEL_AUTO
+
+
+def _git_repo(path):
+    import subprocess
+
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=path, check=True)
+    (path / "README.md").write_text("x\n")
+    subprocess.run(["git", "add", "-A"], cwd=path, check=True)
+    subprocess.run(["git", "commit", "-qm", "initial"], cwd=path, check=True)
+
+
+def _model_roles(monkeypatch, backup=("grok",)):
+    monkeypatch.setattr(
+        relay_ops, "relay_agents", lambda root=None, which=None: ["claude", "codex", "grok"]
+    )
+    monkeypatch.setattr(
+        relay_ops,
+        "current_roles",
+        lambda root: {
+            "implementer": "claude",
+            "tester": "codex",
+            "reviewer": "claude",
+            "backup": list(backup),
+        },
+    )
+    monkeypatch.setattr(relay_ops, "run_checks", _checks("ok"))
+
+
+def _option_values(select):
+    return [value for _label, value in select._options if value is not tui.Select.BLANK]
+
+
+async def test_setup_model_picker_lists_default_and_other(tmp_path, monkeypatch):
+    _model_roles(monkeypatch)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        select = screen.query_one("#rs-model-claude", tui.Select)
+        labels = [label for label, _value in select._options]
+        assert labels[0] == "Default"
+        assert labels[-1] == "Other…"
+        assert not screen.query("#rs-model-input-claude")
+        assert screen.query_one("#rs-refresh-models", tui.Button)
+
+
+async def test_setup_other_adds_a_typed_model_and_selects_it(tmp_path, monkeypatch):
+    from whyline.console import relay_screens
+
+    _model_roles(monkeypatch)
+    added = []
+    monkeypatch.setattr(relay_screens, "_add_model", lambda agent, model: added.append((agent, model)))
+    monkeypatch.setattr(
+        relay_ops,
+        "cached_model_options",
+        lambda agent, **kw: [("Mine", "mine-1")] if added else [],
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        screen.query_one("#rs-model-claude", tui.Select).value = "other"
+        await pilot.pause()
+        box = screen.query_one("#rs-other", tui.Input)
+        assert not box.has_class("-empty")
+        box.value = "mine-1"
+        await box.action_submit()
+        await pilot.pause()
+        assert added == [("claude", "mine-1")]
+        assert screen.query_one("#rs-model-claude", tui.Select).value == "mine-1"
+        assert screen._chosen_model("claude") == "mine-1"
+        assert box.has_class("-empty")
+
+
+async def test_setup_refresh_models_keeps_each_selection(tmp_path, monkeypatch):
+    from whyline.console import relay_screens
+
+    _model_roles(monkeypatch)
+    state = {"models": [("Old", "old-1")]}
+    refreshed = []
+
+    def refresh(agent):
+        refreshed.append(agent)
+        state["models"] = [("Old", "old-1"), ("New", "new-2")]
+
+    monkeypatch.setattr(relay_screens, "_refresh_model_list", refresh)
+    monkeypatch.setattr(
+        relay_ops, "cached_model_options", lambda agent, **kw: list(state["models"])
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        screen.query_one("#rs-model-claude", tui.Select).value = "old-1"
+        screen.query_one("#rs-refresh-models", tui.Button).press()
+        await _wait_for(
+            pilot,
+            lambda: "new-2" in _option_values(screen.query_one("#rs-model-claude", tui.Select)),
+            "refreshed list",
+        )
+        assert screen.query_one("#rs-model-claude", tui.Select).value == "old-1"
+        assert not screen.query_one("#rs-refresh-models", tui.Button).disabled
+    assert "claude" in refreshed
+
+
+async def test_setup_backup_model_is_saved_to_config_toml(tmp_path, monkeypatch):
+    _git_repo(tmp_path)
+    _model_roles(monkeypatch, backup=("grok",))
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        assert screen.query_one("#rs-model-row-grok").display
+        screen.query_one("#rs-model-grok", tui.Select).value = "grok-4.6"
+        await pilot.click("#rs-check")
+        await _wait_for(
+            pilot, lambda: not screen.query_one("#rs-start", tui.Button).disabled, "check complete"
+        )
+    assert relay_ops.read_agent_model(tmp_path, "grok") == "grok-4.6"
+    config_text = (tmp_path / ".whyline" / "relay" / "config.toml").read_text(encoding="utf-8")
+    assert '"--model", "grok-4.6"' in config_text
+
+
+async def test_setup_unlisted_saved_model_is_shown_and_kept(tmp_path, monkeypatch):
+    _git_repo(tmp_path)
+    _model_roles(monkeypatch)
+    relay_ops.save_agent_model(tmp_path, "claude", "claude-private-9")
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(110, 50)) as pilot:
+        screen, _ = await _open(app, pilot)
+        select = screen.query_one("#rs-model-claude", tui.Select)
+        assert "claude-private-9" in _option_values(select)
+        assert select.value == "claude-private-9"
+        await pilot.click("#rs-check")
+        await _wait_for(
+            pilot, lambda: not screen.query_one("#rs-start", tui.Button).disabled, "check complete"
+        )
+    assert relay_ops.read_agent_model(tmp_path, "claude") == "claude-private-9"
+
+
+async def test_setup_model_column_widens_the_window_and_scrolls_at_80x24(tmp_path, monkeypatch):
+    _model_roles(monkeypatch)
+    monkeypatch.setattr(
+        relay_ops,
+        "cached_model_options",
+        lambda agent, **kw: [("a-very-long-model-name-that-needs-room-1234567890", "long")],
+    )
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    async with app.run_test(size=(80, 24)) as pilot:
+        screen, _ = await _open(app, pilot)
+        await pilot.pause()
+        assert screen.query_one("#rs-box").styles.width.value == 110
+        start = screen.query_one("#rs-start", tui.Button)
+        assert start.region.height > 0
+        assert start.region.bottom <= 24
+        assert screen.query_one("#rs-box").region.width <= 80
+        assert screen.query_one("#rs-fields").max_scroll_y > 0

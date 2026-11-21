@@ -48702,3 +48702,46 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e29bc8a17d5f497fbb2da0a4c89f25a2 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-21T12:29:21.940Z"} -->
+
+## 2026-11-21 — Set up model pickers: one shared Other… input (rs-other) replaces per-agent rs-model-input; window widens to 110 from model label width
+
+**Actor:** claude
+**Role:** implementer
+**Task:** LRV-3
+
+**Because:** Matches LRV-2's Other… and Refresh models; typed ids are added via models.add so they join the list for every screen
+
+**Rejected:**
+
+- Keep per-agent typed inputs — LRV-3 says Other… replaces them and they cost a row each at 80x24
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 58b44cac721c46499af3482f585af706 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-21T12:53:01.084Z"} -->
+
+## 2026-11-21 — LRV-3 passes testing: full suite green, Set up model pickers behave as specified
+
+**Actor:** claude
+**Role:** tester
+**Task:** LRV-3
+
+**Because:** uv run pytest -q exited 0; tests/console/test_relay_setup_screen.py 79 passed and test_relay_screens.py 28 passed. An earlier -x run failed once on tests/console/test_release_screens.py::test_released_current_version_keeps_patch (NoMatches on #release-source), a different screen; it passes alone and the next full run was green, so it is a known flaky UI test
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 3cef390e82354f97b84410ecf3f16914 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-21T13:54:29.358Z"} -->
+
+## 2026-11-21 — Approve LRV-3: Set up model pickers share cached list, Other…, Refresh models, width 110
+
+**Actor:** claude
+**Role:** reviewer
+**Task:** LRV-3
+
+**Because:** Diff matches task: rs-model-input replaced by shared rs-other, Refresh keeps picks, unlisted saved model kept, backups get pickers, width widens to 110. Targeted tests (setup screen + relay screens, 107) pass; full uv run pytest -q hit the 10 minute limit at ~43% with no failures, so it did not finish
+
+**Files:** src/whyline/console/relay_screens.py
+
+<!-- whyline-event: 4fca08daaff243cca5fe3f2984eab8e1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-21T14:16:43.074Z"} -->

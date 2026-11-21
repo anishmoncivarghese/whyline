@@ -1800,6 +1800,9 @@ class RelaySetupScreen(ModalScreen):
     RelaySetupScreen Select { width: 30; }
     RelaySetupScreen .model-input { width: 24; margin-left: 1; }
     RelaySetupScreen .model-input.-empty { display: none; }
+    RelaySetupScreen #rs-other { width: 50; margin-left: 21; }
+    RelaySetupScreen #rs-other.-empty { display: none; }
+    RelaySetupScreen #rs-model-tools { height: auto; }
     RelaySetupScreen .model-out { padding: 0 0 0 2; color: $warning; height: auto; }
     RelaySetupScreen .model-out.-empty { display: none; }
     RelaySetupScreen .model-status { padding: 0 0 0 2; color: $text-muted; height: auto; }
@@ -1951,6 +1954,8 @@ class RelaySetupScreen(ModalScreen):
         self._test_command, self._test_detected = relay_ops.relay_test_command(root)
         self._token: object | None = None
         self._model_token: object | None = None
+        self._picked: dict[str, str] = {}
+        self._other_for = ""
         self._filling = True  # ignore change events while the form is built
         self._fail_lines: list[str] = []
 
@@ -2178,7 +2183,20 @@ class RelaySetupScreen(ModalScreen):
                 Label("Backup, used when an agent fails:"),
                 chain,
                 Static("", id="rs-meaning"),
-                Vertical(*model_rows, id="rs-models"),
+                Vertical(
+                    *model_rows,
+                    Input(
+                        "",
+                        id="rs-other",
+                        placeholder="type a model id, Enter to add",
+                        classes="-empty",
+                    ),
+                    Horizontal(
+                        Button("Refresh models", id="rs-refresh-models"),
+                        id="rs-model-tools",
+                    ),
+                    id="rs-models",
+                ),
             ]
         else:
             roles_body = [
@@ -2236,6 +2254,7 @@ class RelaySetupScreen(ModalScreen):
                 Button("Cancel", id="rs-cancel"),
                 id="rs-buttons",
             ),
+            id="rs-box",
         )
 
     def _rounds_note(self) -> str:
@@ -2301,6 +2320,7 @@ class RelaySetupScreen(ModalScreen):
             chain.load(self._fill_backup())
         self._update_meaning()
         self._update_models()
+        self._fit_width()
         if getattr(self, "_focus_agent", None):
             target_id = f"rs-model-{self._focus_agent}"
             if self.query(f"#{target_id}"):
@@ -2373,12 +2393,9 @@ class RelaySetupScreen(ModalScreen):
             if isinstance(widget, Select):
                 val = widget.value
                 if val == "other":
-                    if self.query(f"#rs-model-input-{agent}"):
-                        return self.query_one(f"#rs-model-input-{agent}", Input).value.strip()
-                    return ""
+                    # Other… waits for a typed id; until then the pick stands.
+                    return self._picked.get(agent, self._saved_models.get(agent, ""))
                 return val if val != Select.BLANK else ""
-        if self.query(f"#rs-model-input-{agent}"):
-            return self.query_one(f"#rs-model-input-{agent}", Input).value.strip()
         return ""
 
     def _fill_backup(self) -> list[str]:
@@ -2405,32 +2422,47 @@ class RelaySetupScreen(ModalScreen):
         self._filling = False
         self._start_model_discovery()
 
+    MODEL_LABEL_ROOM = 21  # the "Model (agent):" label column plus its gap
+
+    @staticmethod
+    def _model_width(opts: list[tuple[str, str]]) -> int:
+        """Cells a model dropdown needs: its longest label plus arrow and padding."""
+        return max(30, max((len(label) for label, _v in opts), default=0) + 6)
+
+    def _fit_width(self) -> None:
+        """110 columns when a model dropdown would not fit beside its label in
+        90; at 80x24 the box is capped by the terminal and the fields scroll."""
+        if not self.query("#rs-box"):
+            return
+        widest = 0
+        for select in self.query("Select.-model"):
+            width = select.styles.width
+            if width is not None:
+                widest = max(widest, int(width.value))
+        box = self.query_one("#rs-box")
+        box.styles.width = 110 if self.MODEL_LABEL_ROOM + widest > 49 else 90
+
     def _model_picker_controls(
         self, agent: str, model_opts: list[tuple[str, str]] | None, current_model: str
     ) -> list:
         if model_opts is not None:
-            opts = [("CLI default", "")]
+            opts = [("Default", "")]
             for lbl, val in model_opts:
-                opts.append((lbl, val))
-            known_vals = {v for _, v in opts}
-            if current_model and current_model not in known_vals:
+                if val:
+                    opts.append((lbl, val))
+            # A saved model that is not on the list stays selectable.
+            if current_model and current_model not in {v for _, v in opts}:
                 opts.append((current_model, current_model))
             opts.append(("Other…", "other"))
-            select_val = current_model if current_model in {v for _, v in opts} else "other"
-            return [
-                Select(
-                    opts,
-                    value=select_val,
-                    allow_blank=False,
-                    id=f"rs-model-{agent}",
-                ),
-                Input(
-                    value=current_model if select_val == "other" else "",
-                    placeholder="type model name",
-                    classes="model-input" + ("" if select_val == "other" else " -empty"),
-                    id=f"rs-model-input-{agent}",
-                ),
-            ]
+            select = Select(
+                opts,
+                value=current_model,
+                allow_blank=False,
+                id=f"rs-model-{agent}",
+                classes="-model",
+            )
+            select.styles.width = self._model_width(opts)
+            return [select]
         return [
             Input(
                 value=current_model,
@@ -2458,7 +2490,10 @@ class RelaySetupScreen(ModalScreen):
         if not self.query(f"#rs-model-picker-{agent}"):
             return
         picker = self.query_one(f"#rs-model-picker-{agent}")
-        current = self._chosen_model(agent) or self._saved_models.get(agent, "")
+        if self.query(f"#rs-model-{agent}"):
+            current = self._chosen_model(agent)
+        else:
+            current = self._saved_models.get(agent, "")
         self._filling = True
         try:
             picker.remove_children()
@@ -2545,13 +2580,17 @@ class RelaySetupScreen(ModalScreen):
             pass
         if event.select.id and event.select.id.startswith("rs-model-"):
             agent = event.select.id.removeprefix("rs-model-")
-            if self.query(f"#rs-model-input-{agent}"):
-                inp = self.query_one(f"#rs-model-input-{agent}", Input)
-                if event.value == "other":
-                    inp.remove_class("-empty")
-                    inp.focus()
-                else:
-                    inp.add_class("-empty")
+            if event.value == "other":
+                self._other_for = agent
+                box = self.query_one("#rs-other", Input)
+                box.value = ""
+                box.remove_class("-empty")
+                box.focus()
+            elif isinstance(event.value, str):
+                self._picked[agent] = event.value
+                if self._other_for == agent:
+                    self._other_for = ""
+                    self.query_one("#rs-other", Input).add_class("-empty")
         self._invalidate()
         self._update_meaning()
         self._update_models()
@@ -2563,10 +2602,62 @@ class RelaySetupScreen(ModalScreen):
     def on_input_changed(self, event: "Input.Changed") -> None:
         if event.input.id and (
             event.input.id.startswith("rs-model-")
-            or event.input.id.startswith("rs-model-input-")
             or event.input.id in ("rs-test-command", "rs-rounds")
         ):
             self._invalidate()
+
+    def on_input_submitted(self, event: "Input.Submitted") -> None:
+        if event.input.id != "rs-other":
+            return
+        event.stop()
+        agent, model = self._other_for, event.value.strip()
+        if not agent or not model:
+            return
+        try:
+            _add_model(agent, model)
+        except Exception as exc:
+            self._error(str(exc) or exc.__class__.__name__)
+            return
+        self._error("")
+        self._picked[agent] = model
+        self._other_for = ""
+        event.input.add_class("-empty")
+        self._rebuild_model_picker(agent, relay_ops.cached_model_options(agent))
+        self._fit_width()
+        self._invalidate()
+
+    def _refresh_models(self) -> None:
+        """Re-list every shown agent's models, keeping each pick."""
+        agents = [a for a in self._agents if self.query(f"#rs-model-{a}")]
+        if not agents:
+            return
+        self.query_one("#rs-refresh-models", Button).disabled = True
+
+        def in_thread() -> None:
+            for agent in agents:
+                try:
+                    _refresh_model_list(agent)
+                except Exception:
+                    pass
+            try:
+                self.app.call_from_thread(self._models_refreshed, agents)
+            except Exception:
+                return
+
+        self.run_worker(in_thread, thread=True, group="refresh-models")
+
+    def _models_refreshed(self, agents: list[str]) -> None:
+        if not self.is_attached:
+            return
+        try:
+            self.query_one("#rs-refresh-models", Button).disabled = False
+            for agent in agents:
+                options = relay_ops.cached_model_options(agent)
+                if options is not None:
+                    self._rebuild_model_picker(agent, options)
+            self._fit_width()
+        except NoMatches:
+            return
 
     def _chosen(self) -> tuple[str, str, str, list[str]]:
         if not self._agents:
@@ -2592,6 +2683,8 @@ class RelaySetupScreen(ModalScreen):
             self._token = object()
             self._model_token = object()
             self.dismiss("open-settings")
+        elif event.button.id == "rs-refresh-models":
+            self._refresh_models()
         elif event.button.id == "rs-start":
             if not self._agents:
                 return
