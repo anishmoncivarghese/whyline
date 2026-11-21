@@ -316,7 +316,7 @@ Rules every task keeps:
   4. A saved model that is not on the list is shown and kept.
   Tests: the options and Other…, Refresh keeping the selection, a backup's model saved to `config.toml`, an unlisted saved model kept, and the screen at 80x24.
 
-- [ ] DOC-1: Docs
+- [x] DOC-1: Docs
   Edit `docs/agent-tools.md`, `docs/agents-capabilities.md`, the page that documents the relay screens and `README.md` only.
   Cover: choosing a model per CLI and what Default means; Browse and the default folder; skill sources, what the preview's warnings mean, licences, and that nothing from a skill is run; the connector catalogue and what `not checked by whyline yet` means; Find; made tools, their limits and that a Test really sends; the four risk levels, limits for paying tools, and that browser sign-in connectors and paying catalogue entries are not in this release. In `docs/relay-chat.md` or the relay page: changing agents, models, backups, the timeout and the round cap while a relay runs, and when each change applies.
   Verify with `uv run pytest -q`.
