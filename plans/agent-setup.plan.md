@@ -267,7 +267,7 @@ Rules every task keeps:
   5. Changing a tool's level changes its server's `tools_hash`, so agents using it need accepting again.
   Tests: each source of the level in order, raising allowed and lowering refused, the hints, and the hash change.
 
-- [ ] RSK-2: Limits and permissions by risk
+- [x] RSK-2: Limits and permissions by risk
   Edit `src/whyline/agents/definitions.py`, `src/whyline/tools/approvals.py`, `src/whyline/tools/serve.py` and their tests only.
   1. A `pays` tool's permission can only be `ask`. `definitions.parse` refuses `allowed` for one with `<tool> moves money and can only be Ask first`, and `serve` treats a stored `allowed` as `ask`.
   2. `AgentDef.limits: dict[str, Limit]`, from `[limits."<server>.<tool>"]` with `per_call`, `per_day` (numbers above zero) and `currency`. A `pays` tool with no limits can't be called: `serve` answers `Set a limit for <tool> first` without asking.
