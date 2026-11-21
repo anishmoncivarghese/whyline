@@ -493,6 +493,12 @@ def _add_agents(subparsers: "argparse._SubParsersAction") -> None:
     new.add_argument(
         "--model-for", dest="model_for", action="append", default=[], metavar="CLI=ID",
         help="a model for one CLI (the main or a backup); repeatable")
+    limit = sub.add_parser("limit", help="What an agent may spend through one pays tool")
+    limit.add_argument("name")
+    limit.add_argument("tool", metavar="SERVER.TOOL")
+    limit.add_argument("--per-call", dest="per_call", type=float, required=True, metavar="N")
+    limit.add_argument("--per-day", dest="per_day", type=float, required=True, metavar="N")
+    limit.add_argument("--currency", required=True, metavar="C")
     models_cmd = sub.add_parser("models", help="Models a CLI can use, and your own additions")
     models_cmd.add_argument("cli")
     models_cmd.add_argument("--refresh", action="store_true", help="ask the CLI for its list again")
@@ -2194,6 +2200,10 @@ def cmd_agents(args: argparse.Namespace) -> int:
                 f"then run `whyline agents accept {defn.name}`."
             )
             return EXIT_OK
+        if args.agents_command == "limit":
+            from whyline.tools.cli import agents_limit
+
+            return agents_limit(args, root)
         if args.agents_command == "tick":
             return _cmd_agents_tick()
         if args.agents_command == "show":

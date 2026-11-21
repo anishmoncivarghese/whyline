@@ -48556,3 +48556,63 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: b9ed6a4b17bf4467917556c76ebe2b6f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-21T00:00:25.234Z"} -->
+
+## 2026-11-21 — Added whyline agents limit to cli.py as a thin dispatch to tools/cli.agents_limit
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSK-3
+
+**Because:** the command is under the agents parser, which only cli.py registers; the logic stays in tools/cli.py as the task lists
+
+**Rejected:**
+
+- second top-level agents parser in tools/cli.py — argparse cannot hold two
+
+**Files:** src/whyline/cli.py, src/whyline/tools/cli.py
+
+<!-- whyline-event: bd7f421799624e74876aae80bdc875cb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-21T00:20:33.065Z"} -->
+
+## 2026-11-21 — Past calls show Paid/Asked to pay from the log's paid field; the approval dialog reads the stored fields
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSK-3
+
+**Because:** tool-calls.jsonl keeps only amount and currency, so the payee and day totals exist only for a pending approval
+
+**Rejected:**
+
+- log payee and sends fields too — serve.py is RSK-2's file, outside this task
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: ed68f4e23e024c6f93979610c88d983f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-21T00:20:34.263Z"} -->
+
+## 2026-11-21 — Risk levels in pickers, library, approval dialog, runs view, and CLI limit commands behave correctly
+
+**Actor:** antigravity
+**Role:** tester
+**Task:** RSK-3
+
+**Because:** Verified tool level display, pays restrictions with limits, sends warning, risk elevation in library, plain approval lines, and CLI risk and limit commands
+
+**Files:** tests/console/test_tool_risk_ui.py
+
+<!-- whyline-event: 89cdc0587de842bab215736f790f1076 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-21T01:13:01.471Z"} -->
+
+## 2026-11-21 — Approved risk level visibility, pays limits validation, sends warnings, risk elevation, approval lines, and CLI commands
+
+**Actor:** antigravity
+**Role:** reviewer
+**Task:** RSK-3
+
+**Because:** All RSK-3 requirements are satisfied, edge cases and UI flows are thoroughly tested, and the full test suite passes
+
+**Files:** src/whyline/console/agents_screens.py
+
+<!-- whyline-event: f63504c746bf405a966ce3b537038782 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-21T04:42:47.558Z"} -->

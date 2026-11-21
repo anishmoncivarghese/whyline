@@ -1533,6 +1533,57 @@ def open_preview(screen, entry: skill_sources.Entry, done) -> str:
     return ""
 
 
+class _ToolRef(str):
+    """A connector's name on a tree leaf, remembering which of its tools the leaf is."""
+
+    tool = ""
+
+
+def risk_choices(current: str) -> list[tuple[str, str]]:
+    """The levels a tool can be raised to: its own and every higher one."""
+    from whyline.tools import risk
+
+    return [(level, level) for level in risk.LEVELS[risk.LEVELS.index(current):]]
+
+
+class RiskScreen(ModalScreen):
+    """Raise one tool's level. Lower levels are not offered: a level is only
+    ever raised. Saves through ``tools.risk.set_level``, as ``whyline tools risk`` does."""
+
+    DEFAULT_CSS = _CSS.format(name="RiskScreen")
+
+    def __init__(self, server: str, tool: str) -> None:
+        super().__init__()
+        from whyline.tools import risk
+
+        self._server, self._tool = server, tool
+        self._current = risk.of(server, tool)
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label(f"Risk of {self._server}.{self._tool}", markup=False),
+            Static(f"Now: {self._current}. A level can be raised, never lowered.", markup=False),
+            Select(risk_choices(self._current), value=self._current, allow_blank=False, id="rk-level"),
+            Static("", id="rk-status", markup=False),
+            Horizontal(Button("Save", id="rk-save", variant="primary"), Button("Cancel", id="rk-cancel")),
+        )
+
+    def on_button_pressed(self, event: "Button.Pressed") -> None:
+        event.stop()
+        if event.button.id != "rk-save":
+            self.dismiss(None)
+            return
+        from whyline.tools import risk
+
+        level = self.query_one("#rk-level", Select).value
+        try:
+            risk.set_level(self._server, self._tool, str(level))
+        except ValueError as error:
+            self.query_one("#rk-status", Static).update(str(error))
+            return
+        self.dismiss(str(level))
+
+
 class ToolsScreen(ModalScreen):
     """Connectors, Skills, Knowledge and Credentials in one place."""
 
@@ -1570,6 +1621,7 @@ class ToolsScreen(ModalScreen):
                         Button("Import…", id="tl-import"),
                         Button("Add from catalogue…", id="tl-catalogue"),
                         Button("Test", id="tl-test"),
+                        Button("Risk…", id="tl-risk"),
                         Button("Remove", id="tl-remove", variant="error"),
                         classes="tl-row",
                     )
@@ -1650,7 +1702,9 @@ class ToolsScreen(ModalScreen):
             node = tree.root.add(
                 f"{name}  {_server_state(server)}  {len(server.tools)} tools", data=name)
             for tool in server.tools:
-                node.add_leaf(f"{tool.name}  {tool_kind(tool)}", data=name)
+                ref = _ToolRef(name)
+                ref.tool = tool.name
+                node.add_leaf(f"{tool.name}  {tool_kind(tool, name)}", data=ref)
         tree.root.expand()
         if not servers:
             self._say("No connectors yet. Add one, or import from Claude or Codex.")
@@ -1664,6 +1718,21 @@ class ToolsScreen(ModalScreen):
         if node is None or node.data is None:
             return None
         return str(node.data)
+
+    def _risk(self) -> None:
+        node = self.query_one("#tl-tree", Tree).cursor_node
+        ref = node.data if node is not None else None
+        if not isinstance(ref, _ToolRef) or not ref.tool:
+            self._say("Pick a tool first.")
+            return
+        server, tool = str(ref), ref.tool
+
+        def done(level: str | None) -> None:
+            if level:
+                self._reload(server)
+                self._say(f"{server}.{tool} is now {level}.")
+
+        self.app.push_screen(RiskScreen(server, tool), done)
 
     def _add(self) -> None:
         def added(name: str | None) -> None:
@@ -2129,6 +2198,8 @@ class ToolsScreen(ModalScreen):
             self._import()
         elif button_id == "tl-catalogue":
             self._catalogue()
+        elif button_id == "tl-risk":
+            self._risk()
         elif button_id == "tl-test":
             self._test()
         elif button_id == "tl-remove":

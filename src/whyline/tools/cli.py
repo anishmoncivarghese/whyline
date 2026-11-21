@@ -40,6 +40,11 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
     find = tools_sub.add_parser("find", help="What should the agent be able to do? Search everything")
     find.add_argument("text", nargs="+", metavar="TEXT")
     find.add_argument("--registry", action="store_true", help="search the public registry too")
+    level = tools_sub.add_parser(
+        "risk", help="Show or raise how much harm a tool can do: reads, writes, sends, pays")
+    level.add_argument("tool", metavar="SERVER.TOOL")
+    level.add_argument("level", nargs="?", default=None, metavar="LEVEL",
+                       help="reads, writes, sends or pays; a level can be raised, never lowered")
     tools_sub.add_parser("serve", help="Run whyline's MCP server for an agent run (stdio)")
     for cli in _SAVED_SETUP:
         setup = tools_sub.add_parser(f"setup-{cli}", help=f"Add whyline's tools to {cli} (once)")
@@ -50,6 +55,57 @@ def add_parser(subparsers: "argparse._SubParsersAction") -> None:
 
 
 _SAVED_SETUP = ("grok", "antigravity")
+
+
+def _risk(args: argparse.Namespace) -> int:
+    from whyline.tools import risk
+
+    server, _, tool = args.tool.partition(".")
+    found = mcp_config.load().get(server)
+    if found is None or tool not in {t.name for t in found.tools}:
+        print(f"No tool named {args.tool}. Test the connector first to list its tools.", file=sys.stderr)
+        return EXIT_ERROR
+    if args.level is None:
+        print(f"{args.tool}  {risk.of(server, tool)}")
+        return EXIT_OK
+    level = risk.normalise(args.level)
+    try:
+        if not level:
+            raise ValueError(f"a level is one of {', '.join(risk.LEVELS)}")
+        risk.set_level(server, tool, level)
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return EXIT_ERROR
+    print(f"{args.tool}  {risk.of(server, tool)}")
+    return EXIT_OK
+
+
+def agents_limit(args: argparse.Namespace, root: Path | None) -> int:
+    """``whyline agents limit``: what one agent may spend through one ``pays`` tool.
+    Both amounts and the currency are needed, as the console's Add tools asks for them."""
+    from dataclasses import replace
+
+    from whyline.agents import definitions as d, service
+    from whyline.tools import risk
+
+    defn = service.find(args.name, root)
+    server, _, tool = args.tool.partition(".")
+    if args.tool not in defn.tools:
+        print(f"{defn.name} does not use {args.tool}. Add it in Add tools first.", file=sys.stderr)
+        return EXIT_ERROR
+    if risk.of(server, tool) != "pays":
+        print(f"{args.tool} is {risk.of(server, tool)}, not pays: it has no limit to set.", file=sys.stderr)
+        return EXIT_ERROR
+    currency = args.currency.strip().upper()
+    amounts = (args.per_call, args.per_day)
+    if not currency or not all(0 < a < float("inf") for a in amounts):
+        print(f"Set both limits for {args.tool}: amounts above zero and a currency.", file=sys.stderr)
+        return EXIT_USAGE
+    limit = d.Limit(currency, args.per_call, args.per_day)
+    path = d.save(replace(defn, limits={**defn.limits, args.tool: limit}))
+    print(f"{defn.name}: {args.tool} limited to {args.per_call:g} per call and {args.per_day:g} per day "
+          f"in {currency} ({path})")
+    return EXIT_OK
 
 
 def _setup(cli: str, yes: bool) -> int:
@@ -584,6 +640,8 @@ def run(args: argparse.Namespace) -> int:
         return _catalogue(args)
     if args.tools_command == "find":
         return _find(args)
+    if args.tools_command == "risk":
+        return _risk(args)
     if args.tools_command == "serve":
         from whyline.tools import serve
 

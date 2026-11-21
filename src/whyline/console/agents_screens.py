@@ -330,7 +330,48 @@ def tool_call_lines(run_id: str) -> list[str]:
             continue
         seconds = item.get("duration_s")
         took = f"{seconds:.1f}s" if isinstance(seconds, (int, float)) else "?"
-        lines.append(f"{when} {item.get('tool', '?')} · {item.get('decision') or 'ok'} · {took}")
+        decision = item.get("decision") or "ok"
+        paid = item.get("paid")
+        money = ""
+        if isinstance(paid, dict) and paid.get("amount") and paid.get("currency"):
+            verb = "Paid" if decision == "approved" else "Asked to pay"
+            money = f" · {verb} {_money(paid['amount'])} {paid['currency']}"
+        lines.append(f"{when} {item.get('tool', '?')}{money} · {decision} · {took}")
+    return lines
+
+
+def _money(text) -> str:
+    """``12.5`` as ``12.50``; an amount with more places is left as it is."""
+    from decimal import Decimal, InvalidOperation
+
+    try:
+        number = Decimal(str(text))
+        cents = number.quantize(Decimal("0.01"))
+    except InvalidOperation:
+        return str(text)
+    return f"{cents}" if cents == number else str(text)
+
+
+def field_lines(fields: dict) -> list[str]:
+    """The pays and sends fields of a call in plain lines, for the person who
+    approves it: ``Pay 12.50 EUR to <payee> · today so far 30.00 of 100.00``."""
+    if not isinstance(fields, dict) or not fields:
+        return []
+    lines = []
+    if fields.get("amount") and fields.get("currency"):
+        line = f"Pay {_money(fields['amount'])} {fields['currency']}"
+        if fields.get("payee"):
+            line += f" to {fields['payee']}"
+        limits = fields.get("limits") if isinstance(fields.get("limits"), dict) else {}
+        if fields.get("today") is not None:
+            line += f" · today so far {_money(fields['today'])}"
+            if limits.get("per_day"):
+                line += f" of {_money(limits['per_day'])}"
+        lines.append(line)
+    if fields.get("to"):
+        lines.append(f"Send to {fields['to']}")
+    if fields.get("text"):
+        lines.append(f"Message: {str(fields['text'])[:300]}")
     return lines
 
 
@@ -386,13 +427,28 @@ class ApprovalsScreen(ModalScreen):
             except Exception:
                 pass
         if say:
-            self._say("" if self._items else "Nothing is waiting.")
+            if self._items:
+                self._show_fields()
+            else:
+                self._say("Nothing is waiting.")
 
     def _say(self, text: str) -> None:
         try:
             self.query_one("#ap-text", Static).update(text)
         except NoMatches:
             return
+
+    def _show_fields(self) -> None:
+        """The pays and sends fields of the call under the cursor, in plain lines."""
+        key = _row_key(self.query_one("#ap-table", DataTable))
+        for item in self._items:
+            if key == f"{item.run_id}/{item.n}":
+                self._say("\n".join(field_lines(item.fields)))
+                return
+        self._say("")
+
+    def on_data_table_row_highlighted(self, event) -> None:
+        self._show_fields()
 
     def _answer(self, approve: bool) -> None:
         from whyline.tools import approvals
@@ -1501,12 +1557,34 @@ def default_permission(tool) -> str:
     return "allowed" if tool.read_only is True else "ask"
 
 
-def tool_kind(tool) -> str:
-    """``reads``, ``writes`` or ``not stated``. A tool that is not stated is
-    treated as a writing tool everywhere else."""
+def tool_kind(tool, server: str = "") -> str:
+    """``reads``, ``writes``, ``sends``, ``pays`` or ``not stated``. A tool that
+    is not stated is treated as a writing tool everywhere else. With a server
+    name the level is the one whyline enforces (``tools.risk``)."""
+    if server:
+        from whyline.tools import risk
+
+        level = risk.of(server, tool.name)
+        stated = (
+            tool.read_only is not None or level != "writes"
+            or risk._made_tool(server, tool.name) is not None
+            or getattr(risk._catalogue_tool(server, tool.name), "risk", "") != ""
+            or tool.name in risk._settings().get(server, {})
+        )
+        return level if stated else "not stated"
     if tool.read_only is None:
         return "not stated"
     return "reads" if tool.read_only else "writes"
+
+
+_PAYS_OPTIONS = [("Ask first", "ask")]
+_SEND_WARNING = "This agent will be able to send without asking."
+
+
+def _amount_text(value: float) -> str:
+    from decimal import Decimal
+
+    return format(Decimal(str(value)).normalize(), "f") if value else ""
 
 
 class ToolPickScreen(ModalScreen):
@@ -1519,21 +1597,32 @@ class ToolPickScreen(ModalScreen):
         " ToolPickScreen Checkbox:focus { border: none; }"
         " ToolPickScreen HorizontalGroup { height: auto; }"
         " ToolPickScreen .tp-warning { height: auto; color: $warning; }"
+        " ToolPickScreen .tp-limits { height: auto; }"
+        " ToolPickScreen .tp-limits Static { width: auto; padding: 1 1 0 1; }"
+        " ToolPickScreen .tp-limits Input { width: 14; }"
     )
 
-    def __init__(self, chosen: dict[str, str], *, on_skill=None, test_fn=None) -> None:
+    def __init__(self, chosen: dict[str, str], *, limits: dict | None = None, on_skill=None,
+                 test_fn=None) -> None:
         super().__init__()
         self._on_skill = on_skill  # called with a skill ref the agent should get
         self._test_fn = test_fn
         self._chosen = dict(chosen)
         self._perms = dict(chosen)  # permission of every tool seen, ticked or not
+        # "<server>.<tool>" -> (per call, per day, currency) as typed, kept across rebuilds
+        self._typed: dict[str, tuple[str, str, str]] = {
+            key: (_amount_text(lim.per_call), _amount_text(lim.per_day), lim.currency)
+            for key, lim in (limits or {}).items()}
+        self.limits: dict[str, d.Limit] = dict(limits or {})  # what Done accepted
         self._keys: list[tuple[str, object]] = []  # index -> (key, Tool)
+        self._kinds: list[str] = []  # index -> level shown
         self._empty = False
 
     def _widgets(self) -> list:
         from whyline.tools import mcp_config
 
         self._keys = []
+        self._kinds = []
         sections = []
         unusable = []
         for server in mcp_config.load().values():
@@ -1548,20 +1637,39 @@ class ToolPickScreen(ModalScreen):
                 i = len(self._keys)
                 key = f"{server.name}.{tool.name}"
                 self._keys.append((key, tool))
-                permission = self._perms.get(key, default_permission(tool))
+                kind = tool_kind(tool, server.name)
+                self._kinds.append(kind)
+                pays = kind == "pays"
+                permission = "ask" if pays else self._perms.get(key, default_permission(tool))
                 warning = Static(
                     _WRITE_WARNING, id=f"tl-w-{i}", classes="tp-warning", markup=False)
                 warning.display = permission == "allowed" and tool.read_only is not True
-                kind = tool_kind(tool)
+                sends = Static(
+                    _SEND_WARNING, id=f"tl-sw-{i}", classes="tp-warning", markup=False)
+                sends.display = permission == "allowed" and kind == "sends"
+                ticked = key in self._chosen
                 rows += [
                     HorizontalGroup(
-                        Checkbox(f"{tool.name} · {kind}", value=key in self._chosen,
-                                 id=f"tl-c-{i}"),
-                        Select(_PERMISSION_OPTIONS, value=permission, allow_blank=False,
-                               id=f"tl-s-{i}"),
+                        Checkbox(f"{tool.name} · {kind}", value=ticked, id=f"tl-c-{i}"),
+                        Select(_PAYS_OPTIONS if pays else _PERMISSION_OPTIONS, value=permission,
+                               allow_blank=False, id=f"tl-s-{i}"),
                     ),
                     warning,
+                    sends,
                 ]
+                if pays:
+                    per_call, per_day, currency = self._typed.get(key, ("", "", ""))
+                    box = HorizontalGroup(
+                        Static("Limit per call", markup=False),
+                        Input(per_call, id=f"tl-lc-{i}"),
+                        Static("Limit per day", markup=False),
+                        Input(per_day, id=f"tl-ld-{i}"),
+                        Static("Currency", markup=False),
+                        Input(currency, id=f"tl-lu-{i}"),
+                        id=f"tl-l-{i}", classes="tp-limits",
+                    )
+                    box.display = ticked
+                    rows.append(box)
             sections.append(Collapsible(*rows, title=server.name, collapsed=False))
         self._empty = not sections
         lines = [Static(text, classes="tp-unusable", markup=False) for text in unusable]
@@ -1627,6 +1735,7 @@ class ToolPickScreen(ModalScreen):
                 "Tools come from your connectors. Tick the ones this agent may use, "
                 "and choose Allowed or Ask first for each.", id="tl-hint", markup=False),
             Vertical(*widgets, id="tl-body"),
+            Static("", id="tl-error", classes="tp-warning", markup=False),
             Horizontal(
                 Button("Done", id="tl-done", variant="default" if self._empty else "primary"),
                 Button("Open Tools…", id="tl-open",
@@ -1644,6 +1753,9 @@ class ToolPickScreen(ModalScreen):
             value = self.query_one(f"#tl-s-{i}", Select).value
             permission = value if value in ("allowed", "ask") else "ask"
             self._perms[key] = permission
+            if self.query(f"#tl-lc-{i}"):
+                self._typed[key] = tuple(
+                    self.query_one(f"#tl-{box}-{i}", Input).value.strip() for box in ("lc", "ld", "lu"))
             if self.query_one(f"#tl-c-{i}", Checkbox).value:
                 picked[key] = permission
         return picked
@@ -1665,6 +1777,35 @@ class ToolPickScreen(ModalScreen):
         self.query_one(f"#tl-w-{i}", Static).display = (
             event.value == "allowed" and not tool.read_only
         )
+        self.query_one(f"#tl-sw-{i}", Static).display = (
+            event.value == "allowed" and self._kinds[i] == "sends"
+        )
+
+    def on_checkbox_changed(self, event: "Checkbox.Changed") -> None:
+        box_id = event.checkbox.id or ""
+        if not box_id.startswith("tl-c-"):
+            return
+        event.stop()
+        i = int(box_id.rsplit("-", 1)[1])
+        for box in self.query(f"#tl-l-{i}"):
+            box.display = bool(event.value)
+
+    def _read_limits(self, picked: dict[str, str]) -> tuple[dict, str]:
+        """The limits of the ticked ``pays`` tools, or why Done is refused."""
+        found: dict[str, d.Limit] = {}
+        pays = {key for (key, _tool), kind in zip(self._keys, self._kinds) if kind == "pays"}
+        for key in picked:
+            if key not in pays:
+                continue
+            per_call, per_day, currency = self._typed.get(key, ("", "", ""))
+            try:
+                amounts = [float(per_call), float(per_day)]
+            except ValueError:
+                amounts = [0.0]
+            if not all(0 < a < float("inf") for a in amounts) or not currency:
+                return {}, f"Set both limits for {key}"
+            found[key] = d.Limit(currency.upper(), amounts[0], amounts[1])
+        return found, ""
 
     def on_button_pressed(self, event: "Button.Pressed") -> None:
         event.stop()
@@ -1675,7 +1816,13 @@ class ToolPickScreen(ModalScreen):
         if event.button.id != "tl-done":
             self.dismiss(None)
             return
-        self.dismiss(self._collect())
+        picked = self._collect()
+        limits, problem = self._read_limits(picked)
+        self.query_one("#tl-error", Static).update(problem)
+        if problem:
+            return
+        self.limits = limits
+        self.dismiss(picked)
 
 
 def tools_summary(defn: d.AgentDef) -> str:
@@ -1792,6 +1939,7 @@ class NewAgentScreen(ModalScreen):
         )
         self._skills: list[str] = list(existing.skills) if existing else []
         self._tools: dict[str, str] = dict(existing.tools) if existing else {}
+        self._limits: dict[str, d.Limit] = dict(existing.limits) if existing else {}
         self._picking = False
         # CLI -> the model last chosen for it, so changing Main CLI back restores it.
         self._picked: dict[str, str] = dict(existing.models) if existing else {}
@@ -2549,9 +2697,11 @@ class NewAgentScreen(ModalScreen):
             self._skills.clear()
             self._refresh_list("#na-skills-list", self._skills_text())
         elif button_id == "na-add-tools":
-            self.app.push_screen(ToolPickScreen(self._tools, on_skill=self._add_skill), self._tools_done)
+            picker = ToolPickScreen(self._tools, limits=self._limits, on_skill=self._add_skill)
+            self.app.push_screen(picker, lambda picked: self._tools_done(picked, picker.limits))
         elif button_id == "na-clear-tools":
             self._tools.clear()
+            self._limits.clear()
             self._tools_changed()
         elif button_id == "na-pick-folder":
             self._pick("folder")
@@ -2721,7 +2871,15 @@ class NewAgentScreen(ModalScreen):
         if not self._tools:
             return "(none)"
         words = {"allowed": "allowed", "ask": "ask first"}
-        return "\n".join(f"{key} · {words.get(p, p)}" for key, p in sorted(self._tools.items()))
+        def line(key: str, permission: str) -> str:
+            text = f"{key} · {words.get(permission, permission)}"
+            limit = self._limits.get(key)
+            if limit is not None:
+                text += (f" · up to {_amount_text(limit.per_call)} per call, "
+                         f"{_amount_text(limit.per_day)} per day, {limit.currency}")
+            return text
+
+        return "\n".join(line(key, p) for key, p in sorted(self._tools.items()))
 
     def _refresh_list(self, widget_id: str, text: str) -> None:
         try:
@@ -2754,10 +2912,11 @@ class NewAgentScreen(ModalScreen):
             self._skills.append(ref)
             self._refresh_list("#na-skills-list", self._skills_text())
 
-    def _tools_done(self, picked) -> None:
+    def _tools_done(self, picked, limits=None) -> None:
         if not isinstance(picked, dict):
             return
         self._tools = dict(picked)
+        self._limits = {k: v for k, v in (limits or {}).items() if k in self._tools}
         self._tools_changed()
 
     def _tools_changed(self) -> None:
@@ -2915,6 +3074,13 @@ class NewAgentScreen(ModalScreen):
         if self._tools:
             lines += ["", "[tools]"]
             lines += [f"{_q(key)} = {_q(value)}" for key, value in sorted(self._tools.items())]
+            for key, limit in sorted(self._limits.items()):
+                if key in self._tools:
+                    lines += ["", f"[limits.{_q(key)}]", f"currency = {_q(limit.currency)}"]
+                    if limit.per_call:
+                        lines.append(f"per_call = {float(limit.per_call)!r}")
+                    if limit.per_day:
+                        lines.append(f"per_day = {float(limit.per_day)!r}")
         if self._watch_on():
             # The tables a watch needs to load; _submit's checkin_defn then adds hours and silence.
             found = self._watch_values()
