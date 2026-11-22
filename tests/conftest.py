@@ -38,7 +38,9 @@ def _click_where_the_widget_is() -> None:
     layout, and a test that clicks right after a change that moves things
     (a dialog closing, a result growing above a button) can click stale
     coordinates on a slow runner. The click then lands on another widget and is
-    lost; Windows and Ubuntu 3.11 lost the same few clicks run after run."""
+    lost; Windows and Ubuntu 3.11 lost the same few clicks run after run. The
+    region and the hit map share one layout, so they agree even while a newer
+    one is pending: the check also waits for the screen to settle."""
     try:
         from textual.pilot import Pilot
         from textual.widget import Widget
@@ -46,10 +48,29 @@ def _click_where_the_widget_is() -> None:
         return
     original = Pilot.click
 
+    def _settled(screen) -> bool:
+        # A region and the hit map come from the same layout, so they agree even
+        # while a newer layout is pending; wait until nothing is pending.
+        if any(
+            getattr(screen, flag, False)
+            for flag in ("_layout_required", "_scroll_required", "_repaint_required",
+                         "_recompose_required", "_dirty_widgets")
+        ):
+            return False
+        queue = getattr(screen, "_message_queue", None)
+        if queue is not None and not queue.empty():
+            return False
+        return not any(
+            getattr(w, "_layout_required", False) or getattr(w, "_repaint_required", False)
+            for w in screen.walk_children(with_self=False)
+        )
+
     def _under_cursor(pilot, widget, offset) -> bool:
         app = pilot.app
         try:
             target = widget if isinstance(widget, Widget) else app.query_one(widget)
+            if not _settled(app.screen):
+                return False
             x, y = target.region.offset + offset
             found, _ = app.get_widget_at(x, y)
         except Exception:
