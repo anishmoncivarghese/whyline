@@ -91,7 +91,7 @@ def test_relay_in_another_worktree_does_not_refuse(repo, tmp_path):
 
 def test_held_lock_refuses(repo):
     with guard.drafting(repo, "shop", "prd") as lock:
-        assert json.loads(lock.read_text())["pid"] == os.getpid()
+        assert json.loads(lock.read_text(encoding="utf-8"))["pid"] == os.getpid()
         with pytest.raises(
             guard.DraftingBusy, match=r"Another document is being written \(shop, prd\)"
         ):
@@ -139,7 +139,7 @@ def test_stale_takeover_never_removes_live_replacement(repo):
     lock.parent.mkdir(parents=True)
     lock.write_text("")  # corrupt/unreadable record counts as stale
     with guard.drafting(repo, "new", "prd") as path:
-        assert json.loads(path.read_text())["pid"] == os.getpid()
+        assert json.loads(path.read_text(encoding="utf-8"))["pid"] == os.getpid()
         with pytest.raises(guard.DraftingBusy):
             with guard.drafting(repo, "other", "prd"):
                 pass
@@ -151,4 +151,4 @@ def test_stale_lock_is_taken(repo):
     lock.parent.mkdir(parents=True)
     lock.write_text(json.dumps({"pid": 2**22 + 12345, "set": "old", "kind": "prd"}))
     with guard.drafting(repo, "new", "prd") as path:
-        assert json.loads(path.read_text())["set"] == "new"
+        assert json.loads(path.read_text(encoding="utf-8"))["set"] == "new"

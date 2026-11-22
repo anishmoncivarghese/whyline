@@ -61,7 +61,7 @@ def test_pack_expansion_relative_and_urls(home, tmp_path):
         knowledge.Item("https://x.org/p", True),
         knowledge.Item(str(base / "docs/a.md")),
         knowledge.Item(str(home / "n.md")),
-        knowledge.Item("/abs/f"),
+        knowledge.Item(str(base / "/abs/f")),  # Windows adds base's drive
     ]
     with pytest.raises(ValueError):
         knowledge.resolve(["pack:missing"], base)

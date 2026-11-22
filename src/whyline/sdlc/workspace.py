@@ -61,7 +61,7 @@ def docs_commit(
     for rel in dirty:
         target = docs / rel
         expected = written.get(rel)
-        if expected is None or not target.is_file() or target.read_text() != expected:
+        if expected is None or not target.is_file() or target.read_text(encoding="utf-8") != expected:
             foreign.append(rel)
     if foreign:
         raise WorktreeError(
@@ -89,7 +89,7 @@ def copy_plan_to(root: Path, docs: Path, slug: str) -> bool:
         dest = root / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(src, dest)
-        written[rel] = src.read_text()
+        written[rel] = src.read_text(encoding="utf-8")
     if not written:
         return False
     return docs_commit(root, list(written), f"docs: copy {slug} plan", written)

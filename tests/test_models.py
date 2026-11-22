@@ -82,5 +82,5 @@ def test_add_and_remove_refuse_bad_ids():
 
 def test_file_shape(tmp_path):
     models.add("claude", "extra")
-    data = json.loads((models._path()).read_text())
+    data = json.loads((models._path()).read_text(encoding="utf-8"))
     assert data["claude"]["added"] == ["extra"]

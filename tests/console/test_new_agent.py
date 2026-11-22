@@ -82,7 +82,7 @@ async def test_fill_review_and_save_a_repo_agent(tmp_path, monkeypatch):
         await pilot.click("#rv-save")
         await pilot.pause()
     saved = tmp_path / "repo/.whyline/agents/digest.toml"
-    text = saved.read_text()
+    text = saved.read_text(encoding="utf-8")
     assert saved.exists() and 'backup = ["codex"]' in text
     assert backup_writes == []
     assert 'knowledge = ["docs/a.md"]' in text

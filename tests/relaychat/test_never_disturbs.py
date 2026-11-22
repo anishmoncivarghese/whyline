@@ -134,7 +134,7 @@ def test_ask_leaves_a_running_relay_alone(repo, monkeypatch):
     assert _fingerprint(repo) == before
     assert not seen_lock and not lock.exists()
     assert calls == []
-    assert "relay line" in log.read_text()  # the fake relay really kept writing
+    assert "relay line" in log.read_text(encoding="utf-8")  # the fake relay really kept writing
 
 
 def _calls(tree):

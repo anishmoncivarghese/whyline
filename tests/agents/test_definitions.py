@@ -73,7 +73,7 @@ def test_render_round_trips_and_save_writes_the_file(repo):
     a = d.parse(REPO_TOML, kind="repo", path=repo / ".whyline/agents/research-digest.toml", repo_root=repo)
     text = d.render(a)
     assert d.parse(text, kind="repo", path=a.path, repo_root=repo) == a
-    assert d.save(a) == a.path and a.path.read_text() == text
+    assert d.save(a) == a.path and a.path.read_text(encoding="utf-8") == text
 
 
 def test_hash_ignores_formatting_but_not_content():

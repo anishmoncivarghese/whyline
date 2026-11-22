@@ -1,5 +1,6 @@
 """The inbox rides the agents tick, one leased job at a time."""
 
+import subprocess
 import json
 import logging
 import os
@@ -20,6 +21,14 @@ from whyline.ideas import (
     telegram_in,
     worker,
 )
+
+
+def _detached(options) -> bool:
+    """POSIX starts a new session; Windows a detached new process group."""
+    if os.name == "nt":
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        return options.get("creationflags", 0) & flags == flags
+    return options.get("start_new_session") is True
 
 NOW = datetime(2026, 10, 20, 12, 0, 0)
 PAST = "2026-10-20T11:00:00"
@@ -475,7 +484,7 @@ def test_request_subprocess_calls_run_now_and_configured_delivery(
         "request",
         str(request.id),
     ]
-    assert options["start_new_session"] is True
+    assert _detached(options)
     assert cli.main(argv[3:]) == 0
 
     assert called == [("nightly", None)]
@@ -1215,7 +1224,7 @@ def test_work_starts_caffeinate_with_the_job_pid(conn, monkeypatch, kind):
     ).fetchone()["pid"]
     assert pid == os.getpid()
     assert argv == ["/usr/bin/caffeinate", "-i", "-w", str(pid)]
-    assert kwargs["start_new_session"] is True
+    assert _detached(kwargs)
     assert kwargs["stdin"] is worker.subprocess.DEVNULL
 
 

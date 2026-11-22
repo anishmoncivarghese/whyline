@@ -63,7 +63,7 @@ def test_undo_restores_the_fix(repo: Path) -> None:
 
     res = _fix(repo, agent)
     fixmode.undo(repo, res.snapshot)
-    assert (repo / "a.txt").read_text() == "a\n"
+    assert (repo / "a.txt").read_text(encoding="utf-8") == "a\n"
 
 
 def test_violating_agent_is_undone_and_reported(repo: Path) -> None:
@@ -75,7 +75,7 @@ def test_violating_agent_is_undone_and_reported(repo: Path) -> None:
     res = _fix(repo, agent)
     assert res.status == "violation"
     assert any(v.kind == "head" for v in res.violations)
-    assert (repo / "a.txt").read_text() == "a\n"
+    assert (repo / "a.txt").read_text(encoding="utf-8") == "a\n"
     assert git(repo, "rev-parse", "HEAD").strip() == res.snapshot.head
 
 
@@ -104,7 +104,7 @@ def test_stop_cancels_and_undoes(repo: Path) -> None:
 
     res = _fix(repo, agent, cancel=cancel)
     assert res.status == "cancelled"
-    assert (repo / "a.txt").read_text() == "a\n"
+    assert (repo / "a.txt").read_text(encoding="utf-8") == "a\n"
 
 
 def test_console_stop_keeps_resolve_disabled_until_fix_cleanup() -> None:

@@ -105,7 +105,7 @@ def test_reuses_existing_publishing_workflow(tmp_path):
 
 def test_add_workflow_writes_template_once_and_marks_pending(tmp_path):
     path = npm.add_workflow(tmp_path)
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     assert path.name == "release-npm.yml"
     for part in ("id-token: write", "contents: read", "actions/setup-node",
                  "registry-url: https://registry.npmjs.org", "npm ci",

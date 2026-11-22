@@ -27,10 +27,10 @@ def test_finish_writes_metadata_final_report_and_ledger(repo, home):
     rec.cli, rec.outcome, rec.ended = "codex", "succeeded", NOW.isoformat()
     rec.used_backup = {"cli": "codex", "because": "claude: usage_limit until 15:00"}
     records.finish(rec, folder, final_text="All quiet.", defn=agent)
-    meta = json.loads((folder / "metadata.json").read_text())
+    meta = json.loads((folder / "metadata.json").read_text(encoding="utf-8"))
     assert meta["outcome"] == "succeeded" and meta["used_backup"]["cli"] == "codex"
-    assert (folder / "final.md").read_text() == "All quiet.\n"
-    assert (home / "Reports/digest/2026-10-05.md").read_text() == "All quiet.\n"
+    assert (folder / "final.md").read_text(encoding="utf-8") == "All quiet.\n"
+    assert (home / "Reports/digest/2026-10-05.md").read_text(encoding="utf-8") == "All quiet.\n"
     events, _ = ledger.read_all(wpaths.ledger_path(repo))
     assert events[-1]["type"] == "AgentRunCompleted" and events[-1]["run_id"] == rec.run_id
     assert "All quiet" not in json.dumps(events[-1])
@@ -54,7 +54,7 @@ def test_metadata_records_the_accepted_definition_hash(repo):
     rec, folder = records.new_run(agent, source="manual", now=NOW)
     rec.outcome = "succeeded"
     records.finish(rec, folder, final_text="ok", defn=agent)
-    meta = json.loads((folder / "metadata.json").read_text())
+    meta = json.loads((folder / "metadata.json").read_text(encoding="utf-8"))
     assert meta["definition_hash"] == d.definition_hash(text)
     assert meta["definition_hash"] != d.definition_hash(d.render(agent))
 
@@ -70,7 +70,7 @@ def test_definition_hash_stays_the_one_captured_at_start(repo):
     path.write_text(changed)
     rec.outcome = "succeeded"
     records.finish(rec, folder, final_text="ok", defn=agent)
-    meta = json.loads((folder / "metadata.json").read_text())
+    meta = json.loads((folder / "metadata.json").read_text(encoding="utf-8"))
     assert meta["definition_hash"] == d.definition_hash(started)
     assert meta["definition_hash"] != d.definition_hash(changed)
 
@@ -82,10 +82,10 @@ def test_same_minute_reports_are_not_overwritten(repo, home):
         rec.outcome = "succeeded"
         records.finish(rec, folder, final_text=text, defn=agent)
     folder = home / "Reports/digest"
-    assert (folder / "2026-10-05.md").read_text() == "one\n"
-    assert (folder / "2026-10-05-0700.md").read_text() == "two\n"
-    assert (folder / "2026-10-05-070003.md").read_text() == "three\n"
-    assert (folder / "2026-10-05-070003-2.md").read_text() == "four\n"
+    assert (folder / "2026-10-05.md").read_text(encoding="utf-8") == "one\n"
+    assert (folder / "2026-10-05-0700.md").read_text(encoding="utf-8") == "two\n"
+    assert (folder / "2026-10-05-070003.md").read_text(encoding="utf-8") == "three\n"
+    assert (folder / "2026-10-05-070003-2.md").read_text(encoding="utf-8") == "four\n"
     assert len(list(folder.iterdir())) == 4
 
 

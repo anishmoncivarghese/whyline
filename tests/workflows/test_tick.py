@@ -128,8 +128,8 @@ def test_a_folder_trigger_fires_once_for_two_new_files(conn, tmp_path):
     assert len(spawned) == 1
     row = runs(conn)[0]
     assert row["source"] == "folder"
-    assert row["inputs_json"] == (
-        '{"trigger": {"files": ["%s", "%s"]}}' % (watched / "a.txt", watched / "b.txt"))
+    assert json.loads(row["inputs_json"]) == {
+        "trigger": {"files": [str(watched / "a.txt"), str(watched / "b.txt")]}}
     tick.run(now + timedelta(minutes=4), spawn=spawned.append)
     assert len(spawned) == 1 and len(runs(conn)) == 1
 

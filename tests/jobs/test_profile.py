@@ -374,13 +374,10 @@ def test_import_cv_accepts_quoted_escaped_and_file_url_paths(tmp_path: Path) -> 
     folder.mkdir()
     src = folder / "Resume Sep 2026.md"
     src.write_text("Ada\n", encoding="utf-8")
-    for raw in (
-        f"'{src}'",
-        f'"{src}"',
-        f"  '{src}'  ",
-        str(src).replace(" ", "\\ "),
-        "file://" + str(src).replace(" ", "%20"),
-    ):
+    pasted = [f"'{src}'", f'"{src}"', f"  '{src}'  ", src.as_uri()]
+    if os.name != "nt":  # a backslash is a separator on Windows, not an escape
+        pasted += [str(src).replace(" ", "\\ "), "file://" + str(src).replace(" ", "%20")]
+    for raw in pasted:
         assert profile.import_cv(raw).read_text(encoding="utf-8") == "Ada\n", raw
 
 

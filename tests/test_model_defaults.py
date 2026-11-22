@@ -26,7 +26,7 @@ def test_repo_default_agent_round_trips(tmp_path, monkeypatch):
     model.set_default_agent(tmp_path, "codex")
     model.set_one(tmp_path, "codex", "gpt-5.6")
     assert model.resolve(tmp_path) == ("codex", "gpt-5.6")
-    assert json.loads((tmp_path / ".whyline/model.json").read_text())["default_agent"] == "codex"
+    assert json.loads((tmp_path / ".whyline/model.json").read_text(encoding="utf-8"))["default_agent"] == "codex"
 
 
 def test_global_default_applies_without_a_repo_choice(tmp_path, monkeypatch):
@@ -36,7 +36,7 @@ def test_global_default_applies_without_a_repo_choice(tmp_path, monkeypatch):
     (tmp_path / ".whyline").mkdir()
     model.save_global("grok", "")
     assert model.resolve(tmp_path) == ("grok", "")
-    assert json.loads((home / ".whyline/console.json").read_text())["default_agent"] == "grok"
+    assert json.loads((home / ".whyline/console.json").read_text(encoding="utf-8"))["default_agent"] == "grok"
     model.set_default_agent(tmp_path, "claude")
     assert model.resolve(tmp_path)[0] == "claude"  # the repo wins
 

@@ -32,7 +32,7 @@ def test_stage_copies_into_an_ignored_session_folder(repo, tmp_path_factory):
     assert a.name == "My-Shot--1-.png" and a.kind == "image" and a.size == len(PNG)
     assert a.path == repo / ".whyline/attachments/20261004-101200" / a.id / "My-Shot--1-.png"
     assert a.path.read_bytes() == PNG and len(a.id) == 8
-    assert "attachments/" in (repo / ".whyline/.gitignore").read_text().splitlines()
+    assert "attachments/" in (repo / ".whyline/.gitignore").read_text(encoding="utf-8").splitlines()
     assert subprocess.run(["git", "check-ignore", "-q", str(a.path)], cwd=repo).returncode == 0
 
 

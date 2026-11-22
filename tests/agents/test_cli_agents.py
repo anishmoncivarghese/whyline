@@ -90,7 +90,7 @@ def test_agents_new_model_and_model_for_backup(home, tmp_path, capsys):
         "--model", "sonnet", "--model-for", "codex=gpt-5.6",
     ]) == 0
     capsys.readouterr()
-    text = (home / ".whyline/agents/m1.toml").read_text()
+    text = (home / ".whyline/agents/m1.toml").read_text(encoding="utf-8")
     assert '"claude" = "sonnet"' in text
     assert '"codex" = "gpt-5.6"' in text
 

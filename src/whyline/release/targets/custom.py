@@ -65,7 +65,7 @@ class CustomTarget:
         if not words:
             return False, "the command is empty"
         first = words[0]
-        if os.sep in first:
+        if os.sep in first or (os.altsep and os.altsep in first):  # ./x.sh on Windows too
             path = Path(first).expanduser()
             return (root / path).exists(), first
         return self._which(first) is not None, first

@@ -1003,7 +1003,10 @@ async def test_notes_stop_cancels_without_a_failure_popup(tmp_path, monkeypatch)
     app._release_ask_agent = lambda prompt: "<notes>\nnotes\n</notes>"
     async with app.run_test() as pilot:
         await _begin(app, pilot, "ask")
-        await _until(pilot, lambda: _screen_is(app, NotesReviewScreen))
+        await _until(
+            pilot,
+            lambda: _screen_is(app, NotesReviewScreen) and app.screen.query("#release-notes-stop"),
+        )
         app.screen.query_one("#release-notes-stop", tui.Button).press()
         await _until(pilot, lambda: not app._release_running())
         assert cancelled == [True]

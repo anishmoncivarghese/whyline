@@ -49,12 +49,12 @@ def test_add_goes_through_save_checkin_and_stays_accepted(agent, home, monkeypat
 
 
 def test_a_bad_argument_shows_the_gates_reason_and_saves_nothing(agent, capsys):
-    before = agent.path.read_text()
+    before = agent.path.read_text(encoding="utf-8")
     assert main("checkin", "add", "watch", "--gate", "event-soon", "--arg", "minutes=soon") != 0
     assert "Minutes ahead must be a whole number" in capsys.readouterr().err
     assert main("checkin", "add", "watch", "--gate", "event-soon", "--arg", "colour=red") != 0
     assert "has no argument colour" in capsys.readouterr().err
-    assert agent.path.read_text() == before
+    assert agent.path.read_text(encoding="utf-8") == before
 
 
 def test_test_runs_the_gate_without_changing_seen_state(agent, home, capsys):
@@ -85,7 +85,7 @@ def test_off_restores_a_plain_agent(agent, capsys):
     assert main("checkin", "off", "watch") == 0
     got = _saved(agent)
     assert (got.gate, got.gate_args, got.active_hours, got.silent) == ("", {}, "", False)
-    assert "[checkin" not in agent.path.read_text()
+    assert "[checkin" not in agent.path.read_text(encoding="utf-8")
     assert state.get_gate_state(state.connect(), agent.agent_id) == {}
     capsys.readouterr()
     assert main("checkin", "list") == 0

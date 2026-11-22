@@ -115,7 +115,7 @@ async def test_allow_needs_a_reason_and_writes_through_allow(tmp_path):
         screen.query_one("#sec-reason", Input).value = "test fixture key"
         screen.query_one("#sec-allow-ok", Button).press()
         await _settle(pilot)
-        entries = tomllib.loads((tmp_path / st.ALLOW_PATH).read_text())["allow"]
+        entries = tomllib.loads((tmp_path / st.ALLOW_PATH).read_text(encoding="utf-8"))["allow"]
         assert entries[0]["fingerprint"] == "fp-secret"
         assert entries[0]["reason"] == "test fixture key"
         assert len(_texts(pilot.app)) == 2

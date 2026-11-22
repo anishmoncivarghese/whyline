@@ -12,6 +12,14 @@ import pytest
 
 from whyline.ideas import bot, paths, run as ideas_run, setup, store, worker
 
+
+def _detached(options) -> bool:
+    """POSIX starts a new session; Windows a detached new process group."""
+    if os.name == "nt":
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        return options.get("creationflags", 0) & flags == flags
+    return options.get("start_new_session") is True
+
 NOW = datetime(2026, 10, 20, 12, 0, 0)
 CHAT = 77
 
@@ -292,7 +300,7 @@ def test_pass_calls_launcher_once_with_start_in_target_repo_and_moves_to_running
     assert len(relay_spawns) == 1
     assert relay_spawns[0]["cmd"][-1] == "start"
     assert relay_spawns[0]["kwargs"]["cwd"] == str(fake_repo)
-    assert relay_spawns[0]["kwargs"]["start_new_session"] is True
+    assert _detached(relay_spawns[0]["kwargs"])
 
     # PID recorded on the job
     job = conn.execute("SELECT * FROM jobs WHERE kind = 'start'").fetchone()

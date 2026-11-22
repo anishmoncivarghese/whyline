@@ -45,7 +45,7 @@ def capture_md(monkeypatch):
     seen = {}
 
     def to_docx(md, out):
-        seen["md"] = md.read_text()
+        seen["md"] = md.read_text(encoding="utf-8")
         out.write_bytes(b"docx")
         return out
 

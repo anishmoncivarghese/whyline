@@ -66,7 +66,7 @@ def _reap(pid: int) -> None:
 
 
 def _launches(log) -> list[str]:
-    return log.read_text().splitlines() if log.exists() else []
+    return log.read_text(encoding="utf-8").splitlines() if log.exists() else []
 
 
 def _wait_for_launches(log, count: int) -> None:
@@ -89,7 +89,7 @@ def test_start_launches_one_process_and_records_it(fake):
     _wait_for_launches(fake, 1)
     _wait_until_caffeinate(record.pid)
     assert _launches(fake) == ["-dis"]
-    saved = json.loads(awake.record_path().read_text())
+    saved = json.loads(awake.record_path().read_text(encoding="utf-8"))
     assert saved["pid"] == record.pid and saved["started"]
     assert awake.status() == record
 

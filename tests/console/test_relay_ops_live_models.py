@@ -56,7 +56,7 @@ def test_switch_model_live_writes_the_override(repo):
 
     assert message == "claude → opus from its next turn."
     assert _overrides(repo)["claude"]["model"] == "opus"
-    config = tomllib.loads((repo / ".whyline/relay/config.toml").read_text())
+    config = tomllib.loads((repo / ".whyline/relay/config.toml").read_text(encoding="utf-8"))
     assert config["agents"]["claude"]["model"] == "sonnet"
 
 
@@ -64,7 +64,7 @@ def test_switch_model_live_with_keep_saves_the_config(repo):
     relay_ops.switch_model_live(repo, "claude", "opus", keep=True)
 
     assert _overrides(repo)["claude"]["keep"] is True
-    config = tomllib.loads((repo / ".whyline/relay/config.toml").read_text())
+    config = tomllib.loads((repo / ".whyline/relay/config.toml").read_text(encoding="utf-8"))
     assert config["agents"]["claude"]["model"] == "opus"
 
 

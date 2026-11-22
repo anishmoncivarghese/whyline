@@ -149,7 +149,7 @@ def test_step_hashes_the_tarball_and_pushes(tmp_path):
     _run_step(tmp_path, target(seen=seen), runner(calls=calls))
     assert seen == [URL]
     clone = tmp_path / ".git" / "whyline-release" / "tap"
-    text = (clone / "Formula" / "demo.rb").read_text()
+    text = (clone / "Formula" / "demo.rb").read_text(encoding="utf-8")
     assert f'url "{URL}"' in text and f'sha256 "{SHA}"' in text
     argvs = [c[0] for c in calls]
     assert ["gh", "repo", "clone", "Octo/homebrew-tap", str(clone)] in argvs
@@ -174,7 +174,7 @@ def test_step_warns_and_keeps_resources_without_brew(tmp_path):
     _run_step(tmp_path, tgt, runner(calls=calls))
     assert not any(c[0][0] == "brew" for c in calls)
     assert tgt.warnings == [homebrew.NO_BREW_NOTE]
-    text = (tmp_path / ".git" / "whyline-release" / "tap" / "Formula" / "demo.rb").read_text()
+    text = (tmp_path / ".git" / "whyline-release" / "tap" / "Formula" / "demo.rb").read_text(encoding="utf-8")
     assert 'sha256 "bbbb"' in text
     ok, note = tgt.verify(tmp_path, cfg(), "1.2.3",
                           run=runner(remote=OLD.replace("v1.0.0", "v1.2.3")), fetch=None)
@@ -341,7 +341,7 @@ def test_push_draft_commits_only_when_called(tmp_path):
     argvs = [c[0] for c in calls]
     assert ["git", "add", "Formula/demo.rb"] in argvs and ["git", "push", "-u", "origin", "HEAD"] in argvs
     clone = tmp_path / ".git" / "whyline-release" / "tap"
-    assert (clone / "Formula" / "demo.rb").read_text() == "class Demo < Formula\nend\n"
+    assert (clone / "Formula" / "demo.rb").read_text(encoding="utf-8") == "class Demo < Formula\nend\n"
     with pytest.raises(StepError):
         homebrew.push_draft(tmp_path, "Octo/homebrew-tap", "demo", "  ", run=run)
 

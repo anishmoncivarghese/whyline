@@ -149,7 +149,7 @@ def test_cli_add_list_import_remove(home, capsys):
     assert "needs a credential: T" in out and "refused" in out and "secret-value" not in out
     assert cli.main(["tools", "mcp", "import", "gh", "far"]) == 1
     assert "gh" in mcp_config.load() and "far" not in mcp_config.load()
-    assert "secret-value" not in (home / ".whyline" / "mcp.toml").read_text()
+    assert "secret-value" not in (home / ".whyline" / "mcp.toml").read_text(encoding="utf-8")
     assert cli.main(["tools", "mcp", "list"]) == 0
     assert cli.main(["tools", "mcp", "remove", "gh"]) == 0
     assert cli.main(["tools", "mcp", "remove", "gh"]) == 1

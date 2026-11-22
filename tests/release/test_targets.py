@@ -82,10 +82,10 @@ def test_find_publishing_ignores_branch_only_and_missing(tmp_path):
 
 def test_write_template_refuses_overwrite(tmp_path):
     path = workflows.write_template(tmp_path, "release.yml", "one")
-    assert path.read_text() == "one"
+    assert path.read_text(encoding="utf-8") == "one"
     with pytest.raises(FileExistsError):
         workflows.write_template(tmp_path, "release.yml", "two")
-    assert path.read_text() == "one"
+    assert path.read_text(encoding="utf-8") == "one"
 
 
 class Clock:

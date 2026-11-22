@@ -222,7 +222,7 @@ def test_failure_cleared_when_the_next_run_starts(tmp_path):
 def test_old_state_file_without_failure_loads(tmp_path):
     (tmp_path / ".git").mkdir()
     state.save(tmp_path, state.State("1.0", ["a"]))
-    data = json.loads(state.path(tmp_path).read_text())
+    data = json.loads(state.path(tmp_path).read_text(encoding="utf-8"))
     del data["failure"]
     state.path(tmp_path).write_text(json.dumps(data))
     assert state.load(tmp_path).failure == {}
@@ -332,7 +332,7 @@ def test_ask_logs_the_answer_and_leaves_the_repo_alone(tmp_path):
     assert after == before
     assert subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path, capture_output=True,
                           text=True).stdout == head
-    assert "Bad test" in ci_failure.log_path(tmp_path).read_text()
+    assert "Bad test" in ci_failure.log_path(tmp_path).read_text(encoding="utf-8")
 
 
 def test_default_ask_agent_is_read_only_in_a_temp_folder(tmp_path, monkeypatch):

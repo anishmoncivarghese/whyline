@@ -15,7 +15,7 @@ def test_install_writes_into_mails_script_folder(home, monkeypatch):
     monkeypatch.setattr(mail, "_whyline_path", lambda: "/opt/bin/whyline")
     path = mail.install("inbox-triage")
     assert path == home / "Library/Application Scripts/com.apple.mail/whyline-inbox-triage.applescript"
-    assert path.read_text().count("inbox-triage") >= 1
+    assert path.read_text(encoding="utf-8").count("inbox-triage") >= 1
 
 
 def test_an_executable_path_with_spaces_is_one_shell_word():
@@ -60,7 +60,7 @@ def test_mail_script_command_prints_the_path(home, monkeypatch, capsys):
     assert cli.main(["agents", "mail-script", "inbox-triage"]) == 0
     path = home / "Library/Application Scripts/com.apple.mail/whyline-inbox-triage.applescript"
     assert capsys.readouterr().out == path.as_posix() + "\n"
-    assert "inbox-triage" in path.read_text()
+    assert "inbox-triage" in path.read_text(encoding="utf-8")
 
 
 def test_mail_script_command_needs_macos(monkeypatch, capsys):

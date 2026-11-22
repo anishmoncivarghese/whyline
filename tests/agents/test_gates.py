@@ -179,7 +179,7 @@ def test_write_found_file(tmp_path):
     found = gates.Found([gates.Item("a", "one"), gates.Item("b", "x" * 400)], {})
     run_dir = tmp_path / "run"
     assert gates.write(found, run_dir) == 2
-    lines = (run_dir / "found.md").read_text().splitlines()
+    lines = (run_dir / "found.md").read_text(encoding="utf-8").splitlines()
     assert lines[0] == "one"
     assert len(lines[1]) == 300
     assert gates.write(gates.Found([], {}), run_dir) == 0
@@ -418,8 +418,8 @@ def test_write_page_files(tmp_path, monkeypatch):
     pages[URL] = "new"
     second = look({"url": URL}, first.state)
     gates.write(second, tmp_path)
-    assert (tmp_path / "page.md").read_text() == "new"
-    assert (tmp_path / "before.md").read_text() == "old"
+    assert (tmp_path / "page.md").read_text(encoding="utf-8") == "new"
+    assert (tmp_path / "before.md").read_text(encoding="utf-8") == "old"
     assert (tmp_path / "found.md").exists()
     other = tmp_path / "other"
     gates.write(gates.Found([], {}), other)

@@ -312,4 +312,4 @@ def test_pending_allowlist_from_allow_does_not_block(tmp_path):
     (root / ".whyline" / "security-allow.toml").write_text("b")
     config.add_pending(root, ".whyline/security-allow.toml")
     bring(root)
-    assert (root / ".whyline" / "security-allow.toml").read_text() == "b"
+    assert (root / ".whyline" / "security-allow.toml").read_text(encoding="utf-8") == "b"

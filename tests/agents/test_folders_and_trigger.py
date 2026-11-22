@@ -86,7 +86,7 @@ def test_trigger_copies_files_and_enforces_the_gap(repo, home):
     occ = service.trigger("w", repo, [mail], now=now, spawn=started.append)
     assert started == [occ]
     payload = state.occurrence(state.connect(), occ)["payload_dir"]
-    assert (__import__("pathlib").Path(payload) / "mail.txt").read_text().startswith("From: x")
+    assert (__import__("pathlib").Path(payload) / "mail.txt").read_text(encoding="utf-8").startswith("From: x")
     state.update(state.connect(), defn.agent_id, last_run_at=now.isoformat())
     with pytest.raises(service.TooSoon) as raised:
         service.trigger("w", repo, [], now=now + timedelta(minutes=3), spawn=started.append)

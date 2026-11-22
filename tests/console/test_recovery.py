@@ -5113,6 +5113,10 @@ def _never_exits_script(tmp_path: Path) -> tuple[list[str], Path]:
     return [sys.executable, str(script), str(pid_file)], pid_file
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="whyline-relay's agents.run ends a timed-out agent with os.killpg, which Windows lacks",
+)
 def test_ask_agent_ends_an_agent_that_never_exits_at_the_limit(tmp_path: Path) -> None:
     from whyline.console.session import ConsoleSession
     from whyline_relay import agents as relay_agents
@@ -5136,7 +5140,7 @@ def test_ask_agent_ends_an_agent_that_never_exits_at_the_limit(tmp_path: Path) -
     assert res.option is None
     assert "resume-keep" in [o.id for o in res.options]
     # The agent's process group is gone, not just its parent.
-    pid = int(pid_file.read_text())
+    pid = int(pid_file.read_text(encoding="utf-8"))
     for _ in range(50):
         try:
             os.killpg(pid, 0)
@@ -5704,7 +5708,7 @@ def test_reply_proposing_set_model_clear_override_and_resume_applies_all_three_i
     assert all("config.toml" in f for f in diff_files)
 
     # 6. Dirty file in working tree was NOT committed
-    assert (repo / "dirty_code.py").read_text() == "uncommitted task code\n"
+    assert (repo / "dirty_code.py").read_text(encoding="utf-8") == "uncommitted task code\n"
     status_out = subprocess.run(
         ["git", "status", "--porcelain"],
         cwd=repo,

@@ -42,7 +42,7 @@ def statuses(conn, run_id):
 
 
 def output(run_id, step_id):
-    return json.loads((paths.runs_dir() / str(run_id) / f"{step_id}.json").read_text())
+    return json.loads((paths.runs_dir() / str(run_id) / f"{step_id}.json").read_text(encoding="utf-8"))
 
 
 LINEAR = '''
@@ -286,7 +286,7 @@ def test_secret_is_redacted_on_disk(conn):
     leaky = {"set": lambda ctx, step: StepResult(
         "succeeded", {"note": "api_key=sk-abcdefghijklmnopqrstuvwxyz123456"})}
     engine.execute(run, handlers=leaky)
-    text = (paths.runs_dir() / str(run) / "a.json").read_text()
+    text = (paths.runs_dir() / str(run) / "a.json").read_text(encoding="utf-8")
     assert "abcdefghijklmnopqrstuvwxyz" not in text and "[redacted]" in text
 
 

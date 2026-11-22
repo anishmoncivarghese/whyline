@@ -135,7 +135,7 @@ def test_invalid_json_is_kept_and_reported(repo, tmp_path):
     assert not report.ok and report.findings == ()
     assert "the agent's output didn't match the schema" in report.summary
     assert "not valid JSON" in report.summary
-    assert (report.run_dir / "findings.json").read_text() == "[not json"
+    assert (report.run_dir / "findings.json").read_text(encoding="utf-8") == "[not json"
 
 
 def test_schema_errors_are_reported_first_five(repo, tmp_path):

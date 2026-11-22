@@ -56,7 +56,7 @@ def test_a_sender_that_is_off_is_ignored() -> None:
 
 def test_forged_or_unauthenticated_sender_is_ignored(tmp_path) -> None:
     alerts.set_sender(LINKEDIN, True)
-    text = (FIXTURES / "alert_linkedin.eml").read_text()
+    text = (FIXTURES / "alert_linkedin.eml").read_text(encoding="utf-8")
     forged = tmp_path / "forged.eml"
     forged.write_text(text.replace("dmarc=pass", "dmarc=fail").replace("dkim=pass", "dkim=fail"))
     assert not alerts.handle(forged, authserv="mx.google.com").accepted
@@ -141,7 +141,7 @@ def test_cards_reach_the_next_fetch_and_empty_the_inbox(tmp_path, monkeypatch) -
     monkeypatch.setattr(step.companies, "list", lambda status=None: [])
     out = tmp_path / "run"
     assert step.jobs_fetch(None, out, NOW) == 3
-    manifest = json.loads((out / step.MANIFEST).read_text())
+    manifest = json.loads((out / step.MANIFEST).read_text(encoding="utf-8"))
     assert {m["title"] for m in manifest.values()} == {
         "Senior Python Engineer", "Backend Developer", "Data Engineer",
     }
@@ -182,4 +182,4 @@ def test_alerts_mail_script_command_installs_job_alerts(capsys, monkeypatch) -> 
     assert cli.main(["jobs", "alerts", "mail-script"]) == 0
     path = Path(capsys.readouterr().out.strip())
     assert path.name == "whyline-job-alerts.applescript"
-    assert "jobs alert " in path.read_text()
+    assert "jobs alert " in path.read_text(encoding="utf-8")

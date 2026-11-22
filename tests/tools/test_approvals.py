@@ -46,7 +46,7 @@ def test_approve(tmp_path):
     clock = Clock(lambda n: approvals.answer("r1", 1, True) if n == 2 else None)
     decision = _ask(folder, clock)
     assert decision.status == "approved"
-    record = json.loads((folder / "approvals" / "1.json").read_text())
+    record = json.loads((folder / "approvals" / "1.json").read_text(encoding="utf-8"))
     assert record["tool"] == "notion__search" and record["by"] == "you" and record["asked_at"]
 
 
@@ -54,7 +54,7 @@ def test_deny():
     folder = _folder()
     clock = Clock(lambda n: approvals.answer("r1", 1, False, by="me"))
     assert _ask(folder, clock).status == "denied"
-    assert json.loads((folder / "approvals" / "1.json").read_text())["by"] == "me"
+    assert json.loads((folder / "approvals" / "1.json").read_text(encoding="utf-8"))["by"] == "me"
 
 
 def test_unanswered_call_is_denied():
@@ -63,14 +63,14 @@ def test_unanswered_call_is_denied():
     decision = _ask(folder, clock)
     assert decision.status == "timed out"
     assert clock.now >= approvals.APPROVAL_TIMEOUT
-    assert json.loads((folder / "approvals" / "1.json").read_text())["status"] == "timed out"
+    assert json.loads((folder / "approvals" / "1.json").read_text(encoding="utf-8"))["status"] == "timed out"
     assert approvals.pending() == []
 
 
 def test_arguments_are_redacted():
     folder = _folder()
     _ask(folder, Clock(), {"token": "hunter2"}, redact=lambda t: t.replace("hunter2", "[redacted]"))
-    text = (folder / "approvals" / "1.json").read_text()
+    text = (folder / "approvals" / "1.json").read_text(encoding="utf-8")
     assert "hunter2" not in text and "[redacted]" in text
 
 
@@ -102,7 +102,7 @@ def test_cli(capsys):
     assert cli.main(["agents", "approvals"]) == 0
     assert "r1 1  notion__search" in capsys.readouterr().out
     assert cli.main(["agents", "approve", "r1", "1"]) == 0
-    assert json.loads((folder / "approvals" / "1.json").read_text())["status"] == "approved"
+    assert json.loads((folder / "approvals" / "1.json").read_text(encoding="utf-8"))["status"] == "approved"
     assert cli.main(["agents", "deny", "r1", "1"]) != 0
     assert "already approved" in capsys.readouterr().err
     assert cli.main(["agents", "approvals"]) == 0

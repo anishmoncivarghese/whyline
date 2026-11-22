@@ -171,7 +171,7 @@ async def test_editing_to_a_folder_trigger_saves_the_typed_folder(tmp_path, env,
 
 async def test_review_then_back_or_cancel_leaves_the_file_alone(tmp_path, env, monkeypatch):
     defn = _saved(env)
-    before = defn.path.read_text()
+    before = defn.path.read_text(encoding="utf-8")
     calls = []
     monkeypatch.setattr(service, "save_schedule", lambda *a, **k: calls.append((a, k)))
     monkeypatch.setattr(service, "describe", lambda defn: "review")
@@ -184,16 +184,16 @@ async def test_review_then_back_or_cancel_leaves_the_file_alone(tmp_path, env, m
         s.query_one("#na-next", Button).press()
         await pilot.pause()
         assert type(app.screen).__name__ == "ReviewScreen"
-        assert defn.path.read_text() == before
+        assert defn.path.read_text(encoding="utf-8") == before
         app.screen.query_one("#rv-back", Button).press()  # Back reopens the form
         await pilot.pause()
-        assert defn.path.read_text() == before
+        assert defn.path.read_text(encoding="utf-8") == before
         app.screen.query_one("#na-next", Button).press()
         await pilot.pause()
         app.screen.dismiss(None)  # leaving Review any other way
         await pilot.pause()
     assert calls == []
-    assert defn.path.read_text() == before
+    assert defn.path.read_text(encoding="utf-8") == before
 
 
 @pytest.mark.parametrize("trigger, number, unit", [

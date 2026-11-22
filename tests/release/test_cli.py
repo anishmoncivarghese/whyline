@@ -218,7 +218,7 @@ def test_notes_step_writes_checked_text_logs_summary_and_confirms_result(root):
     next(step for step in built.steps if step.id == "notes").run(threading.Event())
 
     path, result = seen[0]
-    assert path.read_text() == result.text
+    assert path.read_text(encoding="utf-8") == result.text
     assert isinstance(result, release_plan.notes.Checked)
     assert result.summary == "Written by claude, checked by fixed rules only."
     assert result.summary in said
@@ -299,7 +299,7 @@ def test_notes_prompt_shows_summary_forty_lines_and_choices(root, monkeypatch, c
     prompts = []
     monkeypatch.setattr("builtins.input", lambda prompt: prompts.append(prompt) or "a")
     confirm_notes = release_cli._confirmers(SimpleNamespace(yes=False))[1]
-    checked = release_notes.Checked(path.read_text(), "claude", "codex", (), path.read_text(),
+    checked = release_notes.Checked(path.read_text(encoding="utf-8"), "claude", "codex", (), path.read_text(encoding="utf-8"),
                                     False, "Written by claude, checked by codex.")
     assert confirm_notes(path, checked) is True
     out = capsys.readouterr().out
@@ -325,7 +325,7 @@ def test_notes_prompt_can_replace_text_with_commit_list(root, monkeypatch):
     answers = iter(["c", "a"])
     monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
     assert release_cli._confirmers(SimpleNamespace(yes=False))[1](path) is True
-    assert path.read_text() == "# v1.2.3\n\n- commit\n"
+    assert path.read_text(encoding="utf-8") == "# v1.2.3\n\n- commit\n"
 
 
 def test_edited_notes_with_problem_offer_both_choices(root, monkeypatch, capsys):
@@ -339,7 +339,7 @@ def test_edited_notes_with_problem_offer_both_choices(root, monkeypatch, capsys)
     monkeypatch.setattr(release_cli, "_edit", edit)
     monkeypatch.setattr("builtins.input", lambda prompt: prompts.append(prompt) or next(answers))
     assert release_cli._confirmers(SimpleNamespace(yes=False))[1](path) is True
-    assert "I fixed it" not in path.read_text()
+    assert "I fixed it" not in path.read_text(encoding="utf-8")
     assert "line 3: first person" in capsys.readouterr().out
     assert any("[a]pprove anyway" in prompt and "[r]emove these lines" in prompt
                for prompt in prompts)

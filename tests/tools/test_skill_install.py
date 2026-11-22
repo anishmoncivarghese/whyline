@@ -45,6 +45,7 @@ def test_scripts_warn(tmp_path, name):
     assert _warn(tmp_path, "x", name) == [f"contains scripts: {name}"]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows files have no executable bit")
 def test_executable_bit_warns_and_plain_text_does_not(tmp_path):
     folder = tmp_path / "chk"
     folder.mkdir()
@@ -99,7 +100,7 @@ def test_preview(home):
 def test_install_writes_the_folder_and_source_toml(home):
     skill = si.install(_make(home, extra={"ref/a.md": "x"}), run=_run())
     target = home / ".whyline" / "skills" / "pdf"
-    assert skill.path == target and (target / "ref" / "a.md").read_text() == "x"
+    assert skill.path == target and (target / "ref" / "a.md").read_text(encoding="utf-8") == "x"
     info = si.source_of("pdf")
     assert (info["source"], info["url"], info["path"], info["commit"], info["licence"]) == (
         "mine", "https://example.com/o/r", "skills/pdf", "abc123", "no licence stated")
@@ -109,7 +110,7 @@ def test_install_writes_the_folder_and_source_toml(home):
 def test_install_rewrites_the_name(home):
     skill = si.install(_make(home), name="my-pdf", run=_run())
     assert skill.name == "my-pdf" and not skill.broken
-    assert "name: my-pdf" in (skill.path / "SKILL.md").read_text()
+    assert "name: my-pdf" in (skill.path / "SKILL.md").read_text(encoding="utf-8")
 
 
 def test_name_clash(home):
@@ -161,9 +162,9 @@ def test_diff_and_update(home):
     diff = si.update_diff("mine-pdf")
     assert "-one" in diff and "+two" in diff and "+new" in diff
     skill = si.update("mine-pdf", run=_run("def456"))
-    assert (skill.path / "a.md").read_text() == "two\n" and (skill.path / "b.md").exists()
+    assert (skill.path / "a.md").read_text(encoding="utf-8") == "two\n" and (skill.path / "b.md").exists()
     assert si.source_of("mine-pdf")["commit"] == "def456"
-    assert "name: mine-pdf" in (skill.path / "SKILL.md").read_text()
+    assert "name: mine-pdf" in (skill.path / "SKILL.md").read_text(encoding="utf-8")
     assert si.update_diff("mine-pdf") == ""
 
 

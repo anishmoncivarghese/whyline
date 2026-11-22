@@ -94,8 +94,8 @@ def test_copy_plan_to_copies_and_commits(repo):
     (docs / "plans" / "s.plan.md").write_text("P")
     (docs / "plans" / "s.tests.md").write_text("T")
     assert workspace.copy_plan_to(repo, docs, "s") is True
-    assert (repo / "plans" / "s.plan.md").read_text() == "P"
-    assert (repo / "plans" / "s.tests.md").read_text() == "T"
+    assert (repo / "plans" / "s.plan.md").read_text(encoding="utf-8") == "P"
+    assert (repo / "plans" / "s.tests.md").read_text(encoding="utf-8") == "T"
     assert _git(repo, "status", "--porcelain").strip() == ""
     files = sorted(_git(repo, "show", "--name-only", "--format=", "HEAD").split())
     assert files == ["plans/s.plan.md", "plans/s.tests.md"]

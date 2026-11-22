@@ -330,6 +330,8 @@ def _pasted_path(raw: str) -> Path:
     plain = Path(text).expanduser()
     if plain.exists():
         return plain
+    if os.name == "nt":
+        return _pasted_windows_path(text, plain)
     if text.startswith("file://"):
         return Path(unquote(urlparse(text).path))
     try:
@@ -337,6 +339,18 @@ def _pasted_path(raw: str) -> Path:
     except ValueError:  # an unbalanced quote: use the text as given
         return plain
     return Path(tokens[0]).expanduser() if len(tokens) == 1 else plain
+
+
+def _pasted_windows_path(text: str, plain: Path) -> Path:
+    """Windows' Copy as path wraps the path in quotes and a browser may paste a
+    file:///C:/... URL. Backslashes are separators there, never escapes."""
+    if text.lower().startswith("file:"):
+        from urllib.request import url2pathname
+
+        return Path(url2pathname(urlparse(text).path))
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "'\"":
+        return Path(text[1:-1].strip()).expanduser()
+    return plain
 
 
 def import_cv(path: str | Path) -> Path:

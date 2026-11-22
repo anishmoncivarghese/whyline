@@ -377,7 +377,7 @@ async def test_save_round_trips_through_config_save(tmp_path):
         mode="step", branch="trunk", start_after_plan=True,
         checks=("make test", "make lint"), ci_ignore=("docs",),
         notes="notes/{version}.md", after=("echo done",))
-    assert tomllib.loads((tmp_path / ".whyline" / "release.toml").read_text())
+    assert tomllib.loads((tmp_path / ".whyline" / "release.toml").read_text(encoding="utf-8"))
 
 
 async def test_notes_review_setup_uses_enabled_agents_and_saves_once(tmp_path, monkeypatch):
@@ -576,7 +576,7 @@ async def test_refused_foreign_hook_shows_line_with_copy(tmp_path):
         _q(app, "#rs-sec-hook-copy", Button).press()
         await pilot.pause()
     assert copied == [hook.COMMAND]
-    assert path.read_text() == "#!/bin/sh\necho mine\n"
+    assert path.read_text(encoding="utf-8") == "#!/bin/sh\necho mine\n"
 
 
 async def test_protection_rows_and_turn_on(tmp_path):
@@ -737,7 +737,7 @@ async def test_docker_panel_adds_workflow_with_chosen_registries(tmp_path):
         await pilot.pause()
         _q(app, "#rs-docker-add", Button).press()
         await _until(pilot, lambda: not _shown(app, "#rs-docker-add"))
-    text = (tmp_path / ".github" / "workflows" / "release-docker.yml").read_text()
+    text = (tmp_path / ".github" / "workflows" / "release-docker.yml").read_text(encoding="utf-8")
     assert "secrets.DOCKERHUB_TOKEN" in text and "ghcr.io/me/thing" in text
 
 
@@ -765,7 +765,7 @@ async def test_docker_draft_is_written_only_on_save(tmp_path):
         await _until(pilot, lambda: _shown(app, "#rs-docker-save"))
         _q(app, "#rs-docker-save", Button).press()
         await pilot.pause()
-    assert (tmp_path / "Dockerfile").read_text() == "FROM python:3.13-slim\nUSER app\n"
+    assert (tmp_path / "Dockerfile").read_text(encoding="utf-8") == "FROM python:3.13-slim\nUSER app\n"
     assert Path("Dockerfile") in release_config.pending(tmp_path)
     assert len(prompts) == 2
 
@@ -1063,7 +1063,7 @@ async def test_notes_window_shows_summary_before_notes_and_before_after_plain(tm
     path = tmp_path / "v1.2.3.md"
     path.write_text("# v1.2.3\n\n- Kept [literal]\n")
     checked = _checked_notes(
-        path.read_text(),
+        path.read_text(encoding="utf-8"),
         before="# v1.2.3\n\n- Please [review] this\n- Kept [literal]\n",
         removed=("- Please [review] this",),
     )
@@ -1093,7 +1093,7 @@ async def test_notes_window_commit_list_button_replaces_text(tmp_path):
         _q(app, "#release-notes-commits", Button).press()
         await pilot.pause()
         assert _q(app, "#release-notes-text", TextArea).text == fallback
-    assert path.read_text() == fallback
+    assert path.read_text(encoding="utf-8") == fallback
 
 
 async def test_notes_window_lints_edited_text_and_offers_both_problem_choices(tmp_path):
@@ -1111,7 +1111,7 @@ async def test_notes_window_lints_edited_text_and_offers_both_problem_choices(tm
         _q(app, "#release-notes-remove", Button).press()
         await pilot.pause()
     assert app.results == ["use"]
-    assert "I fixed" not in path.read_text()
+    assert "I fixed" not in path.read_text(encoding="utf-8")
 
 
 GH_TIMEOUT = ("Command '['gh', 'run', 'list', '--workflow', 'release.yml', '--branch', "

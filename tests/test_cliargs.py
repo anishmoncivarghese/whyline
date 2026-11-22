@@ -78,7 +78,7 @@ def test_absolute_settings_makes_real_paths_absolute(tmp_path):
 
 
 def test_pyproject_requires_relay_0_2_44_or_newer():
-    data = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     specs = list(data["project"]["dependencies"])
     for group in data.get("dependency-groups", {}).values():
         specs += [s for s in group if isinstance(s, str)]

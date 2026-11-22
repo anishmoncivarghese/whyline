@@ -1062,7 +1062,7 @@ async def test_alerts_section_shows_the_last_read_and_installs_the_mail_rule(
         screen.query_one("#jh-alerts-mail", tui.Button).press()
         await pilot.pause()
         result = _plain(screen.query_one("#jh-alerts-mail-result", tui.Static).render())
-        assert str(written) in result
+        assert str(written) in result or written.as_posix() in result
         assert "whyline-job-alerts.applescript" in result
 
 
@@ -1159,8 +1159,9 @@ async def test_choose_file_imports_single_pick(monkeypatch: pytest.MonkeyPatch) 
         )
         await _open_import_panel(app, screen, pilot)
         await _press_choose(screen, app, pilot)
-        assert imported == ["/tmp/my cv.pdf"]
-        assert screen.query_one("#jh-cv-path", tui.Input).value == "/tmp/my cv.pdf"
+        picked = str(Path("/tmp/my cv.pdf"))
+        assert imported == [picked]
+        assert screen.query_one("#jh-cv-path", tui.Input).value == picked
         assert "Imported CV" in _plain(screen.query_one("#jh-status", tui.Static).render())
 
 

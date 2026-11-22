@@ -78,7 +78,7 @@ def test_check_runs_at_most_once_a_day():
     assert REAL_CHECK("0.3.47", http=http, now=now + 3600).version == "0.3.48"
     assert len(http.calls) == 1
     cache = paths.global_whyline_dir() / "update-check.json"
-    assert json.loads(cache.read_text())["latest"] == "0.3.48"
+    assert json.loads(cache.read_text(encoding="utf-8"))["latest"] == "0.3.48"
     REAL_CHECK("0.3.47", http=http, now=now + 24 * 3600 + 1)
     assert len(http.calls) == 2
 

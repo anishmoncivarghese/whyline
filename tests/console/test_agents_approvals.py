@@ -28,7 +28,7 @@ def _ask(run_id="r1", tool="gmail__send_email", asked_at=None):
 
 
 def _status(run_id, n):
-    return json.loads((paths.runs_dir() / run_id / "approvals" / f"{n}.json").read_text())["status"]
+    return json.loads((paths.runs_dir() / run_id / "approvals" / f"{n}.json").read_text(encoding="utf-8"))["status"]
 
 
 def test_time_left_counts_down_from_the_timeout():

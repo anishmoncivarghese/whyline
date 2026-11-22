@@ -92,10 +92,10 @@ def test_email_sends_once_to_the_literal_addresses(conn):
 def test_file_writes_a_private_report(conn):
     run, status = go(conn, body("file"))
     assert status == "succeeded"
-    out = json.loads(Path(step_of(conn, run)["output_path"]).read_text())
+    out = json.loads(Path(step_of(conn, run)["output_path"]).read_text(encoding="utf-8"))
     path = Path(out["path"])
     assert path.name == f"{T0.astimezone().strftime('%Y-%m-%d-%H%M')}-{run}.md"
-    assert path.parent.name == "demo" and path.read_text() == "Hello ana"
+    assert path.parent.name == "demo" and path.read_text(encoding="utf-8") == "Hello ana"
     if os.name != "nt":  # Windows files have no POSIX mode bits
         assert stat.S_IMODE(path.stat().st_mode) == 0o600
 

@@ -339,7 +339,7 @@ async def test_fake_relay_state_adds_relay_repo_and_shows_file_as_repo_name_path
 
     # Write plan and fake relay state
     plan_file = tmp_path / "plan.md"
-    plan_file.write_text("- [ ] TASK-1 Some task\n  relay-repo: sub_repo\n", encoding="utf-8")
+    plan_file.write_text("- [ ] TASK-1 Some task\n  relay-repo: sub_repo\n", encoding="utf-8", newline="\n")
     st = state.RelayState(
         plan=str(plan_file),
         branch="main",
@@ -436,7 +436,7 @@ async def test_gather_follow_detects_real_changes_and_ledger_hints(tmp_path):
         assert app._follow_timer is None
 
         file_p = tmp_path / "hello.py"
-        file_p.write_text("print('hello world')\n", encoding="utf-8")
+        file_p.write_text("print('hello world')\n", encoding="utf-8", newline="\n")
 
         ledger_dir = tmp_path / ".whyline"
         ledger_dir.mkdir(parents=True, exist_ok=True)
@@ -465,13 +465,13 @@ async def test_turning_files_on_mid_run_shows_the_newest_changed_file(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.name", "Tester"], cwd=tmp_path, check=True)
-    (tmp_path / "old.py").write_text("a = 1\n", encoding="utf-8")
-    (tmp_path / "new.py").write_text("b = 1\n", encoding="utf-8")
+    (tmp_path / "old.py").write_text("a = 1\n", encoding="utf-8", newline="\n")
+    (tmp_path / "new.py").write_text("b = 1\n", encoding="utf-8", newline="\n")
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "-qm", "init"], cwd=tmp_path, check=True)
     # The agent already wrote both before Files was pressed; new.py last.
-    (tmp_path / "old.py").write_text("a = 2\n", encoding="utf-8")
-    (tmp_path / "new.py").write_text("b = 2\n", encoding="utf-8")
+    (tmp_path / "old.py").write_text("a = 2\n", encoding="utf-8", newline="\n")
+    (tmp_path / "new.py").write_text("b = 2\n", encoding="utf-8", newline="\n")
     os.utime(tmp_path / "old.py", (1_000_000_000, 1_000_000_000))
     os.utime(tmp_path / "new.py", (1_000_000_100, 1_000_000_100))
 
@@ -493,10 +493,10 @@ async def test_turning_files_on_mid_run_shows_the_newest_changed_file(tmp_path):
 def _write_relay_plan_config(root, rel: str, body: str):
     path = root / rel
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(body, encoding="utf-8")
+    path.write_text(body, encoding="utf-8", newline="\n")
     dest = root / ".whyline" / "relay" / "config.toml"
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(f"plan = {json.dumps(rel)}\n", encoding="utf-8")
+    dest.write_text(f"plan = {json.dumps(rel)}\n", encoding="utf-8", newline="\n")
     return path
 
 
@@ -572,15 +572,15 @@ async def test_plan_reload_keeps_scroll(tmp_path):
         view.scroll_y = 12
         await pilot.pause()
         updated = "".join(f"changed {i:03d}\n" for i in range(80))
-        plan.write_text(updated, encoding="utf-8")
+        plan.write_text(updated, encoding="utf-8", newline="\n")
         app._load_plan()
         await pilot.pause()
         assert view.scroll_y == 12
         assert "changed 000" in view.text
         other = tmp_path / "plans" / "other.plan.md"
-        other.write_text("other plan\n", encoding="utf-8")
+        other.write_text("other plan\n", encoding="utf-8", newline="\n")
         dest = tmp_path / ".whyline" / "relay" / "config.toml"
-        dest.write_text(f"plan = {json.dumps('plans/other.plan.md')}\n", encoding="utf-8")
+        dest.write_text(f"plan = {json.dumps('plans/other.plan.md')}\n", encoding="utf-8", newline="\n")
         await pilot.click("#file-all")
         await pilot.pause()
         await pilot.click("#file-plan")
@@ -757,13 +757,13 @@ async def test_choices_fit_at_80_and_120(tmp_path):
 def _all_files_layout(root):
     src = root / "src"
     src.mkdir()
-    (src / "main.py").write_text("hello", encoding="utf-8")
+    (src / "main.py").write_text("hello", encoding="utf-8", newline="\n")
     nested = src / "nested"
     nested.mkdir()
-    (nested / "deep.py").write_text("nested\n", encoding="utf-8")
+    (nested / "deep.py").write_text("nested\n", encoding="utf-8", newline="\n")
     git = root / ".git"
     git.mkdir()
-    (git / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+    (git / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8", newline="\n")
 
 
 def _tree_child_names(node):

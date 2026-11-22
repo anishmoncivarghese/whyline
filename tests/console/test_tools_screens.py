@@ -170,7 +170,7 @@ async def test_new_skill_personal_and_repository(home, tmp_path):
         rows = skill_rows(screen)
         assert rows["whyline:alpha"][0] == "whyline"
         assert rows["whyline-repo:beta"][0] == "whyline · repo"
-    assert "Steps for alpha" in (home / ".whyline" / "skills" / "alpha" / "SKILL.md").read_text()
+    assert "Steps for alpha" in (home / ".whyline" / "skills" / "alpha" / "SKILL.md").read_text(encoding="utf-8")
     assert (tmp_path / ".whyline" / "skills" / "beta" / "SKILL.md").is_file()
 
 
@@ -209,7 +209,7 @@ async def test_edit_whyline_skill_in_the_form(home, tmp_path):
         await pilot.pause()
         assert app.screen is screen
         assert skill_rows(screen)["whyline:mine"][3] == "New words"
-    saved = (home / ".whyline" / "skills" / "mine" / "SKILL.md").read_text()
+    saved = (home / ".whyline" / "skills" / "mine" / "SKILL.md").read_text(encoding="utf-8")
     assert "New body" in saved and "description: New words" in saved
 
 
@@ -814,7 +814,7 @@ async def test_update_shows_the_diff_then_applies_it(home, tmp_path, monkeypatch
         await pilot.pause()
         assert app.screen is screen
         assert "Updated notes." in text(screen, "#tl-skill-status")
-        assert "New and better." in (home / ".whyline" / "skills" / "notes" / "SKILL.md").read_text()
+        assert "New and better." in (home / ".whyline" / "skills" / "notes" / "SKILL.md").read_text(encoding="utf-8")
 
 
 async def test_update_cancel_leaves_the_skill_and_same_files_say_up_to_date(home, tmp_path, monkeypatch):
@@ -837,7 +837,7 @@ async def test_update_cancel_leaves_the_skill_and_same_files_say_up_to_date(home
         await pilot.click("#up-cancel")
         await pilot.pause()
         assert app.screen is screen
-        assert "Old." in (home / ".whyline" / "skills" / "notes" / "SKILL.md").read_text()
+        assert "Old." in (home / ".whyline" / "skills" / "notes" / "SKILL.md").read_text(encoding="utf-8")
 
 
 async def test_update_is_off_for_a_skill_with_no_source(home, tmp_path):
@@ -962,7 +962,7 @@ async def test_new_skill_draft_fills_the_form_and_saves_nothing_until_save(home,
         await pilot.click("#sk-save")
         await pilot.pause()
         assert app.screen is screen
-    assert "Do the thing." in (home / ".whyline" / "skills" / "from-draft" / "SKILL.md").read_text()
+    assert "Do the thing." in (home / ".whyline" / "skills" / "from-draft" / "SKILL.md").read_text(encoding="utf-8")
 
 
 async def test_draft_failure_is_shown_and_keeps_the_box(home, tmp_path, monkeypatch):
@@ -997,7 +997,7 @@ async def test_search_more_shows_registry_results_under_the_heading(home, stored
     from whyline.console.tools_screens import CatalogueEntryScreen, RegistrySearchScreen
     from whyline.tools import registry
 
-    data = json.loads((Path(__file__).parents[1] / "tools" / "fixtures" / "registry_search.json").read_text())
+    data = json.loads((Path(__file__).parents[1] / "tools" / "fixtures" / "registry_search.json").read_text(encoding="utf-8"))
     real = registry.search
     monkeypatch.setattr(registry, "search", lambda text, **kw: real(text, get=lambda url, *, timeout: data))
     app = tui.WhylineConsoleApp(root=tmp_path)

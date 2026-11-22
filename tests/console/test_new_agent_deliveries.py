@@ -396,7 +396,7 @@ async def test_edit_keeps_an_unusable_runner_visible_and_cancel_is_lossless(tmp_
     )
     existing = d.parse(text, kind="personal", path=path)
     d.save(existing)
-    before = path.read_text()
+    before = path.read_text(encoding="utf-8")
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(100, 40)) as pilot:
         await _open_form(
@@ -412,7 +412,7 @@ async def test_edit_keeps_an_unusable_runner_visible_and_cancel_is_lossless(tmp_
         assert box.value is True
         screen.query_one("#na-cancel", tui.Button).press()
         await _until(pilot, lambda: not isinstance(app.screen, NewAgentScreen), "closed")
-    assert path.read_text() == before
+    assert path.read_text(encoding="utf-8") == before
 
 
 async def test_edit_keeps_a_disabled_runner_visible_and_cancel_is_lossless(tmp_path, home):
@@ -425,7 +425,7 @@ async def test_edit_keeps_a_disabled_runner_visible_and_cancel_is_lossless(tmp_p
     )
     existing = d.parse(text, kind="personal", path=path)
     d.save(existing)
-    before = path.read_text()
+    before = path.read_text(encoding="utf-8")
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(100, 40)) as pilot:
         await _open_form(
@@ -440,7 +440,7 @@ async def test_edit_keeps_a_disabled_runner_visible_and_cancel_is_lossless(tmp_p
         assert box.value is True
         screen.query_one("#na-cancel", tui.Button).press()
         await _until(pilot, lambda: not isinstance(app.screen, NewAgentScreen), "closed")
-    assert path.read_text() == before
+    assert path.read_text(encoding="utf-8") == before
 
 
 async def test_save_refuses_a_disabled_runner(tmp_path, home):
@@ -453,7 +453,7 @@ async def test_save_refuses_a_disabled_runner(tmp_path, home):
     )
     existing = d.parse(text, kind="personal", path=path)
     d.save(existing)
-    before = path.read_text()
+    before = path.read_text(encoding="utf-8")
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(100, 40)) as pilot:
         result = await _open_form(
@@ -464,7 +464,7 @@ async def test_save_refuses_a_disabled_runner(tmp_path, home):
         assert isinstance(app.screen, NewAgentScreen)
         assert HINT.format(agent="claude") in str(app.screen.query_one("#na-error").renderable)
         assert result == []
-    assert path.read_text() == before
+    assert path.read_text(encoding="utf-8") == before
 
 
 async def test_enabling_restores_a_provider_to_new_agent_choices(tmp_path):

@@ -206,7 +206,7 @@ def fingerprint(repo, monkeypatch, capsys) -> str:
 def test_allow_from_cli(repo, monkeypatch, capsys):
     fp = fingerprint(repo, monkeypatch, capsys)
     assert run_cli(repo, monkeypatch, security_command="allow", fingerprint=fp, reason="test key") == 0
-    assert "test key" in (repo / ".whyline" / "security-allow.toml").read_text()
+    assert "test key" in (repo / ".whyline" / "security-allow.toml").read_text(encoding="utf-8")
     assert run_cli(repo, monkeypatch, history=True) == 0
     assert run_cli(repo, monkeypatch, security_command="allow", fingerprint="nope", reason="x") == 1
 

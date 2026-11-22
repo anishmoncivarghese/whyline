@@ -50,7 +50,7 @@ def test_install_writes_an_executable_hook(repo):
     assert not hook.installed(repo)
     path = hook.install(repo)
     assert path == repo / ".git" / "hooks" / "pre-commit"
-    assert hook.COMMAND in path.read_text()
+    assert hook.COMMAND in path.read_text(encoding="utf-8")
     if os.name != "nt":  # Windows files have no POSIX mode bits
         assert path.stat().st_mode & stat.S_IXUSR
     assert hook.installed(repo)
@@ -70,7 +70,7 @@ def test_foreign_hook_is_kept(repo):
     with pytest.raises(hook.HookError) as err:
         hook.install(repo)
     assert hook.COMMAND in str(err.value)
-    assert path.read_text() == "#!/bin/sh\necho mine\n"
+    assert path.read_text(encoding="utf-8") == "#!/bin/sh\necho mine\n"
     assert hook.foreign(repo) and not hook.installed(repo)
     assert hook.uninstall(repo) is False
     assert path.exists()

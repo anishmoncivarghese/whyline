@@ -54,10 +54,10 @@ def test_undo_restores_modified_added_deleted_and_staged(repo: Path) -> None:
 
     changed = fixmode.undo(repo, snap)
     assert sorted(changed) == sorted(kinds)
-    assert (repo / "a.txt").read_text() == "a-dirty\n"
-    assert (repo / "b.txt").read_text() == "b\n"
-    assert (repo / "c.txt").read_text() == "c-staged\n"
-    assert (repo / "new.txt").read_text() == "pre-existing untracked\n"
+    assert (repo / "a.txt").read_text(encoding="utf-8") == "a-dirty\n"
+    assert (repo / "b.txt").read_text(encoding="utf-8") == "b\n"
+    assert (repo / "c.txt").read_text(encoding="utf-8") == "c-staged\n"
+    assert (repo / "new.txt").read_text(encoding="utf-8") == "pre-existing untracked\n"
     assert not (repo / "agent.txt").exists()
     assert not (repo / "sub").exists()
     assert git(repo, "diff", "--cached", "--name-only").split() == ["c.txt"]
@@ -74,7 +74,7 @@ def test_undo_file_replaced_by_directory(repo: Path) -> None:
     (repo / "node" / "child").write_text("c\n")
     fixmode.undo(repo, snap)
     assert (repo / "node").is_file()
-    assert (repo / "node").read_text() == "file\n"
+    assert (repo / "node").read_text(encoding="utf-8") == "file\n"
     assert fixmode.changed_since(repo, snap) == []
 
 
@@ -88,7 +88,7 @@ def test_undo_directory_replaced_by_file(repo: Path) -> None:
     (repo / "node").rmdir()
     (repo / "node").write_text("now a file\n")
     fixmode.undo(repo, snap)
-    assert (repo / "node" / "child").read_text() == "c\n"
+    assert (repo / "node" / "child").read_text(encoding="utf-8") == "c\n"
     assert fixmode.changed_since(repo, snap) == []
 
 
@@ -99,7 +99,7 @@ def test_ignored_file_is_untouched(repo: Path) -> None:
     (repo / "other.log").write_text("new ignored\n")
     (repo / "a.txt").write_text("changed\n")
     assert fixmode.undo(repo, snap) == ["a.txt"]
-    assert (repo / "keep.log").read_text() == "two\n"
+    assert (repo / "keep.log").read_text(encoding="utf-8") == "two\n"
     assert (repo / "other.log").exists()
 
 
@@ -109,7 +109,7 @@ def test_undo_refuses_after_head_moves(repo: Path) -> None:
     git(repo, "commit", "-qam", "agent commit")
     with pytest.raises(fixmode.FixModeError, match="HEAD moved"):
         fixmode.undo(repo, snap)
-    assert (repo / "a.txt").read_text() == "changed\n"
+    assert (repo / "a.txt").read_text(encoding="utf-8") == "changed\n"
 
 
 def test_undo_refuses_after_branch_switch(repo: Path) -> None:
@@ -128,16 +128,16 @@ def test_snapshot_leaves_head_index_and_tree_alone(repo: Path) -> None:
         git(repo, "rev-parse", "HEAD"),
         git(repo, "ls-files", "-s"),
         git(repo, "status", "--porcelain"),
-        (repo / "a.txt").read_text(),
-        (repo / "u.txt").read_text(),
+        (repo / "a.txt").read_text(encoding="utf-8"),
+        (repo / "u.txt").read_text(encoding="utf-8"),
     )
     snap = fixmode.snapshot(repo)
     after = (
         git(repo, "rev-parse", "HEAD"),
         git(repo, "ls-files", "-s"),
         git(repo, "status", "--porcelain"),
-        (repo / "a.txt").read_text(),
-        (repo / "u.txt").read_text(),
+        (repo / "a.txt").read_text(encoding="utf-8"),
+        (repo / "u.txt").read_text(encoding="utf-8"),
     )
     assert before == after
     assert git(repo, "rev-parse", f"refs/whyline/fix/{snap.id}").strip() == snap.commit
@@ -180,7 +180,7 @@ def test_guard_clean_turn_has_no_violations(repo: Path) -> None:
     snap, before = _guarded(repo)
     (repo / "a.txt").write_text("edited\n")
     assert fixmode.guard(repo, snap, before, run=subprocess.run) == []
-    assert (repo / "a.txt").read_text() == "edited\n"
+    assert (repo / "a.txt").read_text(encoding="utf-8") == "edited\n"
 
 
 def test_guard_commit_is_undone_and_reported(repo: Path) -> None:
@@ -190,7 +190,7 @@ def test_guard_commit_is_undone_and_reported(repo: Path) -> None:
     found = fixmode.guard(repo, snap, before, run=subprocess.run)
     assert "head" in _kinds(found)
     assert git(repo, "rev-parse", "HEAD").strip() == snap.head
-    assert (repo / "a.txt").read_text() == "a\n"
+    assert (repo / "a.txt").read_text(encoding="utf-8") == "a\n"
     assert all(v.message for v in found)
 
 
@@ -208,7 +208,7 @@ def test_guard_ticked_plan_task_edit_is_undone(repo: Path) -> None:
     (repo / PLAN).write_text("- [x] FIX-1 changed\n- [ ] FIX-2 todo\n")
     found = fixmode.guard(repo, snap, before, run=subprocess.run)
     assert "plan" in _kinds(found)
-    assert "FIX-1 done" in (repo / PLAN).read_text()
+    assert "FIX-1 done" in (repo / PLAN).read_text(encoding="utf-8")
 
 
 def test_guard_ticking_a_new_task_is_allowed(repo: Path) -> None:
@@ -342,7 +342,7 @@ def test_guard_moved_remote_ref_says_may_have_pushed(repo: Path) -> None:
     found = fixmode.guard(repo, snap, before, run=subprocess.run)
     assert _kinds(found) == {"pushed"}
     assert "may have pushed" in found[0].message
-    assert (repo / "a.txt").read_text() == "edited\n"  # nothing undone
+    assert (repo / "a.txt").read_text(encoding="utf-8") == "edited\n"  # nothing undone
 
 
 def test_guard_config_replaced_by_same_content_symlink(repo: Path, tmp_path_factory) -> None:

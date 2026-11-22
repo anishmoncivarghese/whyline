@@ -202,7 +202,7 @@ def _project(tmp_path, brainstorm=None):
     _git(root, "config", "user.name", "a")
     docset_mod.create(root, "Trade Journal", "feature", "auto", roles={})
     folder = root / "docs" / "sdlc" / "trade-journal"
-    data = json.loads((folder / "docset.json").read_text())
+    data = json.loads((folder / "docset.json").read_text(encoding="utf-8"))
     data["description"] = "A trading journal"
     (folder / "docset.json").write_text(json.dumps(data))
     (folder / "brainstorm.md").write_text(brainstorm or "x\n")
@@ -247,10 +247,10 @@ def test_create_home_writes_files_and_commits(stubbed, tmp_path):
     target = home.create_home(root, "trade-journal", parent, "tj", name="TJ",
                               agents=["claude"], progress=None)
     assert target == parent / "tj" and stubbed[0][1] == ["claude"]
-    assert (target / "README.md").read_text() == "# TJ\n\nA trading journal\n"
-    assert (target / ".gitignore").read_text().split() == [
+    assert (target / "README.md").read_text(encoding="utf-8") == "# TJ\n\nA trading journal\n"
+    assert (target / ".gitignore").read_text(encoding="utf-8").split() == [
         ".DS_Store", ".env", ".venv/", "__pycache__/", "node_modules/"]
-    copied = json.loads((target / "docs/sdlc/trade-journal/docset.json").read_text())
+    copied = json.loads((target / "docs/sdlc/trade-journal/docset.json").read_text(encoding="utf-8"))
     assert copied["home"]["created_from"] == str(root) and copied["home"]["at"]
     log = _log(target)
     assert "docs: start TJ" in log and "README.md" in log
@@ -265,13 +265,13 @@ def test_create_home_readme_uses_brainstorm_first_paragraph(stubbed, tmp_path, m
     monkeypatch.setattr(docset_mod, "_current_text",
                         lambda r, ds, doc: "First para.\nstill first.\n\nSecond.")
     data_path = root / "docs/sdlc/trade-journal/docset.json"
-    data = json.loads(data_path.read_text())
+    data = json.loads(data_path.read_text(encoding="utf-8"))
     data["documents"] = [{"kind": "brainstorm", "path": "b.md", "version": 1}]
     data_path.write_text(json.dumps(data))
     _git(root, "commit", "-qam", "bs")
     target = home.create_home(root, "trade-journal", _make(tmp_path), "tj", name="TJ",
                               agents=[], progress=None)
-    assert (target / "README.md").read_text() == "# TJ\n\nFirst para.\nstill first.\n"
+    assert (target / "README.md").read_text(encoding="utf-8") == "# TJ\n\nFirst para.\nstill first.\n"
 
 
 def test_create_home_keeps_existing_readme(stubbed, tmp_path, monkeypatch):
@@ -289,7 +289,7 @@ def test_create_home_keeps_existing_readme(stubbed, tmp_path, monkeypatch):
     monkeypatch.setattr(repo_setup, "setup", setup)
     target = home.create_home(root, "trade-journal", parent, "tj", name="TJ",
                               agents=[], progress=None)
-    assert (target / "README.md").read_text() == "mine\n"
+    assert (target / "README.md").read_text(encoding="utf-8") == "mine\n"
 
 
 def test_create_home_marks_old_set_moved(stubbed, tmp_path):
@@ -297,7 +297,7 @@ def test_create_home_marks_old_set_moved(stubbed, tmp_path):
     target = home.create_home(root, "trade-journal", _make(tmp_path), "tj", name="TJ",
                               agents=[], progress=None)
     old = root / "docs/sdlc/trade-journal"
-    data = json.loads((old / "docset.json").read_text())
+    data = json.loads((old / "docset.json").read_text(encoding="utf-8"))
     assert data["state"] == "moved" and data["moved_to"] == str(target)
     assert (old / "brainstorm.md").is_file()
     log = _log(root)
@@ -337,13 +337,13 @@ def test_create_home_setup_error(stubbed, tmp_path, monkeypatch):
     with pytest.raises(home.HomeError, match="boom"):
         home.create_home(root, "trade-journal", _make(tmp_path), "tj", name="TJ",
                          agents=[], progress=None)
-    data = json.loads((root / "docs/sdlc/trade-journal/docset.json").read_text())
+    data = json.loads((root / "docs/sdlc/trade-journal/docset.json").read_text(encoding="utf-8"))
     assert "state" not in data
 
 
 def test_use_here(stubbed, tmp_path):
     root = _project(tmp_path)
     assert home.use_here(root, "trade-journal") == root
-    data = json.loads((root / "docs/sdlc/trade-journal/docset.json").read_text())
+    data = json.loads((root / "docs/sdlc/trade-journal/docset.json").read_text(encoding="utf-8"))
     assert data["home"]["here"] is True and data["home"]["at"]
     assert "docset.json" in _log(root)

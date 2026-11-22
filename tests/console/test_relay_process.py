@@ -60,7 +60,7 @@ def test_nonzero_exit_is_reported(tmp_path):
 def test_output_goes_to_the_log_file_not_a_pipe(tmp_path):
     proc, lines, exits, done = _run(tmp_path)
     assert done.wait(10)
-    assert "line 1" in relay_process.log_path(tmp_path).read_text()
+    assert "line 1" in relay_process.log_path(tmp_path).read_text(encoding="utf-8")
 
 
 def test_relay_keeps_running_after_the_console_stops_following(tmp_path):
@@ -68,7 +68,7 @@ def test_relay_keeps_running_after_the_console_stops_following(tmp_path):
     proc, lines, exits, done = _run(tmp_path)
     proc.stop_following()
     assert proc.wait(10) == 0
-    assert "no newline at the end" in relay_process.log_path(tmp_path).read_text()
+    assert "no newline at the end" in relay_process.log_path(tmp_path).read_text(encoding="utf-8")
 
 
 def test_request_stop_writes_the_stop_file(tmp_path):

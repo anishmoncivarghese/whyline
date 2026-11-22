@@ -22,6 +22,7 @@ from textual.widgets.option_list import Option
 
 from whyline import credentials
 from whyline.agents import capabilities
+from whyline.console.attachments import split_pasted
 from whyline.console.agents_screens import tool_kind
 from whyline.tools import catalogue, knowledge, made, made_draft, mcp, mcp_config, registry, skill_draft, skill_install, skill_sources, skills, users
 from whyline.tools import find as tools_find
@@ -391,7 +392,7 @@ class PackItemScreen(ModalScreen):
                     raise ValueError("A web page address starts with http:// or https://.")
                 added = [raw]
             else:
-                added = [str(Path(p).expanduser().resolve()) for p in shlex.split(raw)]
+                added = [str(Path(p).expanduser().resolve()) for p in split_pasted(raw)]
                 if not added:
                     raise ValueError("Give at least one file or folder.")
                 missing = [p for p in added if not Path(p).exists()]

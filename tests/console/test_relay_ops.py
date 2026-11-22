@@ -45,7 +45,7 @@ def test_with_marker_puts_one_marker_on_line_one():
 def test_save_pasted_plan_writes_a_named_plan(repo):
     path = relay_ops.save_pasted_plan(repo, "- [ ] T-1: build it", "My Plan")
     assert path == repo / "plans" / "my-plan.plan.md"
-    assert path.read_text().splitlines()[0].startswith("<!-- whyline-plan v1 | source: paste")
+    assert path.read_text(encoding="utf-8").splitlines()[0].startswith("<!-- whyline-plan v1 | source: paste")
     assert _git(repo, "show", "--name-only", "--format=", "HEAD").split() == ["plans/my-plan.plan.md"]
 
 
@@ -59,7 +59,7 @@ def test_save_pasted_plan_asks_before_replacing(repo):
     with pytest.raises(relay_ops.plan_exists_error()):
         relay_ops.save_pasted_plan(repo, "- [ ] T-1: new\n", "p")
     relay_ops.save_pasted_plan(repo, "- [ ] T-1: new\n", "p", replace=True)
-    assert "T-1: new" in (repo / "plans" / "p.plan.md").read_text()
+    assert "T-1: new" in (repo / "plans" / "p.plan.md").read_text(encoding="utf-8")
 
 
 
@@ -627,7 +627,7 @@ def test_approve_plan(repo):
     )
     path = relay_ops.approve_plan(repo, draft, "Approved Plan")
     assert path == repo / "plans" / "approved-plan.plan.md"
-    lines = path.read_text().splitlines()
+    lines = path.read_text(encoding="utf-8").splitlines()
     assert lines[0].startswith("<!-- whyline-plan v1 | source: draft | drafted-by: codex (reviewed by claude)")
     assert lines[1] == "- [ ] T-1: approved"
 
