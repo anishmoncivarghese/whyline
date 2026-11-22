@@ -18,7 +18,7 @@ Finished plans are in `plans/done/`.
 | 1e | Research | `research.plan.md` | RSR-1..12 | watch-agents (WCH-3, the page fetch), agent-tools (knowledge packs). Replaces `assistant-research.plan.md` (RES-1..5) |
 | 2 | Telegram daily use | `telegram-daily-use.plan.md` | WAIT-1..7, QUE-1..11, FB-1..7, RT-1..8 (33) | research (RT-8, the research route) |
 | 3 | Process | `raaid-log.plan.md` | RAAID-1..14 | |
-| 3 | | `sdlc-git-flow.plan.md` | GIT-1..6 | telegram-daily-use (WAIT-5, for GIT-4's go-ahead verbs) |
+| 3 | | `sdlc-git-flow.plan.md` | GIT-1..16 | telegram-daily-use (WAIT, for the ready-to-merge card and GIT-10's go-ahead verbs). Revised 2026-11-22: plan worktrees, one pull request per plan, Who merges, Projects, Park and Reopen |
 | 3 | | `sdlc-product-owner.plan.md` | PO-1..6 | |
 | 3 | | `sdlc-evidence.plan.md` | EVD-1..5 | sdlc-product-owner |
 | 3 | | `sdlc-done.plan.md` | DONE-1..6 | sdlc-evidence |
