@@ -91,11 +91,11 @@ def drafting(root: Path, set_name: str = "", kind: str = "") -> Iterator[Path]:
 @contextmanager
 def _mutex(path: Path) -> Iterator[None]:
     """Short exclusive section serialising lock acquire, takeover and release."""
-    import fcntl
+    from whyline import filelock
 
     with open(path.with_name("drafting.mutex"), "a") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
+        filelock.lock(handle)
         try:
             yield
         finally:
-            fcntl.flock(handle, fcntl.LOCK_UN)
+            filelock.unlock(handle)

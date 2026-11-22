@@ -14,7 +14,6 @@ again. The second time a stuck job fails and the chat is told.
 
 from __future__ import annotations
 
-import fcntl
 import inspect
 import json
 import logging
@@ -25,6 +24,7 @@ import subprocess
 import sys
 from datetime import datetime, timedelta
 
+from whyline import filelock
 from whyline.ideas import paths, reminders, requests as assistant_requests, store
 
 ENABLED_KEY = "enabled"
@@ -357,8 +357,10 @@ def _acquire_poll_lock():
     path = paths.home() / _LOCK_NAME
     handle = path.open("a+")
     try:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        taken = filelock.lock(handle, blocking=False)
     except OSError:
+        taken = False
+    if not taken:
         handle.close()
         return None
     _held_lock = handle
@@ -370,7 +372,7 @@ def _release_poll_lock(handle) -> None:
     if handle is None:
         return
     try:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        filelock.unlock(handle)
     except OSError:
         pass
     handle.close()
