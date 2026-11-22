@@ -14,7 +14,7 @@ async def _until(pilot, condition, what):
         if condition():
             return
         await pilot.pause(0.05)
-    raise AssertionError(f"never happened: {what}")
+    raise AssertionError(f"never happened: {what() if callable(what) else what}")
 
 
 CHOICES = ["antigravity", "claude", "codex"]
@@ -405,8 +405,13 @@ async def test_set_up_opens_run_agents_while_running_and_setup_when_idle(
         await pilot.pause()
 
         live["value"] = None
-        await pilot.click("#relay-setup")
-        await _until(pilot, lambda: isinstance(app.screen, RelaySetupScreen), "setup open")
+        landed = await pilot.click("#relay-setup")
+        await _until(
+            pilot,
+            lambda: isinstance(app.screen, RelaySetupScreen),
+            lambda: f"setup open (click landed: {landed}, screens: {app.screen_stack}, "
+            f"button disabled: {app.query_one('#relay-setup', tui.Button).disabled})",
+        )
         assert isinstance(app.screen, RelaySetupScreen)
     assert interrupted == []
 

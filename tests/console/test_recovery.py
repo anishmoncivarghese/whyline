@@ -6293,9 +6293,12 @@ async def test_live_console_flow_opens_proposal_screen_and_applies_step_1_only(
         assert relay_ops.read_agent_model(repo, "claude") == "sonnet"
         assert launched == []
         assert str(screen.query_one("#cancel", tui.Button).label) == "Close"
-        await pilot.click("#cancel")
-        await pilot.pause()
-        assert not isinstance(app.screen, ResolveProposalScreen)
+        landed = await pilot.click("#cancel")
+        for _ in range(100):
+            if not isinstance(app.screen, ResolveProposalScreen):
+                break
+            await pilot.pause(0.05)
+        assert not isinstance(app.screen, ResolveProposalScreen), f"click landed: {landed}"
 
 
 # ASK-4: Auto applies the agent's safe steps
