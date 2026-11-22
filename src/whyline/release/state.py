@@ -9,6 +9,8 @@ import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from whyline.gitdir import release_dir
+
 
 @dataclass
 class State:
@@ -25,7 +27,7 @@ class State:
 
 
 def path(root: Path) -> Path:
-    return Path(root) / ".git" / "whyline-release" / "state.json"
+    return release_dir(root) / "state.json"
 
 
 def load(root: Path) -> State | None:
@@ -74,7 +76,7 @@ _targets_lock = threading.Lock()  # Set up and Check workers save from threads
 
 
 def targets_path(root: Path) -> Path:
-    return Path(root) / ".git" / "whyline-release" / "targets.json"
+    return release_dir(root) / "targets.json"
 
 
 def load_targets(root: Path) -> dict[str, TargetStatus]:

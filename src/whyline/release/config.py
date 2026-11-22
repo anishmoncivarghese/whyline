@@ -8,13 +8,13 @@ import tomllib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from whyline.gitdir import release_dir
 from whyline.security import settings as security_settings
 from whyline.security.settings import SecuritySettings
 
 MODES = ("ask", "step", "auto")
 NO_RUNNER_CHOICES = ("ask", "rerun once", "off")
 CONFIG_PATH = Path(".whyline") / "release.toml"
-PENDING_PATH = Path(".git") / "whyline-release" / "pending.json"
 
 
 class ConfigError(ValueError):
@@ -355,7 +355,7 @@ def normalise(cfg: ReleaseConfig) -> ReleaseConfig:
 
 
 def _pending_file(root: Path) -> Path:
-    return Path(root) / PENDING_PATH
+    return release_dir(root) / "pending.json"
 
 
 def _read_pending(root: Path) -> list[str]:

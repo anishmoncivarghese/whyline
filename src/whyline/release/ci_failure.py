@@ -8,6 +8,8 @@ from collections.abc import Callable, Collection
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from whyline.gitdir import release_dir
+
 NO_RUNNER = "no-runner"
 TIMEOUT = "timeout"
 TESTS = "tests"
@@ -269,7 +271,7 @@ def _git_text(root: Path, run: Callable[..., object], args: list[str]) -> str:
 
 
 def log_path(root: Path | str) -> Path:
-    return Path(root) / ".git" / "whyline-release" / "release.log"
+    return release_dir(root) / "release.log"
 
 
 def append_log(root: Path | str, text: str) -> None:
