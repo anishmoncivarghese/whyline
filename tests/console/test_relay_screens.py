@@ -400,6 +400,9 @@ async def test_set_up_opens_run_agents_while_running_and_setup_when_idle(
         assert "Agents for this run · JOB-9" in titles
         app.screen.dismiss(None)
         await _until(pilot, lambda: not isinstance(app.screen, RunAgentsScreen), "run agents closed")
+        # A click sent while the dismissed screen is still leaving can be lost.
+        await _until(pilot, lambda: len(app.screen_stack) == 1, "back on the main screen")
+        await pilot.pause()
 
         live["value"] = None
         await pilot.click("#relay-setup")
