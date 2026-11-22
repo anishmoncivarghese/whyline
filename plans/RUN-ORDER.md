@@ -40,7 +40,7 @@ Finished plans are in `plans/done/`.
 | 9 | | `self-improvement-2-fix.plan.md` | IMP-11..23, IMP-40..43 | part 1, sdlc-git-flow, whyline-relay 0.2.43 (model overrides) |
 | 9 | | `self-improvement-3-report-console.plan.md` | IMP-24..37, IMP-44..46 | part 2, telegram-daily-use (WAIT), watch-agents (CKN-3, quiet hours), sdlc-done, sdlc-product-owner and raaid-log (suggestions) |
 | 10 | Trading desk | `trading-desk.plan.md` | TRD-1..15 | |
-| Any time | | `windows-release-gate.plan.md` | WIN-1 | |
+| Any time | Done | `done/windows-release-gate.plan.md` | WIN-1 | done 2026-11-23: three green CI runs on 30c6fa8 with Windows gating; release.yml tests Windows; ships in the next release |
 
 ## Rules
 
