@@ -1,3 +1,4 @@
+import os
 import pytest
 
 from whyline.tools import catalogue, made, mcp_config, risk, users
@@ -72,7 +73,8 @@ def test_settings_file_is_private(home):
     import stat
 
     risk.set_level("a", "t", "pays")
-    assert stat.S_IMODE(os.stat(home / ".whyline" / "tool-risk.toml").st_mode) == 0o600
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        assert stat.S_IMODE(os.stat(home / ".whyline" / "tool-risk.toml").st_mode) == 0o600
 
 
 def test_hints_from_catalogue(home, monkeypatch):

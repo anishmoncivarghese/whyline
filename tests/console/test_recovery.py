@@ -4632,6 +4632,7 @@ def _isolate_cap_auto_run(tmp_path: Path, repo: Path, monkeypatch: pytest.Monkey
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.chdir(repo)
     logs = repo / ".whyline" / "relay" / "logs"
     logs.mkdir(parents=True, exist_ok=True)

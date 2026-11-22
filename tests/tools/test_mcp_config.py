@@ -31,8 +31,9 @@ def test_round_trip_and_mode(home):
     mcp_config.save_server(server)
     assert mcp_config._load_saved() == {"files": server}
     assert set(mcp_config.load()) == {"files", "made"}
-    mode = stat.S_IMODE(os.stat(home / ".whyline" / "mcp.toml").st_mode)
-    assert mode == 0o600
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        mode = stat.S_IMODE(os.stat(home / ".whyline" / "mcp.toml").st_mode)
+        assert mode == 0o600
 
 
 @pytest.mark.parametrize("stated", [True, False, None])

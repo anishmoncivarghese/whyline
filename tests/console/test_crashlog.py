@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import stat
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -56,7 +57,8 @@ def test_crash_log_has_no_locals(tmp_path):
 def test_crash_log_file_mode_is_0600(tmp_path):
     path = tmp_path / "crash.log"
     _record(path, "mode")
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
 def test_crash_log_traceback_is_capped_at_200_lines(tmp_path, monkeypatch):

@@ -1,3 +1,4 @@
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -45,7 +46,7 @@ def test_folder_outside_home_stored_as_is(home, tmp_path):
     outside = tmp_path / "elsewhere"
     outside.mkdir()
     defaults.set_folder(outside)
-    assert str(outside) in _stored()
+    assert tomllib.loads(_stored())["default_folder"] == str(outside)
     assert defaults.folder() == outside
 
 

@@ -18,10 +18,14 @@ def fake(tmp_path, monkeypatch):
     """A caffeinate stand-in that logs its arguments and then becomes a
     long-running program through a symlink named caffeinate, so
     `ps -o comm=` reads it as caffeinate. (macOS kills a copied system
-    binary: its signature breaks.)"""
+    binary: its signature breaks.) Needs a POSIX shell, so not on Windows,
+    where caffeinate does not exist and awake is always off anyway."""
+    if os.name == "nt":
+        pytest.skip("the caffeinate stand-in is a POSIX shell script")
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setattr(paths, "global_whyline_dir", lambda: home / ".whyline")
     real = tmp_path / "real"
     real.mkdir()

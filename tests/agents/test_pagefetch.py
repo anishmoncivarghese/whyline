@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 
@@ -165,7 +166,9 @@ def test_cache_file_is_private(tmp_path):
     stale.chmod(0o644)
     go("https://example.com/", Opener(Resp(body="<p>x</p>")), tmp_path, now=NOW + timedelta(hours=1))
     files = list(tmp_path.glob("*.json"))
-    assert len(files) == 1 and files[0].stat().st_mode & 0o077 == 0
+    assert len(files) == 1
+    if os.name != "nt":  # Windows files have no group/other mode bits
+        assert files[0].stat().st_mode & 0o077 == 0
 
 
 def test_redirects_followed_up_to_five(tmp_path):

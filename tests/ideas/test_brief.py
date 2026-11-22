@@ -337,6 +337,7 @@ def agent_env(tmp_path, monkeypatch, ideas_home):
     from whyline.ideas import telegram_in
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     monkeypatch.setattr(account, "enabled_agents", lambda: {"claude", "codex"})
     monkeypatch.setattr(telegram, "known_chats", lambda: {42: "Me (private)", 7: "Other"})
     conn = store.connect()

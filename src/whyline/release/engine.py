@@ -12,6 +12,7 @@ from pathlib import Path
 from whyline.release import ci_failure
 from whyline.release import state as release_state
 from whyline.release.state import State
+from whyline.processes import windows_pid_alive
 
 MODES = ("step", "ask", "auto")
 
@@ -71,6 +72,8 @@ def percent(progress: Progress) -> int:
 def _pid_alive(pid: int) -> bool:
     if not pid:
         return False
+    if os.name == "nt":
+        return windows_pid_alive(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:

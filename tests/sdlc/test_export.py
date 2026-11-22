@@ -110,6 +110,7 @@ def test_prd_update_uses_history_version(tmp_path, monkeypatch):
 
 def test_default_out_dir(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     assert export.default_out_dir() == tmp_path / "Downloads"
 
 

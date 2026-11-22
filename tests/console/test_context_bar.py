@@ -39,6 +39,7 @@ def home(tmp_path, monkeypatch):
     folder = tmp_path / "home"
     folder.mkdir()
     monkeypatch.setenv("HOME", str(folder))
+    monkeypatch.setenv("USERPROFILE", str(folder))
 
     def _home(*_args):
         return Path(os.environ["HOME"])

@@ -1,3 +1,4 @@
+import os
 import json
 import stat
 from datetime import datetime, timezone
@@ -95,7 +96,8 @@ def test_file_writes_a_private_report(conn):
     path = Path(out["path"])
     assert path.name == f"{T0.astimezone().strftime('%Y-%m-%d-%H%M')}-{run}.md"
     assert path.parent.name == "demo" and path.read_text() == "Hello ana"
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
 def test_a_chat_that_is_not_allowed_is_refused_without_sending(conn):

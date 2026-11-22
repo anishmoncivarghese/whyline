@@ -753,6 +753,7 @@ def test_cli_email_mail_script(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(mail, "_whyline_path", lambda: "/opt/bin/whyline")
     script_dir = tmp_path / "Library" / "Application Scripts" / "com.apple.mail"
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
 
     assert cli.main(["idea", "email", "mail-script"]) == 0
     out = capsys.readouterr().out

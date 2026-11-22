@@ -1,3 +1,4 @@
+import os
 import stat
 from pathlib import Path
 
@@ -114,5 +115,6 @@ def test_step_rows(conn):
 
 def test_state_file_is_private(conn, home):
     path = next(home.rglob("state.sqlite"))
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert conn.execute("PRAGMA user_version").fetchone()[0] == 1

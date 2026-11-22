@@ -975,6 +975,7 @@ def wt_repo(tmp_path, monkeypatch, assistant_home):
         subprocess.run(["git", *a], cwd=cwd, check=True, capture_output=True)
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     root = tmp_path / "proj"
     root.mkdir()
     git(root, "init", "-b", "main")

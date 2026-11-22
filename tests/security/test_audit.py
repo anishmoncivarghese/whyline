@@ -89,6 +89,7 @@ def test_output_dir_is_outside_the_repo_and_numbered(repo, tmp_path):
 
 def test_default_output_dir_is_under_home(repo, tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     report = audit.run(repo, agent="claude", ask_agent=FakeAgent([]))
     assert report.run_dir == tmp_path / "home" / ".whyline" / "security" / "audits" / "project" / "run-1"
 

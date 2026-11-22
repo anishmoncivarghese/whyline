@@ -20,6 +20,7 @@ def _home_honors_home_env(monkeypatch):
 
 def test_repo_default_agent_round_trips(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     (tmp_path / ".whyline").mkdir()
     assert model.default_agent(tmp_path) is None
     model.set_default_agent(tmp_path, "codex")
@@ -31,6 +32,7 @@ def test_repo_default_agent_round_trips(tmp_path, monkeypatch):
 def test_global_default_applies_without_a_repo_choice(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     (tmp_path / ".whyline").mkdir()
     model.save_global("grok", "")
     assert model.resolve(tmp_path) == ("grok", "")
@@ -42,6 +44,7 @@ def test_global_default_applies_without_a_repo_choice(tmp_path, monkeypatch):
 def test_global_model_is_used_until_the_repo_sets_one(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     (tmp_path / ".whyline").mkdir()
     model.save_global("grok", "grok-4")
     assert model.resolve(tmp_path) == ("grok", "grok-4")
@@ -51,6 +54,7 @@ def test_global_model_is_used_until_the_repo_sets_one(tmp_path, monkeypatch):
 
 def test_load_does_not_treat_default_agent_as_a_model(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     (tmp_path / ".whyline").mkdir()
     model.set_default_agent(tmp_path, "codex")
     model.set_one(tmp_path, "codex", "gpt-5.6")
@@ -59,6 +63,7 @@ def test_load_does_not_treat_default_agent_as_a_model(tmp_path, monkeypatch):
 
 def test_nothing_saved_means_claude(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     (tmp_path / ".whyline").mkdir()
     assert model.resolve(tmp_path) == ("claude", "")
 
@@ -68,6 +73,7 @@ def test_an_unreadable_global_file_is_ignored(tmp_path, monkeypatch):
     (home / ".whyline").mkdir(parents=True)
     (home / ".whyline/console.json").write_text("{nope")
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     (tmp_path / ".whyline").mkdir()
     assert model.resolve(tmp_path) == ("claude", "")
 
@@ -78,6 +84,7 @@ def test_model_command_saves_the_default_agent(tmp_path, monkeypatch):
     from whyline.console.session import ConsoleSession
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     monkeypatch.setattr(
         account,
         "agent_status",
@@ -111,6 +118,7 @@ def test_console_starts_on_the_saved_agent(tmp_path, monkeypatch):
     from whyline.console.tui import WhylineConsoleApp
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     (tmp_path / ".whyline").mkdir()
     (tmp_path / ".whyline" / "model.json").write_text(
         json.dumps({"default_agent": "codex", "codex": "gpt-5.6"}),
@@ -125,6 +133,7 @@ def test_switch_repo_starts_on_that_repos_default(tmp_path, monkeypatch):
     from whyline.console.session import ConsoleSession
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     monkeypatch.chdir(tmp_path)
     first = tmp_path / "first"
     second = tmp_path / "second"

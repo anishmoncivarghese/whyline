@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -116,7 +117,7 @@ def test_a_folder_trigger_fires_once_for_two_new_files(conn, tmp_path):
     watched = tmp_path / "home" / "inbox"
     watched.mkdir()
     (watched / "old.txt").write_text("old")
-    accept(conn, tmp_path, trigger=f'kind = "folder"\nfolder = "{watched}"')
+    accept(conn, tmp_path, trigger=f'kind = "folder"\nfolder = {json.dumps(str(watched))}')
     spawned = []
     now = datetime(2026, 10, 2, 9, 0)
     tick.run(now, spawn=spawned.append)  # records what is already there

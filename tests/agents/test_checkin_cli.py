@@ -1,3 +1,4 @@
+import json
 import os
 import time
 
@@ -18,7 +19,7 @@ def agent(home, tmp_path):
     folder = home / ".whyline/agents"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "watch.toml").write_text(
-        f'name="watch"\ninstructions="x"\nrunner="claude"\nworkdir="{work}"\n')
+        f'name="watch"\ninstructions="x"\nrunner="claude"\nworkdir={json.dumps(str(work))}\n')
     defn = d.load(folder / "watch.toml", kind="personal")
     state.accept(state.connect(), defn)
     return defn

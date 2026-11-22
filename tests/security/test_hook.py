@@ -51,7 +51,8 @@ def test_install_writes_an_executable_hook(repo):
     path = hook.install(repo)
     assert path == repo / ".git" / "hooks" / "pre-commit"
     assert hook.COMMAND in path.read_text()
-    assert path.stat().st_mode & stat.S_IXUSR
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        assert path.stat().st_mode & stat.S_IXUSR
     assert hook.installed(repo)
     hook.install(repo)  # again is fine
 

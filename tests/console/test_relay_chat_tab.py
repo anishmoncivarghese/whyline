@@ -15,6 +15,7 @@ pytestmark = [
 @pytest.fixture(autouse=True)
 def isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     monkeypatch.setattr(agent_choice, "choices", lambda repo: ["codex", "claude"])
     monkeypatch.setattr(
         agent_choice, "pick",

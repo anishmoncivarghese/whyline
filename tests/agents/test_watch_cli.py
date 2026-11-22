@@ -1,3 +1,4 @@
+import json
 import pytest
 
 from whyline import cli
@@ -15,7 +16,7 @@ def agent(home, tmp_path):
     folder = home / ".whyline/agents"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "shop.toml").write_text(
-        f'name="shop"\ninstructions="Say the price."\nrunner="claude"\nworkdir="{work}"\n')
+        f'name="shop"\ninstructions="Say the price."\nrunner="claude"\nworkdir={json.dumps(str(work))}\n')
     defn = d.load(folder / "shop.toml", kind="personal")
     state.accept(state.connect(), defn)
     return defn
@@ -132,7 +133,7 @@ def test_test_watch_without_instructions_gives_the_exact_message(home, tmp_path,
     folder = home / ".whyline/agents"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "plain.toml").write_text(
-        f'name="plain"\ninstructions=""\nrunner="claude"\nworkdir="{tmp_path}"\n'
+        f'name="plain"\ninstructions=""\nrunner="claude"\nworkdir={json.dumps(str(tmp_path))}\n'
         '[checkin]\ngate="page"\n[checkin.gate_args]\nurl="https://example.com/p"\n'
         'rule="appears"\ntext="hi"\n[watch]\n')
     monkeypatch.setattr(pagefetch, "_get", lambda url, now, o, r: pagefetch.Page(url, "ok", text="hi"))

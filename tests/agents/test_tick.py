@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import threading
 from datetime import datetime
@@ -393,7 +394,7 @@ def test_tick_flushes_held_check_ins_for_active_gated_agents(repo, home):
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "w.toml").write_text(
         'name="w"\ninstructions="x"\nrunner="codex"\n'
-        f'workdir="{repo}"\n[checkin]\ngate = "event-soon"\n'
+        f'workdir={json.dumps(str(repo))}\n[checkin]\ngate = "event-soon"\n'
         '[checkin.gate_args]\nminutes = "15"\n')
     defn = d.load(folder / "w.toml", kind="personal")
     state.accept(state.connect(), defn)
@@ -409,7 +410,7 @@ def test_tick_still_flushes_a_finished_watch_agent(repo, home):
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "w.toml").write_text(
         'name="w"\ninstructions="x"\nrunner="codex"\n'
-        f'workdir="{repo}"\n[checkin]\ngate = "page"\n'
+        f'workdir={json.dumps(str(repo))}\n[checkin]\ngate = "page"\n'
         '[checkin.gate_args]\nurl = "https://a.test/x"\nrule = "always"\n[watch]\nstop = "first"\n')
     defn = d.load(folder / "w.toml", kind="personal")
     conn = state.connect()

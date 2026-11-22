@@ -181,7 +181,8 @@ def _save_cache(path: Path, page: Page, now: datetime) -> None:
         tmp = path.with_suffix(".tmp")
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            os.fchmod(handle.fileno(), 0o600)
+            if os.name != "nt":  # Windows has no fchmod before 3.13 and no mode bits
+                os.fchmod(handle.fileno(), 0o600)
             json.dump(data, handle)
         os.replace(tmp, path)
     except Exception:

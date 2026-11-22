@@ -9,6 +9,7 @@ from dataclasses import dataclass, fields
 from datetime import datetime, timedelta, timezone
 
 from whyline.ideas import actions, confirm as confirm_mod, store
+from whyline.processes import windows_pid_alive
 
 LEASE_MARGIN = timedelta(minutes=30)
 _COST_TIMEOUT_MINUTES = {
@@ -149,6 +150,8 @@ def _pid_alive(pid) -> bool:
     number = _pid(pid)
     if number is None:
         return False
+    if os.name == "nt":
+        return windows_pid_alive(number)
     try:
         os.kill(number, 0)
     except ProcessLookupError:

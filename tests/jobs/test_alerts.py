@@ -1,6 +1,7 @@
 """Tests for reading job-alert emails (JOB-16)."""
 from __future__ import annotations
 
+import os
 import json
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +20,7 @@ NOW = datetime(2026, 10, 30, 7, 0)
 @pytest.fixture(autouse=True)
 def _home(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
 
 
@@ -127,7 +129,8 @@ def test_generic_fallback_collects_links_that_look_like_titles() -> None:
 def test_settings_file_is_private_and_round_trips() -> None:
     alerts.set_sender("Alert@Indeed.com", True)
     assert alerts.senders()["alert@indeed.com"] is True
-    assert (alerts.settings_path().stat().st_mode & 0o777) == 0o600
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        assert (alerts.settings_path().stat().st_mode & 0o777) == 0o600
     with pytest.raises(alerts.AlertError):
         alerts.set_sender("not an address", True)
 

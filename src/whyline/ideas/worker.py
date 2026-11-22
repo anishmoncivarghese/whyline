@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 
 from whyline import filelock
 from whyline.ideas import paths, reminders, requests as assistant_requests, store
+from whyline.processes import windows_pid_alive
 
 ENABLED_KEY = "enabled"
 _ON = frozenset({"1", "on", "true", "yes"})
@@ -1354,6 +1355,8 @@ def _pid_alive(pid) -> bool:
     number = _pid(pid)
     if number is None:
         return False
+    if os.name == "nt":
+        return windows_pid_alive(number)
     try:
         os.kill(number, 0)
     except ProcessLookupError:

@@ -1,5 +1,6 @@
 """Tests for summarise forwarded email with content guard (ASST-14)."""
 
+import os
 import json
 import stat
 from types import SimpleNamespace
@@ -68,8 +69,9 @@ def test_turn_runs_in_workspace_with_read_only_argv_and_data_file(
     assert "Hello team, please see the update." in data_content
 
     # Permissions are 0600
-    assert stat.S_IMODE(result.data_path.stat().st_mode) == 0o600
-    assert stat.S_IMODE(result.path.stat().st_mode) == 0o600
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        assert stat.S_IMODE(result.data_path.stat().st_mode) == 0o600
+        assert stat.S_IMODE(result.path.stat().st_mode) == 0o600
     assert result.text.startswith("Summary of the email.")
 
 

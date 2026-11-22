@@ -30,6 +30,7 @@ def ideas_home(tmp_path, monkeypatch):
     user_home = tmp_path / "user-home"
     user_home.mkdir()
     monkeypatch.setenv("HOME", str(user_home))
+    monkeypatch.setenv("USERPROFILE", str(user_home))
     return home
 
 
@@ -466,6 +467,7 @@ def _private_home(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setattr(pathlib.Path, "home", lambda: home)
     return home
 
@@ -1520,6 +1522,7 @@ def wt_repo(tmp_path, monkeypatch):
         subprocess.run(["git", *a], cwd=cwd, check=True, capture_output=True)
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     root = tmp_path / "proj"
     root.mkdir()
     git(root, "init", "-b", "main")

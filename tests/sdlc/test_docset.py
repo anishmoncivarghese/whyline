@@ -160,6 +160,7 @@ def _git(cwd, *args):
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     root = tmp_path / "proj"
     root.mkdir()
     _git(root, "init", "-b", "main")
