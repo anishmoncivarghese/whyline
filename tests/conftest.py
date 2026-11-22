@@ -32,6 +32,44 @@ def _pad_pilot_pauses_on_windows() -> None:
 _pad_pilot_pauses_on_windows()
 
 
+def _click_where_the_widget_is() -> None:
+    """Make ``pilot.click(target)`` wait until ``target`` is really at the spot
+    the click will use. Textual computes that spot from the widget's last
+    layout, and a test that clicks right after a change that moves things
+    (a dialog closing, a result growing above a button) can click stale
+    coordinates on a slow runner. The click then lands on another widget and is
+    lost; Windows and Ubuntu 3.11 lost the same few clicks run after run."""
+    try:
+        from textual.pilot import Pilot
+        from textual.widget import Widget
+    except ImportError:
+        return
+    original = Pilot.click
+
+    def _under_cursor(pilot, widget, offset) -> bool:
+        app = pilot.app
+        try:
+            target = widget if isinstance(widget, Widget) else app.query_one(widget)
+            x, y = target.region.offset + offset
+            found, _ = app.get_widget_at(x, y)
+        except Exception:
+            return False
+        return found is target or target in found.ancestors_with_self
+
+    async def click(self, widget=None, offset=(0, 0), *args, **kwargs):
+        if widget is not None:
+            for _ in range(100):  # up to 5 s; returns at once when already there
+                if _under_cursor(self, widget, offset):
+                    break
+                await self.pause(0.05)
+        return await original(self, widget, offset, *args, **kwargs)
+
+    Pilot.click = click
+
+
+_click_where_the_widget_is()
+
+
 class Repo:
     """A temporary git repository with controllable commit timestamps."""
 
