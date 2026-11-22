@@ -18,13 +18,13 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
+from whyline.gitdir import release_dir
 from whyline.security import audit, contents, deps, external, lockfiles, secrets
 from whyline.security import settings as st
 from whyline.security.findings import Finding
 from whyline.security.settings import Decision, SecuritySettings
 
 SCOPES = ("release", "staged", "history", "all")
-STATE_DIR = Path(".git") / "whyline-release"
 
 
 @dataclass
@@ -43,7 +43,7 @@ class ScanReport:
 
 
 def state_dir(root: Path) -> Path:
-    return Path(root) / STATE_DIR
+    return release_dir(root)
 
 
 def _has_ref(root: Path, ref: str, run: Callable) -> bool:
