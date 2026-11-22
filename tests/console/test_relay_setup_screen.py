@@ -127,7 +127,7 @@ async def _open(app, pilot):
 
 
 async def _wait_for(pilot, condition, what):
-    for _ in range(100):
+    for _ in range(300):  # 15 s: the Windows 3.11 runner is slow
         if condition():
             return
         await pilot.pause(0.05)

@@ -867,7 +867,10 @@ async def test_all_files_again_restores_expanded_tree(tmp_path):
         assert tree.display is False
 
         await pilot.click("#file-all")
-        await pilot.pause()
+        for _ in range(300):  # a slow machine shows the tree a few frames later
+            await pilot.pause(0.05)
+            if tree.display:
+                break
         restored = app.query_one("#file-tree")
         assert restored is tree
         assert tree.display is True

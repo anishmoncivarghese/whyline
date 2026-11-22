@@ -223,7 +223,8 @@ async def test_template_prefills_form_in_memory_and_follows_enabled_providers(
         app.screen.query_one("#nt-continue", tui.Button).press()
         await _until(
             pilot,
-            lambda: isinstance(app.screen, NewAgentScreen) and app.screen.query("#na-runner"),
+            lambda: isinstance(app.screen, NewAgentScreen) and app.screen.query("#na-runner")
+            and app.screen.query_one("#na-runner", tui.Select).value is not tui.Select.BLANK,
             "template form shown again",
         )
         assert app.screen.query_one("#na-runner", tui.Select).value == "claude"

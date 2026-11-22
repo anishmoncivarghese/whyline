@@ -827,7 +827,7 @@ def _fake_plan(monkeypatch, steps):
         lambda root, cfg, version, **kw: release_engine.Plan(version, list(steps)))
 
 
-async def _until(pilot, condition, tries=300):
+async def _until(pilot, condition, tries=1500):  # 15 s: the Windows 3.11 runner is slow
     for _ in range(tries):
         if condition():
             return
