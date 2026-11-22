@@ -147,8 +147,14 @@ async def test_refresh_keeps_the_selection(tmp_path, monkeypatch):
         s.query_one("#na-model-codex", Select).value = "gpt-5.6"
         await pilot.pause()
         s.query_one("#na-refresh-models", Button).press()
-        await app.workers.wait_for_complete()
-        await pilot.pause()
+        # The press starts the refresh worker a message later; a slow machine
+        # may not have started it when wait_for_complete is first called.
+        for _ in range(200):
+            await app.workers.wait_for_complete()
+            await pilot.pause(0.05)
+            if len(calls) == 2 and (
+                "claude-fresh", "claude-fresh") in _options(s.query_one("#na-model", Select)):
+                break
         assert sorted(calls) == [("claude", True), ("codex", True)]
         main = s.query_one("#na-model", Select)
         assert ("claude-fresh", "claude-fresh") in _options(main)

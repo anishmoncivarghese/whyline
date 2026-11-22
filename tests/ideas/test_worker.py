@@ -1224,7 +1224,7 @@ def test_work_starts_caffeinate_with_the_job_pid(conn, monkeypatch, kind):
     ).fetchone()["pid"]
     assert pid == os.getpid()
     assert argv == ["/usr/bin/caffeinate", "-i", "-w", str(pid)]
-    assert _detached(kwargs)
+    assert kwargs["start_new_session"] is True  # caffeinate exists only on macOS
     assert kwargs["stdin"] is worker.subprocess.DEVNULL
 
 

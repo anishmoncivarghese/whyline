@@ -1,3 +1,4 @@
+import os
 import json
 
 import pytest
@@ -589,6 +590,7 @@ async def test_plan_reload_keeps_scroll(tmp_path):
         assert "other plan" in view.text
 
 
+@pytest.mark.skipif(os.name == "nt", reason="chmod 0o000 cannot make a file unreadable on Windows")
 @pytest.mark.asyncio
 async def test_failed_plan_read_puts_reason_on_path_line(tmp_path):
     body = "the plan body\n"

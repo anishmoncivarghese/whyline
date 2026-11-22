@@ -310,11 +310,11 @@ def test_edit_on_disk_marks_and_revert_clears(tmp_path):
     made = _approved_feature(tmp_path)
     prd = tmp_path / made.document("prd")["path"]
     original = prd.read_text(encoding="utf-8")
-    prd.write_text(original + "extra")
+    prd.write_text(original + "extra", encoding="utf-8")
     marked = docset.refresh_out_of_date(tmp_path, made)
     assert marked == [("spec", "PRD was edited on disk after this was approved")]
     assert docset.refresh_out_of_date(tmp_path, made) == []
-    prd.write_text(original)
+    prd.write_text(original, encoding="utf-8")
     assert docset.refresh_out_of_date(tmp_path, made) == []
     assert made.document("spec")["status"] == "approved"
     assert "out_of_date_reason" not in made.document("spec")
