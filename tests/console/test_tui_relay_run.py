@@ -915,7 +915,8 @@ async def test_bring_in_main_confirmation_shows_source_text(tmp_path, monkeypatc
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
         await _begin(app, pilot, "ask")
-        await _until(pilot, lambda: _screen_is(app, ConfirmStepScreen))
+        await _until(pilot, lambda: _screen_is(app, ConfirmStepScreen)
+                     and app.screen.query("#release-go"))
         detail = app.screen.query_one("#release-confirm-detail")
         assert "Releasing from main at abc123." in str(detail.render())
         app.screen.query_one("#release-go", tui.Button).press()

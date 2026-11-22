@@ -520,7 +520,10 @@ async def test_automatic_on_an_empty_chain_stages_the_other_usable_agents(tmp_pa
         _set_model(app, "gpt-5")
         await pilot.pause()
         await pilot.click("#cb-save")
-        await pilot.pause()
+        for _ in range(300):  # the save lands a few frames later on a slow runner
+            await pilot.pause(0.05)
+            if app.query_one("#cb-save", tui.Button).disabled:
+                break
         assert app.query_one("#cb-save", tui.Button).disabled
     assert relay_ops.read_backup(root) == ["claude", "grok"]
 

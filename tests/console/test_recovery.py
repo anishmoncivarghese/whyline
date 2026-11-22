@@ -6201,7 +6201,10 @@ async def test_console_proposal_offers_review_screen_with_apply_step_1_only(
         assert str(screen.query_one("#cancel", Button).label) == "Close"
         assert not screen.query_one("#rps-result", Static).has_class("-empty")
         await pilot.click("#cancel")
-        await pilot.pause()
+        for _ in range(300):  # the dismiss callback runs a few frames later on a slow runner
+            await pilot.pause(0.05)
+            if dismissed:
+                break
         assert len(dismissed) == 1 and getattr(dismissed[0], "success", False) is True
 
         again = recovery.apply(repo, problem, "proposal", launch=launch)

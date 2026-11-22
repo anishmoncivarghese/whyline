@@ -1,7 +1,35 @@
+import asyncio
+import os
 import subprocess
 from pathlib import Path
 
 import pytest
+
+
+def _pad_pilot_pauses_on_windows() -> None:
+    """On Windows only, let a bare ``pilot.pause()`` also give the app a short
+    real delay. Textual's idle check returns there before a pushed screen has
+    mounted its children or a worker's result has landed, and the slow Windows
+    3.11 runner failed a different handful of console tests every run.
+    macOS and Linux keep Textual's own pause."""
+    if os.name != "nt":
+        return
+    try:
+        from textual.pilot import Pilot
+    except ImportError:
+        return
+    original = Pilot.pause
+
+    async def pause(self, delay=None):
+        await original(self, delay)
+        if delay is None:
+            await asyncio.sleep(0.05)
+            await original(self)
+
+    Pilot.pause = pause
+
+
+_pad_pilot_pauses_on_windows()
 
 
 class Repo:
