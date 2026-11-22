@@ -836,7 +836,9 @@ async def _until(pilot, condition, tries=1500):  # 15 s: the Windows 3.11 runner
 
 
 def _screen_is(app, cls):
-    return isinstance(app.screen, cls)
+    # Pushed is not composed: on a slow runner the screen is current a few frames
+    # before its children exist, and a query then finds nothing.
+    return isinstance(app.screen, cls) and app.screen.is_mounted
 
 
 async def _begin(app, pilot, mode="ask"):
