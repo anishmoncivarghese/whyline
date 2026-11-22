@@ -12,6 +12,7 @@ import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
+from whyline.gitdir import release_dir
 from whyline.release import targets
 from whyline.release.config import ReleaseConfig
 from whyline.release.engine import Step
@@ -22,7 +23,6 @@ from whyline.release.targets.pypi import _owner_repo, project_name
 KEY = "homebrew"
 TAP_PREFIX = "homebrew-"
 DEFAULT_TAP_NAME = "tap"
-CLONE_DIR = Path(".git") / "whyline-release" / "tap"
 DOWNLOAD_TIMEOUT = 60.0
 BREW_TIMEOUT = 600.0
 GIT_TIMEOUT = 120.0
@@ -163,7 +163,7 @@ def sync_clone(root: Path, repo: str, *, run: Run) -> Path:
     """The scratch clone of the tap under .git/whyline-release/tap: cloned the first
     time; after that reset to origin and `git pull`, so a failed earlier run cannot
     leave it dirty or ahead."""
-    clone = Path(root) / CLONE_DIR
+    clone = release_dir(root) / "tap"
     if (clone / ".git").is_dir() and _recover(clone, run):
         proc = _git(clone, run, "pull", "--ff-only")
         if not _ok(proc):

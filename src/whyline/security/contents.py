@@ -20,6 +20,7 @@ import zipfile
 from collections.abc import Callable
 from pathlib import Path
 
+from whyline.gitdir import release_dir
 from whyline.security.findings import Finding, make_fingerprint
 from whyline.security.rules import RuleSet
 from whyline.security.secrets import (
@@ -31,7 +32,6 @@ from whyline.security.secrets import (
 
 _WARN = "medium"
 _PACKAGE_NAME = re.compile(r"^(.+?)-\d")
-_BUILD_DIR = ".git/whyline-release/build"
 
 
 def check(root: Path, *, run: Callable = subprocess.run, rules: RuleSet | None = None) -> list[Finding]:
@@ -139,7 +139,7 @@ def _is_python_project(root: Path) -> bool:
 
 
 def _check_python(root: Path, run: Callable, rules: RuleSet) -> list[Finding]:
-    base = root / _BUILD_DIR
+    base = release_dir(root) / "build"
     try:
         base.mkdir(parents=True, exist_ok=True)
         out = Path(tempfile.mkdtemp(dir=base))
