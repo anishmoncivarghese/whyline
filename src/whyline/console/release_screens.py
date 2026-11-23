@@ -316,7 +316,12 @@ class ReleaseScreen(ModalScreen):
         self.app.call_from_thread(self._show_source, text)
 
     def _show_source(self, text: str) -> None:
-        self.query_one("#release-source", Static).update(text)
+        # The lookup runs git and can outlast the screen: Start or Close may
+        # already have dismissed it, and the line then has nowhere to go.
+        try:
+            self.query_one("#release-source", Static).update(text)
+        except NoMatches:
+            return
 
     # -- events -------------------------------------------------------------
 

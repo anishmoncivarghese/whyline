@@ -6,14 +6,44 @@ from pathlib import Path
 import pytest
 
 
-def _pad_pilot_pauses_on_windows() -> None:
-    """On Windows only, let a bare ``pilot.pause()`` also give the app a short
-    real delay. Textual's idle check returns there before a pushed screen has
-    mounted its children or a worker's result has landed, and the slow Windows
-    3.11 runner failed a different handful of console tests every run.
-    macOS and Linux keep Textual's own pause."""
-    if os.name != "nt":
-        return
+def _settled(app) -> bool:
+    """True when the app has nothing left to do for its current screen: the
+    screen is mounted, and no message, layout or repaint is pending for it or
+    its widgets. A widget's region and the hit map come from the same layout, so
+    they agree even while a newer layout is pending; this is what notices."""
+    try:
+        screen = app.screen
+        if not screen.is_mounted:
+            return False
+        if any(
+            getattr(screen, flag, False)
+            for flag in ("_layout_required", "_scroll_required", "_repaint_required",
+                         "_recompose_required", "_dirty_widgets")
+        ):
+            return False
+        for pump in (app, screen):
+            queue = getattr(pump, "_message_queue", None)
+            if queue is not None and not queue.empty():
+                return False
+        return not any(
+            getattr(w, "_layout_required", False) or getattr(w, "_repaint_required", False)
+            or getattr(w, "_recompose_required", False)
+            for w in screen.walk_children(with_self=False)
+        )
+    except Exception:
+        return True  # no screen yet, or torn down: nothing to wait for
+
+
+def _pause_until_settled() -> None:
+    """Make a bare ``pilot.pause()`` return only once the app has settled (up
+    to 1 s). Textual's own pause returns at the first idle moment, which on a
+    slow runner comes before a pushed screen has composed, a result has been
+    laid out, or a dismiss has finished. Hundreds of console tests check right
+    after one bare pause; on windows-latest 3.11 a different one of them failed
+    about one run in four, so this fixes the whole class in one place. On
+    Windows it also keeps a short real delay, which a worker's result needs to
+    land (``call_from_thread``) before the settle check can see it.
+    ``pilot.pause(delay)`` with a delay is left alone: those are polling loops."""
     try:
         from textual.pilot import Pilot
     except ImportError:
@@ -22,14 +52,20 @@ def _pad_pilot_pauses_on_windows() -> None:
 
     async def pause(self, delay=None):
         await original(self, delay)
-        if delay is None:
+        if delay is not None:
+            return
+        if os.name == "nt":
             await asyncio.sleep(0.05)
             await original(self)
+        for _ in range(40):
+            if _settled(self.app):
+                return
+            await original(self, 0.025)
 
     Pilot.pause = pause
 
 
-_pad_pilot_pauses_on_windows()
+_pause_until_settled()
 
 
 def _click_where_the_widget_is() -> None:
@@ -48,28 +84,11 @@ def _click_where_the_widget_is() -> None:
         return
     original = Pilot.click
 
-    def _settled(screen) -> bool:
-        # A region and the hit map come from the same layout, so they agree even
-        # while a newer layout is pending; wait until nothing is pending.
-        if any(
-            getattr(screen, flag, False)
-            for flag in ("_layout_required", "_scroll_required", "_repaint_required",
-                         "_recompose_required", "_dirty_widgets")
-        ):
-            return False
-        queue = getattr(screen, "_message_queue", None)
-        if queue is not None and not queue.empty():
-            return False
-        return not any(
-            getattr(w, "_layout_required", False) or getattr(w, "_repaint_required", False)
-            for w in screen.walk_children(with_self=False)
-        )
-
     def _under_cursor(pilot, widget, offset) -> bool:
         app = pilot.app
         try:
             target = widget if isinstance(widget, Widget) else app.query_one(widget)
-            if not _settled(app.screen):
+            if not _settled(app):
                 return False
             x, y = target.region.offset + offset
             found, _ = app.get_widget_at(x, y)
