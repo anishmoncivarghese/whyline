@@ -81,7 +81,7 @@ Rules every task keeps:
   6. It refuses when the working tree is dirty or a relay is running, with the same words `source.bring_in_main` uses.
   Tests: `test_ticks_only_conflict_keeps_ticks` (ticks on this branch, on main, and mixed), `test_mismatch_aborts_and_changes_nothing` (a fake `run` that corrupts one written file; compare `git status --porcelain`, `git for-each-ref` and the index before and after), each reading and a file with none, `ours` and `theirs` touching only the conflicting places, a deleted-file conflict offering `agent` only, the refusals, and the commit message.
 
-- [ ] RSO-4: Stops with a kind, and Bring in main carrying its conflicts
+- [x] RSO-4: Stops with a kind, and Bring in main carrying its conflicts
   Edit `src/whyline/release/github.py`, `src/whyline/release/source.py`, `src/whyline/release/workflows.py`, `src/whyline/release/resolve.py` and their tests.
   1. `StepError` gains `kind: str = ""` and `data: dict`. The existing raise sites set it, with their messages unchanged: `merge-conflict` (with `files`), `dirty` (with `files`), `check-failed` (with `command` and `tail`), `push-behind`, `tag-exists`, `release-exists`, `publish-failed` (with `workflow` and `url`). The release state stores `kind` and `data` with the reason, and an old state file without them loads as `""`.
   2. `resolve.explain_stop(root, cfg, version, kind, data, reason, *, run, fetch) -> Resolution`:
