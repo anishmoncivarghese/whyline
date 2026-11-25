@@ -6,14 +6,14 @@ Finished plans are in `plans/done/`.
 
 `quick-fixes.plan.md` joins four small plans (console-restart, release-notes-review, relay-live-models, assistant-scheduled-access) so they run in one relay and ship in one release. Their task ids are unchanged. It also carries RDF-1..5: three fixes from releasing 0.3.74, new agents personal by default, and inline agent settings with whyline-relay 0.2.44 as the minimum. `telegram-daily-use.plan.md` does the same for waiting-on-you, plan-queue, assistant-feedback and assistant-router.
 
-`watch-agents.plan.md` was started on 2026-11-17 ahead of agent-setup and check-ins. Check-ins (CKN-1..5) were moved into it so it could carry on, and agent-setup now runs after it.
+`watch-agents.plan.md` was started on 2026-11-17 ahead of agent-setup and check-ins. Check-ins (CKN-1..5) were moved into it so it could carry on, agent-setup ran after it and is done.
 
 | # | Group | Plan | Tasks | Needs |
 |---|---|---|---|---|
 | 0 | Done | `done/agent-tools.plan.md` | TLS-1..16 | released as whyline 0.3.74 on 2026-11-15 |
 | 1 | Done | `done/quick-fixes.plan.md` | CRS-1..4, NOTE-1..6, LMD-1..2, ASST-24..27, RDF-1..5 (21) | released as whyline 0.3.75 on 2026-11-17 |
 | 1b | Done | `done/watch-agents.plan.md` | WCH-1..11, CKN-1..5 (16) | released as whyline 0.3.76. Check-ins (CKN-1..5) ran inside it |
-| 1c | Agent setup | `agent-setup.plan.md` | PKR-1..4, AMD-1..4, FLD-1..3, SKC-1..6, CON-1..4, MKT-1..3, RSK-1..3, LRV-1..3, DOC-1 (31) | watch-agents (the same New agent form), quick-fixes (RDF-4, personal agents and the skill picker's scope; LMD-2, the model dropdowns), whyline-relay 0.2.45 for LRV-1 (whyline-relay's `plans/live-run-settings.plan.md`, LRS-1..4) |
+| 1c | Done | `done/agent-setup.plan.md` | PKR-1..4, AMD-1..4, FLD-1..3, SKC-1..6, CON-1..4, MKT-1..3, RSK-1..3, LRV-1..3, DOC-1 (31) | released as whyline 0.3.77 on 2026-11-22 |
 | 1d | Release Resolve | `release-resolve.plan.md` | RSO-1..10 | quick-fixes released (RDF-1, the trial merge) |
 | 1e | Research | `research.plan.md` | RSR-1..12 | watch-agents (WCH-3, the page fetch), agent-tools (knowledge packs). Replaces `assistant-research.plan.md` (RES-1..5) |
 | 2 | Telegram daily use | `telegram-daily-use.plan.md` | WAIT-1..7, QUE-1..11, FB-1..7, RT-1..8 (33) | research (RT-8, the research route) |
@@ -40,7 +40,7 @@ Finished plans are in `plans/done/`.
 | 9 | | `self-improvement-2-fix.plan.md` | IMP-11..23, IMP-40..43 | part 1, sdlc-git-flow, whyline-relay 0.2.43 (model overrides) |
 | 9 | | `self-improvement-3-report-console.plan.md` | IMP-24..37, IMP-44..46 | part 2, telegram-daily-use (WAIT), watch-agents (CKN-3, quiet hours), sdlc-done, sdlc-product-owner and raaid-log (suggestions) |
 | 10 | Trading desk | `trading-desk.plan.md` | TRD-1..15 | |
-| Any time | Done | `done/windows-release-gate.plan.md` | WIN-1 | done 2026-11-23: three green CI runs on 30c6fa8 with Windows gating; release.yml tests Windows; ships in the next release |
+| Any time | Done | `done/windows-release-gate.plan.md` | WIN-1 | done 2026-11-23: three green CI runs on 30c6fa8 with Windows gating; release.yml tests Windows; released as whyline 0.3.82 |
 
 ## Rules
 
