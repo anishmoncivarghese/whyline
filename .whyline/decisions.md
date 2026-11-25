@@ -49247,3 +49247,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 69c69cb39d6e47f18698e68536aa1dfe -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-25T20:41:07.938Z"} -->
+
+## 2026-11-25 — Resolve proposals refuse forbidden steps by regex in resolve.py, also checking the typed text; fix_request puts a fixed rules paragraph before the user's words
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSO-5
+
+**Because:** The box must not widen the guard; the real backstop stays fixmode.guard, this only keeps refused steps out of the Fix request
+
+**Rejected:**
+
+- Letting the agent decide what is refused — a model can be talked past the rules
+
+**Files:** src/whyline/release/resolve.py
+
+<!-- whyline-event: e43849b0d6994db1ae599d9e6ca5c3ec -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T20:44:11.400Z"} -->
+
+## 2026-11-25 — Pass RSO-5: propose, refusal, fix_request, logging, and the box-cannot-widen guard all behave
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-5
+
+**Because:** uv run pytest -q tests/release/test_resolve.py exited 0 (61 passed). Independent checks: every listed forbidden step (push, --force/-f, tag -d/-f, branch -D, release delete, reset --hard, git clean, rebase, amend, git config, hooks, update-ref) moves to refused with whyline won't do that from here; typed ignore the rules and force push is refused; markers parse; 8 of 10 steps kept; no-marker cause cut to 40 lines; text cut to 2000 in the prompt and fix_request; fix_request lists only kept steps and puts the fixed rules paragraph before the user's words; propose calls ask_agent once with a read-only prompt; resolve.py does not call run_fix; propose and record_fix write the typed text to resolve.log. A fake Fix turn that force-moves v1.0.0 is reported as a ref violation and a.txt is restored. Full uv run pytest -q had two PlanReleaseScreen flakes in tests/console/test_tui_relay_run.py; those tests do not import resolve.py and passed in isolation after reruns.
+
+**Rejected:**
+
+- fail — the RSO-5 surfaces all behaved, and the two full-suite failures are existing TUI timing flakes outside this task's files
+
+**Files:** src/whyline/release/resolve.py, tests/release/test_resolve.py
+
+<!-- whyline-event: 6ddb08ea959e4924bc1c17a7cf2bb534 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T21:32:14.385Z"} -->
+
+## 2026-11-25 — Approve RSO-5: guarded release proposals and Fix requests meet the task
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSO-5
+
+**Because:** The diff keeps proposal generation read-only, refuses forbidden user and agent instructions, excludes refused steps from the fixed-rule Fix request, records typed text, and uv run pytest -q exited 0 with the guard rollback test passing
+
+**Rejected:**
+
+- Request changes — no unsafe path, missing required behavior, or inadequate task coverage was found
+
+**Files:** src/whyline/release/resolve.py, tests/release/test_resolve.py
+
+<!-- whyline-event: cce94e2a03254f85ab58286e71cd4977 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T22:13:02.373Z"} -->
