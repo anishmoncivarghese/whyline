@@ -38,7 +38,7 @@ Rules every task keeps:
 - Text typed in the box cannot make the agent's turn pass the guard. RSO-5, `test_box_cannot_widen_the_guard`.
 - Nothing changes in the repository before Do it is pressed. RSO-7, `test_nothing_runs_before_do_it`.
 
-- [ ] RSO-1: What is wrong and what can be done, for each check
+- [x] RSO-1: What is wrong and what can be done, for each check
   Create `src/whyline/release/resolve.py` and `tests/release/test_resolve.py` only.
   1. `Option`: `id`, `label`, `kind` (`run`, `open`, `copy`, `version`, `conflicts`, `recheck`), `needs` (`""` or `message`), `recommended: bool`. `Resolution`: `key`, `title`, `facts: tuple[str, ...]` (plain lines), `options: tuple[Option, ...]` (at most four).
   2. `explain(root, cfg, version, item: ReadyItem, *, run, fetch) -> Resolution`. It reads facts itself and uses no model:
