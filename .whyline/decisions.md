@@ -48873,3 +48873,108 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c8f1e1f64d0e446e909e8bd26fec1242 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-25T10:21:04.951Z"} -->
+
+## 2026-11-25 — Resolve undo moves HEAD back with a plain git reset -q to the snapshot head, then fixmode.undo restores files
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSO-2
+
+**Because:** fixmode.undo refuses when HEAD moved, so the option's own commits must be dropped first; reset --hard is forbidden, and the snapshot tree restores the working files
+
+**Rejected:**
+
+- git reset --hard — banned by the destructive-argv rule
+
+**Files:** src/whyline/release/resolve.py
+
+<!-- whyline-event: 2aab2e1a377b43efa195458e5dfc7c51 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T10:27:30.972Z"} -->
+
+## 2026-11-25 — RSO-2 preview/apply/undo/history matches the spec for every named check
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-2
+
+**Because:** Task tests 39 passed; tests/release passed; full suite exited 0; independent probes in a real git repo showed commit (secrets scan first, empty message refused, whyline note --role release), stash (named, pop restores, no snapshot), pull (ff-only, dirty files kept, overwrite refused), bring (source.bring_in_main, dirty refused), open/copy/version/recheck with no argv, no destructive argv, undo of commit/pull/bring plus the later-commit refusal, and log newest-first capped at 50
+
+**Rejected:**
+
+- Fail because a successful pull records rev-list after merge so preview argv is not a suffix of apply argv — those extra calls are read-only bookkeeping and the merge command matches the preview
+- Fail because a refused empty message or secret-stop does not append a log line — the spec's log test is one line per successful apply and undo, and refusals change nothing
+
+**Test:** uv run pytest -q tests/release/test_resolve.py: 39 passed
+**Test:** uv run pytest -q tests/release: all passed
+**Test:** uv run pytest -q: exit 0
+
+**Files:** src/whyline/release/resolve.py, tests/release/test_resolve.py
+
+<!-- whyline-event: 7e10a0e7379a472f86092a71edd6762f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T11:09:00.504Z"} -->
+
+## 2026-11-25 — RSO-2 needs changes for stable previews and non-mutating refused undo
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSO-2
+
+**Because:** The full uv run pytest -q suite exits 0, but a real stash preview followed one second later by apply uses different timestamped argv, and undo after checking out another branch at the applied HEAD resets that branch before fixmode rejects it while reporting that nothing changed
+
+**Files:** src/whyline/release/resolve.py, tests/release/test_resolve.py
+
+<!-- whyline-event: 34d1dcf85d8742118caf1f8931cd28ab -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T11:42:01.434Z"} -->
+
+## 2026-11-25 — Stash name is a hash of HEAD and the listed files, not a timestamp
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSO-2
+
+**Because:** Preview and apply must produce identical argv even across a clock tick; same state gives the same name
+
+**Rejected:**
+
+- pass stash_name from preview to apply — callers and the spec'd apply signature have no place for it
+
+**Files:** src/whyline/release/resolve.py
+
+<!-- whyline-event: 23ab1b4494a54ba08fa714801b5ece9d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T11:44:51.752Z"} -->
+
+## 2026-11-25 — RSO-2 preview/apply/undo/history matches the spec, including stable stash names and non-mutating refused undo
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-2
+
+**Because:** Task tests 41 passed; tests/release passed; full suite exited 0; independent probes in a real git repo showed commit (secrets scan first, empty message refused, whyline note --role release), stash (named hash identical after 1.1s, pop restores, no snapshot), pull (ff-only, dirty files kept, overwrite refused), bring (source.bring_in_main, dirty refused), open/copy/version/recheck with no argv, no destructive argv, undo of commit/pull/bring plus the later-commit refusal, undo on another branch at the applied HEAD leaving both tips unchanged, and log newest-first capped at 50
+
+**Rejected:**
+
+- Fail because the stash name is a hash, not a timestamp — preview and apply must agree across a clock tick, and the stash is still named whyline-release-*
+- Fail because a successful pull records rev-list after merge so preview argv is not a suffix of apply argv — those extra calls are read-only bookkeeping and the merge command matches the preview
+- Fail because a refused empty message or secret-stop does not append a log line — the spec's log test is one line per successful apply and undo, and refusals change nothing
+
+**Test:** uv run pytest -q tests/release/test_resolve.py: 41 passed
+**Test:** uv run pytest -q tests/release: exit 0
+**Test:** uv run pytest -q: exit 0
+
+**Files:** src/whyline/release/resolve.py, tests/release/test_resolve.py
+
+<!-- whyline-event: 587ddb4d91cb44b18fbba82dee34d0e0 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T12:26:04.184Z"} -->
+
+## 2026-11-25 — Approve RSO-2 option execution, preview, undo, and history
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSO-2
+
+**Because:** The working-tree diff implements all four runnable options with guarded snapshots, secret refusal, stable preview/apply argv, non-destructive undo refusal, JSON history, and release notes; the required plain uv run pytest -q completed with exit 0
+
+**Files:** src/whyline/release/resolve.py, tests/release/test_resolve.py
+
+<!-- whyline-event: c36817ce30d845b1a9497e21a4ef94e5 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T13:03:09.914Z"} -->

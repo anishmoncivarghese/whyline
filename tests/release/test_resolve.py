@@ -246,3 +246,337 @@ def test_unknown_key_shows_text_and_fix_only(tmp_path):
     res = _explain(tmp_path, ReadyItem("mystery", False, "Something odd", "Try X"))
     assert res.facts == ("Something odd", "Try X")
     assert res.options == ()
+
+
+# --- running an option (RSO-2) -----------------------------------------------
+
+import json  # noqa: E402
+import subprocess  # noqa: E402
+import time  # noqa: E402
+
+import pytest  # noqa: E402
+
+from whyline.release.ready import default_fetch  # noqa: E402
+
+COMMIT = resolve.Option("commit", "Commit them", "run", needs="message")
+STASH = resolve.Option("stash", "Stash them", "run")
+PULL = resolve.Option("pull", "Pull origin/main", "run")
+BRING = resolve.Option("bring", "Bring in main", "run")
+CFG = ReleaseConfig()
+FORBIDDEN = ("--force", "-f", "clean")
+FORBIDDEN_PAIRS = (("tag", "-d"), ("branch", "-D"), ("reset", "--hard"), ("checkout", "--"))
+
+
+class Real:
+    """A real `run`: git for real, and `whyline note` calls remembered, not run."""
+
+    def __init__(self):
+        self.notes: list[list[str]] = []
+
+    def __call__(self, args, **kw):
+        if args[0] == "whyline":
+            self.notes.append(list(args))
+            return _res(0)
+        kw.pop("timeout", None)
+        kw.setdefault("capture_output", True)
+        kw.setdefault("text", True)
+        return subprocess.run(args, check=False, **kw)
+
+
+def _g(cwd, *args):
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+
+
+def _out(cwd, *args):
+    res = subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
+    return res.stdout.strip()
+
+
+@pytest.fixture
+def repo(tmp_path):
+    origin = tmp_path / "origin.git"
+    work = tmp_path / "work"
+    _g(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
+    _g(tmp_path, "clone", "-q", str(origin), str(work))
+    _g(work, "config", "user.email", "t@example.com")
+    _g(work, "config", "user.name", "T")
+    _g(work, "checkout", "-q", "-b", "main")
+    (work / "a.txt").write_text("one\n")
+    _g(work, "add", "a.txt")
+    _g(work, "commit", "-q", "-m", "first")
+    _g(work, "push", "-q", "origin", "main")
+    return work
+
+
+def _advance_origin(repo, name="up.txt"):
+    other = repo.parent / "other"
+    if not other.exists():
+        _g(repo.parent, "clone", "-q", str(repo.parent / "origin.git"), str(other))
+        _g(other, "config", "user.email", "t@example.com")
+        _g(other, "config", "user.name", "T")
+    (other / name).write_text("from origin\n")
+    _g(other, "add", name)
+    _g(other, "commit", "-q", "-m", f"add {name}")
+    _g(other, "push", "-q", "origin", "main")
+    _g(repo, "fetch", "-q", "origin", "main")
+
+
+def _dirty(repo, tag=""):
+    (repo / "a.txt").write_text(f"one changed{tag}\n")
+    (repo / "new.txt").write_text(f"brand new{tag}\n")
+
+
+def _apply(repo, option, run, message="", **kw):
+    return resolve.apply(repo, CFG, "1.0.0", option, message=message, run=run,
+                         fetch=default_fetch, relay_running=lambda _r: False, **kw)
+
+
+def _has_forbidden(argv):
+    for cmd in argv:
+        args = list(cmd[1:])
+        if args[:1] == ["push"] or any(a in FORBIDDEN for a in args):  # `stash push` is fine
+            return True
+        for first, second in FORBIDDEN_PAIRS:
+            if first in args and second in args[args.index(first) + 1:]:
+                return True
+    return False
+
+
+def test_commit_commits_the_listed_files_and_notes_it(repo):
+    run = Real()
+    _dirty(repo)
+    out = _apply(repo, COMMIT, run, "tidy up")
+    assert out.ok and out.commits == 1 and out.snapshot_id
+    assert _out(repo, "status", "--porcelain") == ""
+    assert _out(repo, "log", "-1", "--format=%s") == "tidy up"
+    assert ("git", "commit", "-m", "tidy up") in out.argv
+    assert len(run.notes) == 1 and run.notes[0][run.notes[0].index("--role") + 1] == "release"
+
+
+def test_empty_message_is_refused_and_nothing_changes(repo):
+    _dirty(repo)
+    before = _out(repo, "rev-parse", "HEAD")
+    for message in ("", "   "):
+        out = _apply(repo, COMMIT, Real(), message)
+        assert not out.ok and "message" in out.text
+        assert out.argv == ()
+    assert _out(repo, "rev-parse", "HEAD") == before
+    assert (repo / "a.txt").read_text() == "one changed\n"
+
+
+def test_secret_stops_the_commit_without_showing_the_value(repo):
+    token = "ghp_" + "aB3dE6gH9jK2mN5pQ8sT1vW4yZ7cF0hJ3kL6"
+    (repo / "creds.txt").write_text(f'token = "{token}"\n')
+    before = _out(repo, "rev-parse", "HEAD")
+    out = _apply(repo, COMMIT, Real(), "add creds")
+    assert not out.ok
+    assert "creds.txt" in out.text and token not in out.text
+    assert _out(repo, "rev-parse", "HEAD") == before
+    assert _out(repo, "diff", "--cached", "--name-only") == ""
+
+
+def test_stash_names_the_stash_and_pop_brings_files_back(repo):
+    _dirty(repo)
+    out = _apply(repo, STASH, Real())
+    assert out.ok and "Get them back with: git stash pop" in out.text
+    assert out.snapshot_id == ""
+    assert _out(repo, "status", "--porcelain") == ""
+    name = out.text.split(" as ")[1].split(".")[0]
+    assert name in _out(repo, "stash", "list")
+    _g(repo, "stash", "pop", "-q")
+    assert (repo / "a.txt").read_text() == "one changed\n"
+    assert (repo / "new.txt").read_text() == "brand new\n"
+
+
+def test_pull_moves_forward_and_keeps_unrelated_dirty_files(repo):
+    _advance_origin(repo)
+    (repo / "a.txt").write_text("mine\n")
+    out = _apply(repo, PULL, Real())
+    assert out.ok and out.commits == 1 and out.snapshot_id
+    assert (repo / "up.txt").read_text() == "from origin\n"
+    assert (repo / "a.txt").read_text() == "mine\n"
+
+
+def test_pull_refuses_when_both_moved(repo):
+    _advance_origin(repo)
+    (repo / "mine.txt").write_text("x\n")
+    _g(repo, "add", "mine.txt")
+    _g(repo, "commit", "-q", "-m", "mine")
+    out = _apply(repo, PULL, Real())
+    assert not out.ok and not (repo / "up.txt").exists()
+
+
+def test_bring_merges_main_into_the_release_branch(repo):
+    _g(repo, "checkout", "-q", "-b", "release/x")
+    _advance_origin(repo)
+    out = _apply(repo, BRING, Real())
+    assert out.ok and out.snapshot_id and out.commits >= 1
+    assert (repo / "up.txt").exists()
+    assert _out(repo, "log", "-1", "--format=%s").startswith("merge: bring main into release/x")
+
+
+def test_bring_refuses_over_dirty_files_and_leaves_them(repo):
+    _g(repo, "checkout", "-q", "-b", "release/x")
+    _advance_origin(repo)
+    _dirty(repo)
+    out = _apply(repo, BRING, Real())
+    assert not out.ok and "Commit or stash" in out.text
+    assert (repo / "a.txt").read_text() == "one changed\n"
+
+
+def test_preview_argv_is_what_apply_ran(repo):
+    run = Real()
+    for n, (option, message) in enumerate(((COMMIT, "msg"), (STASH, ""))):
+        _dirty(repo, n)
+        pre = resolve.preview(repo, CFG, "1.0.0", option, message=message, run=run)
+        out = _apply(repo, option, run, message)
+        assert out.ok and pre.argv, option.id
+        assert out.argv[-len(pre.argv):] == pre.argv, option.id
+        if option is STASH:
+            _g(repo, "stash", "pop", "-q")
+            _g(repo, "add", "-A")
+            _g(repo, "commit", "-q", "-m", "keep")
+    _advance_origin(repo)
+    pre = resolve.preview(repo, CFG, "1.0.0", PULL, run=run)
+    assert _apply(repo, PULL, run).argv[-1:] == pre.argv
+    _g(repo, "checkout", "-q", "-b", "release/x")
+    _advance_origin(repo, "more.txt")
+    pre = resolve.preview(repo, CFG, "1.0.0", BRING, run=run)
+    assert pre.argv[0] in _apply(repo, BRING, run).argv
+
+
+def test_options_without_argv_have_none_and_are_not_run_here(repo):
+    for kind in ("open", "copy", "version", "recheck", "conflicts"):
+        opt = resolve.Option(f"x-{kind}", "Do x", kind)
+        pre = resolve.preview(repo, CFG, "1.0.0", opt, run=Real())
+        assert pre.argv == () and pre.lines
+        assert not _apply(repo, opt, Real()).ok
+
+
+def test_no_destructive_argv(repo):
+    run = Real()
+    seen: list[tuple[str, ...]] = []
+    _dirty(repo)
+    for option in (COMMIT, STASH, PULL, BRING):
+        seen.extend(resolve.preview(repo, CFG, "1.0.0", option, message="m", run=run).argv)
+    seen.extend(_apply(repo, COMMIT, run, "m").argv)
+    _g(repo, "push", "-q", "origin", "main")
+    _dirty(repo, 2)
+    seen.extend(_apply(repo, STASH, run).argv)
+    _advance_origin(repo)
+    seen.extend(_apply(repo, PULL, run).argv)
+    _g(repo, "checkout", "-q", "-b", "release/x")
+    _advance_origin(repo, "more.txt")
+    seen.extend(_apply(repo, BRING, run).argv)
+    assert len(seen) > 6
+    assert not _has_forbidden(seen), seen
+    assert _has_forbidden([("git", "push")]) and _has_forbidden([("git", "reset", "--hard")])
+
+
+def test_dirty_files_survive_every_option(repo):
+    run = Real()
+    _dirty(repo)  # commit: the content is in HEAD
+    assert _apply(repo, COMMIT, run, "m").ok
+    assert _out(repo, "show", "HEAD:a.txt") == "one changed"
+    assert _out(repo, "show", "HEAD:new.txt") == "brand new"
+    _g(repo, "push", "-q", "origin", "main")
+    (repo / "a.txt").write_text("stashed\n")  # stash: in the named stash, and comes back
+    assert _apply(repo, STASH, run).ok
+    assert _out(repo, "show", "stash@{0}:a.txt") == "stashed"
+    _g(repo, "stash", "pop", "-q")
+    assert (repo / "a.txt").read_text() == "stashed\n"
+    _advance_origin(repo)  # pull leaves it alone; bring refuses before touching it
+    assert _apply(repo, PULL, run).ok
+    assert (repo / "a.txt").read_text() == "stashed\n"
+    _g(repo, "checkout", "-q", "-b", "release/x")
+    _advance_origin(repo, "more.txt")
+    assert not _apply(repo, BRING, run).ok
+    assert (repo / "a.txt").read_text() == "stashed\n"
+
+
+def test_undo_a_commit_puts_the_files_back_dirty(repo):
+    run = Real()
+    _dirty(repo)
+    start = _out(repo, "rev-parse", "HEAD")
+    out = _apply(repo, COMMIT, run, "m")
+    assert resolve.undo(repo, out.snapshot_id, run=run).startswith("Undone")
+    assert _out(repo, "rev-parse", "HEAD") == start
+    assert (repo / "a.txt").read_text() == "one changed\n"
+    assert (repo / "new.txt").read_text() == "brand new\n"
+    assert resolve.undo(repo, out.snapshot_id, run=run) == "That was already undone"
+
+
+def test_undo_a_pull_goes_back(repo):
+    run = Real()
+    start = _out(repo, "rev-parse", "HEAD")
+    _advance_origin(repo)
+    out = _apply(repo, PULL, run)
+    assert resolve.undo(repo, out.snapshot_id, run=run).startswith("Undone")
+    assert _out(repo, "rev-parse", "HEAD") == start
+    assert not (repo / "up.txt").exists()
+
+
+def test_undo_refuses_when_something_was_committed_after(repo):
+    run = Real()
+    _dirty(repo)
+    out = _apply(repo, COMMIT, run, "m")
+    (repo / "later.txt").write_text("later\n")
+    _g(repo, "add", "later.txt")
+    _g(repo, "commit", "-q", "-m", "later")
+    head = _out(repo, "rev-parse", "HEAD")
+    assert resolve.undo(repo, out.snapshot_id, run=run) == \
+        "Something was committed after this; undo it by hand"
+    assert _out(repo, "rev-parse", "HEAD") == head
+
+
+def test_stash_preview_and_apply_agree_across_a_clock_tick(repo):
+    run = Real()
+    _dirty(repo)
+    pre = resolve.preview(repo, CFG, "1.0.0", STASH, run=run)
+    time.sleep(1.1)
+    out = _apply(repo, STASH, run)
+    assert out.ok and out.argv[-1:] == pre.argv
+
+
+def test_refused_undo_on_another_branch_changes_nothing(repo):
+    run = Real()
+    _dirty(repo)
+    out = _apply(repo, COMMIT, run, "m")
+    _g(repo, "checkout", "-q", "-b", "other")
+    (repo / "wip.txt").write_text("wip\n")
+    _g(repo, "add", "wip.txt")
+    state = (_out(repo, "rev-parse", "HEAD"), _out(repo, "rev-parse", "main"),
+             _out(repo, "status", "--porcelain"), _out(repo, "symbolic-ref", "HEAD"))
+    text = resolve.undo(repo, out.snapshot_id, run=run)
+    assert text.startswith("Nothing was undone")
+    assert state == (_out(repo, "rev-parse", "HEAD"), _out(repo, "rev-parse", "main"),
+                     _out(repo, "status", "--porcelain"), _out(repo, "symbolic-ref", "HEAD"))
+    assert (repo / "wip.txt").read_text() == "wip\n"
+
+
+def test_log_has_one_line_per_apply_and_undo(repo):
+    run = Real()
+    _dirty(repo)
+    out = _apply(repo, COMMIT, run, "the message", key="clean")
+    resolve.undo(repo, out.snapshot_id, run=run)
+    lines = (repo / ".git" / "whyline-release" / "resolve.log").read_text().splitlines()
+    assert len(lines) == 2
+    first, second = (json.loads(line) for line in lines)
+    assert first["key"] == "clean" and first["option"] == "commit"
+    assert first["text"] == "the message" and first["commits"] == 1
+    assert first["result"] == "kept" and first["time"]
+    assert second["result"] == "undone" and second["option"] == "commit"
+    assert [e.result for e in resolve.history(repo, run=run)] == ["undone", "kept"]
+
+
+def test_history_is_newest_first_and_capped_at_fifty(repo):
+    run = Real()
+    path = repo / ".git" / "whyline-release"
+    path.mkdir()
+    rows = [json.dumps({"time": "t", "key": "k", "option": "stash", "text": str(i),
+                        "commits": 0, "result": "kept"}) for i in range(60)]
+    (path / "resolve.log").write_text("\n".join(rows) + "\nnot json\n")
+    entries = resolve.history(repo, run=run)
+    assert len(entries) == 50
+    assert entries[0].text == "59" and entries[-1].text == "10"
+    assert resolve.history(repo.parent / "nowhere", run=run) == []
