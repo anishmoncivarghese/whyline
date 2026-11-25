@@ -580,3 +580,166 @@ def test_history_is_newest_first_and_capped_at_fifty(repo):
     assert len(entries) == 50
     assert entries[0].text == "59" and entries[-1].text == "10"
     assert resolve.history(repo.parent / "nowhere", run=run) == []
+
+
+# --- explain_stop ------------------------------------------------------------
+
+def _stop(tmp_path, kind, data=None, table=None, reason="stopped", **kw):
+    return resolve.explain_stop(tmp_path, kw.pop("cfg", ReleaseConfig()), "1.0.0", kind,
+                                data or {}, reason, run=_run(table or {}),
+                                fetch=kw.pop("fetch", _fetch), **kw)
+
+
+def test_stop_merge_conflict_lists_files(tmp_path):
+    res = _stop(tmp_path, "merge-conflict", {"files": ["a.py", "b.py"]})
+    assert res.facts == ("bringing it in conflicts in:", "a.py", "b.py")
+    assert _ids(res) == ["conflicts"]
+
+
+def test_stop_dirty_is_the_clean_check(tmp_path):
+    res = _stop(tmp_path, "dirty", table={"status": _res(0, " M a.py\n")})
+    assert res.facts == ("a.py (changed)",)
+    assert _ids(res) == ["commit", "stash", "open-files"]
+
+
+def test_stop_check_failed_keeps_last_forty_lines_and_offers_only_rerun(tmp_path):
+    tail = "\n".join(f"line{i}" for i in range(60))
+    res = _stop(tmp_path, "check-failed", {"command": "pytest", "tail": tail})
+    assert res.facts[0] == "pytest failed"
+    assert res.facts[1:] == tuple(f"line{i}" for i in range(20, 60))
+    assert _ids(res) == ["rerun"] and res.options[0].kind == "run"
+
+
+def test_stop_push_behind_with_and_without_conflicts(tmp_path):
+    table = {"rev-parse --abbrev-ref": _res(0, "x\n"), "rev-list --count": _res(0, "3\n"),
+             "merge-tree": _res(0)}
+    res = _stop(tmp_path, "push-behind", table=table)
+    assert res.facts == ("3 commits behind origin/main", "bringing it in would not conflict")
+    assert _ids(res) == ["bring"]
+    table["merge-tree"] = _res(1, "tree\na.py\n")
+    res = _stop(tmp_path, "push-behind", table=table)
+    assert res.facts[-2:] == ("bringing it in would conflict in:", "a.py")
+    assert _ids(res) == ["conflicts"]
+
+
+def _tag_table(head):
+    return {"rev-parse -q --verify refs/tags/v1.0.0": _res(0, "abc1234567\n"),
+            "rev-parse HEAD": _res(0, head + "\n")}
+
+
+def test_stop_tag_exists_on_this_releases_own_commit_has_no_option(tmp_path):
+    for kind in ("tag-exists", "release-exists"):
+        res = _stop(tmp_path, kind, table=_tag_table("abc1234567"))
+        assert res.facts == ("v1.0.0 points at abc1234",
+                             "It is this release's own, so resuming is safe")
+        assert res.options == ()
+
+
+def test_stop_tag_exists_on_another_commit_offers_a_version(tmp_path):
+    table = {**_tag_table("def7654321"), "ls-remote --tags origin": _res(0, "")}
+    res = _stop(tmp_path, "tag-exists", table=table, get=lambda url: 404)
+    assert res.facts[0] == "v1.0.0 points at abc1234"
+    assert _ids(res) == ["version-1.0.1"]
+
+
+def test_stop_publish_failed_uses_each_targets_own_completion_check(tmp_path, monkeypatch):
+    from whyline.release import targets
+    from whyline.release.config import CustomTarget as Entry
+    from whyline.release.engine import Step
+    from whyline.release.targets.custom import CustomTarget
+
+    class Brew:  # production shape: no _published, only a step's done_check
+        key = "homebrew"
+        title = "Homebrew"
+
+        def steps(self, root, cfg, version, *, run, fetch):
+            return [Step("homebrew", "Update the Homebrew formula", True, lambda: True,
+                         lambda cancel: None)]
+
+    def shell(command, root, env, on_line):
+        return (0 if command == "ok" else 1), []
+
+    cfg = ReleaseConfig(targets=Targets(custom=(Entry(name="a", run="r", verify="ok"),
+                                                Entry(name="b", run="r", verify="bad"))))
+    monkeypatch.setattr(targets, "enabled", lambda c: [Brew(), CustomTarget(shell=shell)])
+    res = resolve.explain_stop(tmp_path, cfg, "1.0.0", "publish-failed", {}, "stopped",
+                               run=_run({}), fetch=_fetch)
+    assert res.facts == ("Update the Homebrew formula: published",
+                         "Run custom target a: published",
+                         "Run custom target b: not published", "Resume continues from Verify")
+    assert res.options == ()
+
+
+def test_stop_check_rerun_runs_that_one_command_and_shows_its_tail(tmp_path):
+    cfg = ReleaseConfig(checks=("pytest -q",))
+    res = resolve.explain_stop(tmp_path, cfg, "1.0.0", "check-failed",
+                               {"command": "pytest -q", "tail": "x"}, "stopped",
+                               run=_run({}), fetch=_fetch)
+    option = res.options[0]
+    assert option.command == "pytest -q"
+    seen = []
+
+    def shell(command, root, on_line):
+        seen.append(command)
+        return 1, [f"line{i}" for i in range(60)]
+
+    out = resolve.apply(tmp_path, cfg, "1.0.0", option, run=_run({}), fetch=_fetch,
+                        run_shell=shell)
+    assert seen == ["pytest -q"] and not out.ok
+    assert out.text.splitlines() == ["pytest -q failed", *[f"line{i}" for i in range(20, 60)]]
+    assert "pytest -q" in resolve.preview(tmp_path, cfg, "1.0.0", option, run=_run({})).lines[0]
+
+
+def test_rerun_refuses_a_command_that_is_not_a_configured_check(tmp_path):
+    cfg = ReleaseConfig(checks=("pytest -q",))
+    option = resolve.Option("rerun", "x", "run", command="rm -rf /")
+
+    def shell(*a):
+        raise AssertionError("must not run")
+
+    out = resolve.apply(tmp_path, cfg, "1.0.0", option, run=_run({}), fetch=_fetch,
+                        run_shell=shell)
+    assert not out.ok
+    assert "not one of" in resolve.preview(tmp_path, cfg, "1.0.0", option, run=_run({})).lines[0]
+
+
+def test_stop_without_a_kind_gives_the_reason(tmp_path):
+    res = _stop(tmp_path, "", reason="Build failed: boom")
+    assert res.facts == ("Build failed: boom",) and res.options == ()
+
+
+def _stop_real(repo, kind):
+    return resolve.explain_stop(repo, ReleaseConfig(), "1.0.0", kind, {}, "stopped",
+                                run=Real(), fetch=_fetch, get=lambda url: 404)
+
+
+def test_stop_tag_on_head_after_merging_main_is_own(repo):
+    _g(repo, "commit", "-q", "--allow-empty", "-m", "chore: release v1.0.0")
+    _g(repo, "tag", "v1.0.0")
+    _g(repo, "checkout", "-q", "-b", "side")
+    _advance_origin(repo)
+    _g(repo, "fetch", "-q", "origin")
+    _g(repo, "merge", "-q", "--no-ff", "-m", "Merge main", "origin/main")
+    _g(repo, "tag", "-f", "v1.0.0")
+    res = _stop_real(repo, "tag-exists")
+    assert res.facts[-1] == "It is this release's own, so resuming is safe"
+    assert res.options == ()
+
+
+def test_stop_remote_tag_on_an_older_commit_beats_the_new_local_tag(repo):
+    _g(repo, "tag", "-a", "-m", "old", "v1.0.0")
+    _g(repo, "push", "-q", "origin", "v1.0.0")
+    _g(repo, "commit", "-q", "--allow-empty", "-m", "chore: release v1.0.0")
+    _g(repo, "tag", "-f", "v1.0.0")
+    res = _stop_real(repo, "tag-exists")
+    assert "It is this release's own, so resuming is safe" not in res.facts
+    assert _ids(res) == ["version-1.0.1"]
+
+
+def test_stop_tag_on_an_older_ancestor_is_not_own(repo):
+    _g(repo, "commit", "-q", "--allow-empty", "-m", "chore: release v1.0.0")
+    _g(repo, "tag", "v1.0.0")
+    _g(repo, "commit", "-q", "--allow-empty", "-m", "later work")
+    res = _stop_real(repo, "tag-exists")
+    assert "It is this release's own, so resuming is safe" not in res.facts
+    assert _ids(res) == ["version-1.0.1"]

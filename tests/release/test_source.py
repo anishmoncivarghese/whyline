@@ -313,3 +313,18 @@ def test_pending_allowlist_from_allow_does_not_block(tmp_path):
     config.add_pending(root, ".whyline/security-allow.toml")
     bring(root)
     assert (root / ".whyline" / "security-allow.toml").read_text() == "b"
+
+
+def test_conflict_and_dirty_stops_carry_kind_and_files(tmp_path):
+    root = make_repo(tmp_path)
+    git(root, "checkout", "-b", "relay/x")
+    (root / "a").write_text("branch side")
+    git(root, "commit", "-am", "branch edit")
+    push_to_main(tmp_path, "a", "main side")
+    with pytest.raises(StepError) as err:
+        bring(root)
+    assert err.value.kind == "merge-conflict" and err.value.data == {"files": ["a"]}
+    (root / "loose.txt").write_text("x")
+    with pytest.raises(StepError) as err:
+        bring(root)
+    assert err.value.kind == "dirty" and err.value.data == {"files": ["loose.txt"]}

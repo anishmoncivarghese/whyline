@@ -313,3 +313,21 @@ def test_no_auto_rerun_unless_asked(root, value):
     steps = _auto_steps(root, "no-runner", [1], [])
     result = engine.run(root, Plan("1.0", steps), mode="auto", auto_run=_fake_gh(gh))
     assert result.status == engine.FAILED and gh == []
+
+
+def test_state_stores_kind_and_data_and_old_files_load_empty(root):
+    class Kinded(RuntimeError):
+        kind = "dirty"
+        data = {"files": ["a.py"]}
+
+    def boom(cancel):
+        raise Kinded("x")
+
+    plan = Plan("1.0", [Step("a", "A", False, lambda: False, boom)])
+    engine.run(root, plan, mode="auto")
+    saved = state.load(root)
+    assert saved.kind == "dirty" and saved.data == {"files": ["a.py"]}
+    state.path(root).write_text(
+        '{"version": "1.0", "step_ids": ["a"], "reason": "old"}', encoding="utf-8")
+    old = state.load(root)
+    assert old.reason == "old" and old.kind == "" and old.data == {}

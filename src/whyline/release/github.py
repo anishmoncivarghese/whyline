@@ -35,10 +35,13 @@ class StepError(RuntimeError):
     """A release step failed; the message is shown to the user."""
 
     def __init__(self, message: str, *, open_pr: bool = False,
-                 failure: Failure | None = None) -> None:
+                 failure: Failure | None = None, kind: str = "",
+                 data: dict | None = None) -> None:
         super().__init__(message)
         self.open_pr = open_pr
         self.failure = failure
+        self.kind = kind
+        self.data = dict(data or {})
 
 
 def _out(proc: object, name: str = "stdout") -> str:
@@ -117,12 +120,13 @@ _PASSED_RUN = {"success", "skipped", "neutral"}
 
 
 def failed_error(root: Path, run: Run, run_id: object, *, name: str = "",
-                 url: str = "", ignored: Collection[str] = ()) -> StepError:
+                 url: str = "", ignored: Collection[str] = (), kind: str = "") -> StepError:
     """A StepError saying why run `run_id` failed; name and url fill what gh couldn't."""
     failure = diagnose(root, run_id, run=run, ignore=ignored)
     failure.workflow = failure.workflow or name
     failure.url = failure.url or url
-    return StepError(failure.text(), failure=failure)
+    data = {"workflow": failure.workflow, "url": failure.url} if kind else {}
+    return StepError(failure.text(), failure=failure, kind=kind, data=data)
 
 
 def _run_outcome(root: Path, run: Run, item: dict, ignored: set[str]) -> int | StepError:
@@ -249,7 +253,10 @@ def build_steps(
             detail(f"Running {command}")
             code, lines = run_shell(command, root, lambda line: detail(f"{command}: {line}"))
             if code != 0:
-                raise StepError(f"Check failed: {command}\n{_tail(chr(10).join(lines))}")
+                tail = _tail(chr(10).join(lines))
+                raise StepError(f"Check failed: {command}\n{tail}", kind="check-failed",
+                                data={"command": command,
+                                      "tail": _tail(chr(10).join(lines), 40)})
         return None
 
     def push(cancel: threading.Event) -> None:
@@ -257,7 +264,8 @@ def build_steps(
         remote = f"origin/{branch}"
         if _ok(_git(root, run, "rev-parse", "--verify", "--quiet", remote)):
             if not _ok(_git(root, run, "merge-base", "--is-ancestor", remote, "HEAD")):
-                raise StepError(f"{remote} has commits this branch doesn't; merge them first")
+                raise StepError(f"{remote} has commits this branch doesn't; merge them first",
+                                kind="push-behind")
         proc = _git(root, run, "push", "origin", f"HEAD:{branch}", timeout=NETWORK_TIMEOUT)
         if not _ok(proc):
             text = f"{_out(proc, 'stderr')}\n{_out(proc)}"
@@ -347,7 +355,10 @@ def build_steps(
                 raise StepError(f"git tag failed: {_fail_text(proc)}")
         proc = _git(root, run, "push", "origin", f"refs/tags/{tag}", timeout=NETWORK_TIMEOUT)
         if not _ok(proc):
-            raise StepError(f"git push of {tag} failed: {_fail_text(proc)}")
+            text = f"{_out(proc, 'stderr')}\n{_out(proc)}"
+            kind = "tag-exists" if "already exists" in text else ""
+            raise StepError(f"git push of {tag} failed: {_fail_text(proc)}", kind=kind,
+                            data={"tag": tag} if kind else None)
 
     def released() -> bool:
         return _ok(run(["gh", "release", "view", tag], cwd=root))
@@ -357,7 +368,10 @@ def build_steps(
         proc = run(["gh", "release", "create", tag, "--title", tag, *notes],
                    cwd=root, timeout=NETWORK_TIMEOUT)
         if not _ok(proc):
-            raise StepError(f"gh release create failed: {_fail_text(proc)}")
+            text = f"{_out(proc, 'stderr')}\n{_out(proc)}"
+            kind = "release-exists" if "already exists" in text else ""
+            raise StepError(f"gh release create failed: {_fail_text(proc)}", kind=kind,
+                            data={"tag": tag} if kind else None)
 
     return [
         Step("commit", "Commit the release", False, committed, commit),

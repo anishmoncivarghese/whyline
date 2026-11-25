@@ -49059,3 +49059,191 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 842c53c1280642cc98757f69a06bd883 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-25T15:11:28.526Z"} -->
+
+## 2026-11-25 — StepError carries kind/data; tag-exists and release-exists are classified from git/gh 'already exists' output
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSO-4
+
+**Because:** the tag and release steps had no explicit exists check, so the kind is read from the failure text of the push and gh release create
+
+**Rejected:**
+
+- pre-checking the tag before pushing — changes step behaviour and messages
+
+**Files:** src/whyline/release/github.py
+
+<!-- whyline-event: c6c28055a0474eb4bfeb0033e24fcbcb -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T15:19:14.455Z"} -->
+
+## 2026-11-25 — Fail RSO-4: check-failed shows 20 lines not 40, and tag-exists own is not HEAD
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-4
+
+**Because:** A 50-line failing check stores github._tail's 20 lines in data, so explain_stop shows 20. A tag on HEAD after merging main offers a new version; a tag on an older chore: release ancestor is called own. The committed tests stay green because they inject a long tail and fake a matching subject.
+
+**Rejected:**
+
+- pass on green pytest — the suite does not exercise the raise-site tail length or a real tag on HEAD after a merge
+
+**Files:** src/whyline/release/resolve.py, src/whyline/release/github.py
+
+<!-- whyline-event: ba52991f1dc6432283fa5fedc4f1ed0d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T16:02:14.014Z"} -->
+
+## 2026-11-25 — Tag/release-exists is own only when the tag's commit is HEAD; check-failed data keeps 40 lines while the message keeps 20
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSO-4
+
+**Because:** a subject match plus ancestry called an older release commit own and rejected a tag on HEAD after merging main; _tail default is 20 so explain_stop only saw 20
+
+**Rejected:**
+
+- subject plus ancestor check — wrong for both real-git cases
+
+**Files:** src/whyline/release/resolve.py, src/whyline/release/github.py
+
+<!-- whyline-event: 7a6326b3c68945f6aa6ca8744380a363 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T16:17:36.009Z"} -->
+
+## 2026-11-25 — Pass RSO-4: check-failed stores 40 lines and tag-exists own is HEAD
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-4
+
+**Because:** A 50-line failing check stores 40 lines in data while the message stays at 20. A tag on HEAD after merging main is own; a tag on an older chore:release ancestor offers a new version. Full pytest exited 0.
+
+**Rejected:**
+
+- fail on rerun not in apply — RSO-4 tests require the option on explain_stop; later tasks run it
+- pass on tests/release only — the last fail's real-git cases now pass and the full suite exited 0
+
+**Files:** src/whyline/release/github.py, src/whyline/release/resolve.py
+
+<!-- whyline-event: e7710f6d5e3641c185dc8796f039e5d7 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T17:01:42.082Z"} -->
+
+## 2026-11-25 — Reject RSO-4: existing-tag resolution trusts the local collision over the remote tag
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSO-4
+
+**Because:** After make_tag creates v<version> at HEAD, a rejected push can mean origin already has that tag on another commit; resolve._tag_commit reads the local ref first and therefore falsely says resuming is safe. A temporary real-Git probe reproduced remote=older, local=HEAD, reported=HEAD, even though uv run pytest -q exited 0.
+
+**Rejected:**
+
+- approve on the green suite — current tests never combine a conflicting remote tag with the newly created local tag
+
+**Files:** src/whyline/release/resolve.py, tests/release/test_resolve.py
+
+<!-- whyline-event: e77e7219284645dfa5c1ae01b092ae22 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T17:41:01.172Z"} -->
+
+## 2026-11-25 — _tag_commit trusts origin's peeled tag over the local tag
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSO-4
+
+**Because:** A rejected push means origin's tag may sit on another commit; the just-created local tag at HEAD made it falsely own
+
+**Rejected:**
+
+- keep local first — reports HEAD as own when origin differs
+
+**Files:** src/whyline/release/resolve.py
+
+<!-- whyline-event: 0ee56d4d9e6c45f29e287cc09f59925d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T17:54:44.064Z"} -->
+
+## 2026-11-25 — Pass RSO-4: stop kinds, state, and origin-first tag resolution behave as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-4
+
+**Because:** uv run pytest -q exited 0; an independent real-Git probe with origin's annotated tag on an older commit and a new local tag at HEAD reported the remote SHA and offered a version, not resuming is safe; each listed raise site carries the specified kind and data, old state files load kind as empty, and explain_stop covers every kind
+
+**Rejected:**
+
+- fail because apply does not run check-failed rerun — RSO-4's tests only require explain_stop to offer that option
+
+**Files:** src/whyline/release/resolve.py, src/whyline/release/github.py, src/whyline/release/source.py, src/whyline/release/workflows.py, src/whyline/release/state.py
+
+<!-- whyline-event: dcf0c7773f3645dd82c5e51e36bece1c -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T18:33:56.367Z"} -->
+
+## 2026-11-25 — Reject RSO-4: stopped rerun cannot run and publish status skips production target checks
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSO-4
+
+**Because:** uv run pytest -q exited 0, but resolve.apply rejects the new rerun option, so it cannot run the failed command or show its last 40 lines; _stop_publish only probes a non-protocol _published method, skipping enabled Homebrew and custom targets whose own completion checks are Step.done_check
+
+**Rejected:**
+
+- approve on green tests — the tests assert only the rerun option shape and use a synthetic _published target, so they miss both production behavior gaps
+
+**Files:** src/whyline/release/resolve.py, tests/release/test_resolve.py
+
+<!-- whyline-event: abd0493aada449e7a0d0ccc887c70e6b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T19:12:00.894Z"} -->
+
+## 2026-11-25 — Rerun carries the check command on Option and only runs commands already in cfg.checks
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSO-4
+
+**Because:** the saved command comes from stop data, so apply must not run an arbitrary string; publish-failed uses each target step's done_check, the production completion interface
+
+**Rejected:**
+
+- private _published probe — absent on Homebrew and custom targets
+
+**Files:** src/whyline/release/resolve.py
+
+<!-- whyline-event: 7e5402beba814ce0950e2d3a9b695215 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T19:17:51.664Z"} -->
+
+## 2026-11-25 — Pass RSO-4: stop kinds, state, explain_stop, rerun apply, and publish done_check all behave
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-4
+
+**Because:** uv run pytest -q exited 0; every listed raise site sets kind and data; state round-trips and an old file loads kind as empty; explain_stop covers each kind; apply runs only a command already in cfg.checks and shows its last 40 lines; publish-failed uses each target step done_check including Homebrew-shaped and custom targets
+
+**Rejected:**
+
+- fail — the two previously rejected production gaps now run and the suite is green
+
+**Files:** src/whyline/release/resolve.py, src/whyline/release/github.py, src/whyline/release/source.py, src/whyline/release/workflows.py, src/whyline/release/state.py
+
+<!-- whyline-event: e4ac29c5de1241169378eb70b4c90e31 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T20:00:03.114Z"} -->
+
+## 2026-11-25 — Approve RSO-4 stop metadata and resolution behavior
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSO-4
+
+**Because:** Every listed StepError site carries the required kind and data without changing its message; state remains backward compatible; explanations, guarded rerun execution, remote-first tag ownership, and production target completion checks match the task; git diff --check and uv run pytest -q both passed
+
+**Rejected:**
+
+- request changes — no task-scoped defect remains after the prior remote-tag, rerun, and publish-check gaps were fixed
+
+**Files:** src/whyline/release/resolve.py, src/whyline/release/github.py, src/whyline/release/source.py, src/whyline/release/state.py, src/whyline/release/workflows.py
+
+<!-- whyline-event: 69c69cb39d6e47f18698e68536aa1dfe -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T20:41:07.938Z"} -->

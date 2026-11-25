@@ -107,7 +107,8 @@ def bring_in_main(
     dirty = [p for p in release_ready._dirty_paths(getattr(res, "stdout", "") or "")
              if not release_ready._is_pending(p, pending)]
     if dirty:
-        raise StepError("Commit or stash these first: " + ", ".join(dirty))
+        raise StepError("Commit or stash these first: " + ", ".join(dirty),
+                        kind="dirty", data={"files": dirty})
     src = source(root, cfg, run=run, fetch=fetch)
     parts: list[str] = []
     if src.behind > 0:
@@ -119,7 +120,8 @@ def bring_in_main(
             _git(run, root, "merge", "--abort")
             raise StepError(
                 f"Merge {cfg.branch} into {src.branch} yourself (or ask an agent), "
-                f"then resume the release. Conflicts: {', '.join(names)}")
+                f"then resume the release. Conflicts: {', '.join(names)}",
+                kind="merge-conflict", data={"files": names})
         parts.append(f"merged {src.behind} commits from {cfg.branch}")
     moved: list[str] = []
     done_dir = root / relay_ops.PLANS_DIR / "done"

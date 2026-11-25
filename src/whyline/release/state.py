@@ -19,6 +19,8 @@ class State:
     done: list[str] = field(default_factory=list)
     failed_id: str = ""
     reason: str = ""
+    kind: str = ""
+    data: dict = field(default_factory=dict)
     mode: str = "ask"
     started: str = ""
     running: bool = False
@@ -39,6 +41,8 @@ def load(root: Path) -> State | None:
             done=[str(i) for i in data.get("done", [])],
             failed_id=str(data.get("failed_id", "")),
             reason=str(data.get("reason", "")),
+            kind=str(data.get("kind", "")),
+            data=dict(data.get("data") or {}),
             mode=str(data.get("mode", "ask")),
             started=str(data.get("started", "")),
             running=bool(data.get("running", False)),

@@ -423,3 +423,19 @@ def test_extra_job_lines_round_trip_and_old_failures_load():
     assert again.other_jobs == ["b"] and again.known_jobs == ["c"]
     old = Failure.from_dict({"cause": "tests", "job": "a", "run_id": "1"})
     assert old.other_jobs == [] and old.known_jobs == []
+
+
+def test_wait_for_tag_run_failure_is_publish_failed(tmp_path):
+    inner = fake_gh(steps=steps(("Publish", "failure")))
+
+    def run(args, cwd=None, **kw):
+        if args[:3] == ["gh", "run", "list"]:
+            return SimpleNamespace(returncode=0, stdout=json.dumps([failed_item()]), stderr="")
+        return inner(args, cwd=cwd, **kw)
+
+    with pytest.raises(StepError) as exc:
+        workflows.wait_for_tag_run(tmp_path, "v1", "release.yml", run=run,
+                                   cancel_event=threading.Event())
+    assert exc.value.kind == "publish-failed"
+    assert set(exc.value.data) == {"workflow", "url"}
+    assert exc.value.data["workflow"] == exc.value.failure.workflow

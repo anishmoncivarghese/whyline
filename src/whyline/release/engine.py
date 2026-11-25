@@ -253,13 +253,18 @@ def _drive(
     state.pid = os.getpid()
     state.failed_id = ""
     state.reason = ""
+    state.kind = ""
+    state.data = {}
     state.failure = {}
 
-    def stop(status: str, message: str, failed_id: str = "", failure: object = None) -> Result:
+    def stop(status: str, message: str, failed_id: str = "", failure: object = None,
+             kind: str = "", data: dict | None = None) -> Result:
         state.running = False
         state.failure = failure.to_dict() if hasattr(failure, "to_dict") else {}
         state.failed_id = failed_id
         state.reason = message
+        state.kind = kind
+        state.data = dict(data or {})
         release_state.save(root, state)
         return Result(status, message, failed_id)
 
@@ -294,7 +299,8 @@ def _drive(
             outcome = step.run(cancel)
         except Exception as exc:  # noqa: BLE001 - any step error stops the run
             failure = getattr(exc, "failure", None)
-            result = stop(FAILED, f"{step.title} failed: {exc}", step.id, failure)
+            result = stop(FAILED, f"{step.title} failed: {exc}", step.id, failure,
+                          str(getattr(exc, "kind", "") or ""), getattr(exc, "data", None))
             return _auto_rerun(root, result, failure, steps, state, confirm, on_progress,
                                cancel, now, auto_run, say)
         if outcome is False:

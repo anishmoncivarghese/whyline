@@ -513,3 +513,73 @@ def test_gh_cancel_during_retries(repo):
                               after_sleep=lambda n: cancel.set() if n == 2 else None)
     assert step.run(cancel) is False
     assert clock.sleeps == [15, 15]
+
+
+def test_check_failed_carries_kind_and_data(repo):
+    cfg = ReleaseConfig(checks=("echo out; exit 3",))
+    with pytest.raises(StepError) as exc:
+        steps(repo, FakeGh(), cfg)["checks"].run(EVENT)
+    assert exc.value.kind == "check-failed"
+    assert exc.value.data == {"command": "echo out; exit 3", "tail": "out"}
+    assert str(exc.value) == "Check failed: echo out; exit 3\nout"
+
+
+def test_push_behind_kind(repo, tmp_path):
+    other = tmp_path / "other"
+    git(tmp_path, "clone", str(tmp_path / "origin.git"), str(other))
+    git(other, "config", "user.email", "t@example.com")
+    git(other, "config", "user.name", "T")
+    (other / "b.txt").write_text("x")
+    git(other, "add", ".")
+    git(other, "commit", "-m", "ahead")
+    git(other, "push", "origin", "main")
+    with pytest.raises(StepError) as exc:
+        steps(repo, FakeGh())["push"].run(EVENT)
+    assert exc.value.kind == "push-behind"
+    assert str(exc.value) == "origin/main has commits this branch doesn't; merge them first"
+
+
+def test_tag_exists_kind_when_the_remote_refuses(repo):
+    git(repo, "tag", "-a", "v1.2.3", "-m", "v1.2.3")
+
+    def run(args, cwd=None, **kw):
+        if args[:2] == ["git", "push"]:
+            return SimpleNamespace(returncode=1, stdout="",
+                                   stderr="! [rejected] v1.2.3 (already exists)")
+        return FakeGh()(args, cwd=cwd, **kw)
+
+    with pytest.raises(StepError) as exc:
+        steps(repo, run)["tag"].run(EVENT)
+    assert exc.value.kind == "tag-exists"
+    assert exc.value.data == {"tag": "v1.2.3"}
+
+
+def test_release_exists_kind(repo):
+    def run(args, cwd=None, **kw):
+        if args[:3] == ["gh", "release", "create"]:
+            return SimpleNamespace(returncode=1, stdout="",
+                                   stderr="a release with the same tag name already exists")
+        return FakeGh()(args, cwd=cwd, **kw)
+
+    with pytest.raises(StepError) as exc:
+        steps(repo, run)["github_release"].run(EVENT)
+    assert exc.value.kind == "release-exists"
+
+
+def test_other_failures_have_no_kind(repo):
+    def run(args, cwd=None, **kw):
+        if args[:3] == ["gh", "release", "create"]:
+            return SimpleNamespace(returncode=1, stdout="", stderr="network down")
+        return FakeGh()(args, cwd=cwd, **kw)
+
+    with pytest.raises(StepError) as exc:
+        steps(repo, run)["github_release"].run(EVENT)
+    assert exc.value.kind == "" and exc.value.data == {}
+
+
+def test_check_failed_keeps_forty_lines_in_data_and_twenty_in_the_message(repo):
+    cfg = ReleaseConfig(checks=("seq 1 50; exit 3",))
+    with pytest.raises(StepError) as exc:
+        steps(repo, FakeGh(), cfg)["checks"].run(EVENT)
+    assert exc.value.data["tail"].splitlines() == [str(i) for i in range(11, 51)]
+    assert str(exc.value).splitlines()[1:] == [str(i) for i in range(31, 51)]

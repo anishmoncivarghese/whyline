@@ -31,6 +31,7 @@ class Option:
     kind: str  # run, open, copy, version, conflicts, recheck
     needs: str = ""  # "" or "message"
     recommended: bool = False
+    command: str = ""  # rerun: the configured check to run again
 
 
 @dataclass(frozen=True)
@@ -327,12 +328,147 @@ def _explain(root: Path, cfg: ReleaseConfig, version: str, item: ReadyItem, run:
     return _generic(item)
 
 
+# --- a stopped release ------------------------------------------------------
+
+STOP_TAIL = 40
+
+
+def _stop_conflicts(data: dict, reason: str) -> Resolution:
+    files = [str(f) for f in data.get("files") or []]
+    facts = ["bringing it in conflicts in:", *_capped(files)] if files else [reason]
+    return Resolution("merge-conflict", reason, tuple(facts),
+                      _opts(Option("conflicts", "Settle the conflicts", "conflicts",
+                                   recommended=True)))
+
+
+def _stop_check(data: dict, reason: str) -> Resolution:
+    command = str(data.get("command") or "")
+    lines = str(data.get("tail") or "").splitlines()[-STOP_TAIL:]
+    facts = ([f"{command} failed"] if command else []) + lines or [reason]
+    options = (_opts(Option("rerun", f"Run {command} again", "run", recommended=True,
+                                command=command))
+               if command else ())
+    return Resolution("check-failed", reason, tuple(facts), options)
+
+
+def _stop_behind(root: Path, cfg: ReleaseConfig, reason: str, run: Run,
+                 fetch: Fetch) -> Resolution:
+    branch = cfg.branch
+    try:
+        fetch(root, branch)
+    except Exception:  # noqa: BLE001
+        return Resolution("push-behind", reason, (_cant(f"origin/{branch}"),))
+    behind = _count(run, root, f"HEAD..origin/{branch}")
+    if behind is None:
+        return Resolution("push-behind", reason, (_cant(f"origin/{branch}"),))
+    facts = [f"{_plural(behind)} behind origin/{branch}"]
+    conflicts = _trial(run, root, branch)
+    if conflicts is None:
+        facts.append(_cant("whether bringing it in would conflict"))
+        return Resolution("push-behind", reason, tuple(facts))
+    if conflicts:
+        facts.append("bringing it in would conflict in:")
+        facts.extend(_capped(conflicts))
+        return Resolution("push-behind", reason, tuple(facts),
+                          _opts(Option("conflicts", "Settle the conflicts", "conflicts",
+                                       recommended=True)))
+    facts.append("bringing it in would not conflict")
+    return Resolution("push-behind", reason, tuple(facts),
+                      _opts(Option("bring", f"Bring in {branch}", "run", recommended=True)))
+
+
+def _tag_commit(run: Run, root: Path, tag: str) -> str:
+    # origin is authoritative: a rejected push means its tag may differ from the local one
+    remote = _git_out(run, root, "ls-remote", "--tags", "origin", f"refs/tags/{tag}",
+                      f"refs/tags/{tag}^{{}}")
+    found: dict[str, str] = {}
+    for line in (remote or "").splitlines():
+        parts = line.split()
+        if len(parts) == 2:
+            found[parts[1]] = parts[0]
+    peeled = found.get(f"refs/tags/{tag}^{{}}") or found.get(f"refs/tags/{tag}")
+    if peeled:
+        return peeled
+    return _git_out(run, root, "rev-parse", "-q", "--verify", f"refs/tags/{tag}^{{commit}}") or ""
+
+
+def _stop_taken(root: Path, cfg: ReleaseConfig, version: str, kind: str, reason: str,
+                run: Run, get: Get | None) -> Resolution:
+    tag = f"v{version}"
+    commit = _tag_commit(run, root, tag)
+    if not commit:
+        facts = [_cant(f"the commit {tag} points at")]
+    else:
+        facts = [f"{tag} points at {commit[:7]}"]
+    own = bool(commit) and commit == _git_out(run, root, "rev-parse", "HEAD")
+    if own:
+        facts.append("It is this release's own, so resuming is safe")
+        return Resolution(kind, reason, tuple(facts))
+    from whyline.release.targets.pypi import http_status
+
+    free, unread = _next_free(root, cfg, version, run, get or http_status)
+    facts.extend(unread)
+    if free is None:
+        return Resolution(kind, reason, tuple(facts))
+    return Resolution(kind, reason, tuple(facts),
+                      _opts(Option(f"version-{free}", f"Use {free}", "version",
+                                   recommended=True)))
+
+
+def _stop_publish(root: Path, cfg: ReleaseConfig, version: str, reason: str, run: Run,
+                  fetch: Fetch) -> Resolution:
+    from whyline.release import targets
+
+    facts: list[str] = []
+    for target in targets.enabled(cfg):
+        try:
+            steps = target.steps(root, cfg, version, run=run, fetch=fetch)
+        except Exception:  # noqa: BLE001 - a fact that can't be read is reported, not raised
+            facts.append(f"{target.title}: {_cant('whether it is published')}")
+            continue
+        for step in steps:
+            try:
+                state = "published" if step.done_check() else "not published"
+            except Exception:  # noqa: BLE001
+                state = _cant("whether it is published")
+            facts.append(f"{step.title}: {state}")
+    facts.append("Resume continues from Verify")
+    return Resolution("publish-failed", reason, tuple(facts))
+
+
+def explain_stop(root: Path | str, cfg: ReleaseConfig, version: str, kind: str, data: dict,
+                 reason: str, *, run: Run, fetch: Fetch, get: Get | None = None) -> Resolution:
+    """What a stopped release found and what can be done; reads facts, uses no model."""
+    try:
+        return _explain_stop(Path(root), cfg, version, kind, data or {}, reason, run, fetch,
+                             get)
+    except Exception:  # noqa: BLE001 - explain_stop never raises
+        return Resolution(kind, reason, (_cant(kind or "the stop"),))
+
+
+def _explain_stop(root: Path, cfg: ReleaseConfig, version: str, kind: str, data: dict,
+                  reason: str, run: Run, fetch: Fetch, get: Get | None) -> Resolution:
+    if kind == "merge-conflict":
+        return _stop_conflicts(data, reason)
+    if kind == "dirty":
+        return _clean(root, cfg, ReadyItem("clean", False, reason), run)
+    if kind == "check-failed":
+        return _stop_check(data, reason)
+    if kind == "push-behind":
+        return _stop_behind(root, cfg, reason, run, fetch)
+    if kind in ("tag-exists", "release-exists"):
+        return _stop_taken(root, cfg, version, kind, reason, run, get)
+    if kind == "publish-failed":
+        return _stop_publish(root, cfg, version, reason, run, fetch)
+    return Resolution(kind, reason, (reason,))
+
+
 # --- running an option ------------------------------------------------------
 #
 # Nothing below is ever chosen by a model: the argv is built here from the option's id.
 
 LOG_LIMIT = 50
-_RUNNABLE = ("commit", "stash", "pull", "bring")
+_RUNNABLE = ("commit", "stash", "pull", "bring", "rerun")
 _NEWER_COMMIT = "Something was committed after this; undo it by hand"
 
 
@@ -416,6 +552,10 @@ def preview(root: Path | str, cfg: ReleaseConfig, version: str, option: Option, 
     root = Path(root)
     if option.id not in _RUNNABLE:
         return Preview((option.label,))
+    if option.id == "rerun":
+        if option.command not in cfg.checks:
+            return Preview(("That is not one of this release's checks",))
+        return Preview((f"Run {option.command} again and show its last {STOP_TAIL} lines",))
     try:
         if option.id in ("commit", "stash"):
             files = _listed(root, run)
@@ -513,12 +653,14 @@ def _fail(res, what: str, snap_id: str) -> Outcome:
 def apply(root: Path | str, cfg: ReleaseConfig, version: str, option: Option, *,
           message: str = "", run: Run, fetch: Fetch,
           relay_running: Callable[[Path], bool] | None = None,
-          fix_run: Run | None = None, key: str = "") -> Outcome:
+          fix_run: Run | None = None, key: str = "", run_shell=None) -> Outcome:
     """Run one option. `fix_run` is what fixmode's snapshot uses (subprocess.run style)."""
     root = Path(root)
     key = key or option.id
     if option.id not in _RUNNABLE:
         return Outcome(False, "This option isn't run here")
+    if option.id == "rerun":
+        return _rerun(root, cfg, option, run, key, run_shell)
     if option.id == "commit" and not message.strip():
         return Outcome(False, "Type a commit message first")
     rec = _Recorder(run)
@@ -553,6 +695,24 @@ def apply(root: Path | str, cfg: ReleaseConfig, version: str, option: Option, *,
     _record(run, root, option.id, key, message, out)
     if out.ok and out.commits and option.id in ("commit", "bring"):
         _note(run, root, option, key, out, files)
+    return out
+
+
+def _rerun(root: Path, cfg: ReleaseConfig, option: Option, run: Run, key: str,
+           run_shell) -> Outcome:
+    """Run one configured check again; it only ever runs a command already in cfg.checks."""
+    if option.command not in cfg.checks:
+        return Outcome(False, "That is not one of this release's checks")
+    if run_shell is None:
+        from whyline.release.github import shell_runner as run_shell
+    try:
+        code, lines = run_shell(option.command, root, lambda line: None)
+    except Exception as exc:  # noqa: BLE001 - a failed option is reported, not raised
+        return Outcome(False, str(exc) or "it failed")
+    tail = "\n".join(lines[-STOP_TAIL:])
+    head = f"{option.command} passed" if code == 0 else f"{option.command} failed"
+    out = Outcome(code == 0, f"{head}\n{tail}" if tail else head)
+    _record(run, root, option.id, key or option.id, option.command, out)
     return out
 
 

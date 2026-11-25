@@ -109,7 +109,7 @@ def wait_for_tag_run(
             if latest.get("conclusion") in github._FAILED:
                 raise github.failed_error(
                     root, run, latest.get("databaseId"), name=name,
-                    url=str(latest.get("url", "")))
+                    url=str(latest.get("url", "")), kind="publish-failed")
             detail(f"{name} finished")
             return None
         else:
