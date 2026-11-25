@@ -94,7 +94,7 @@ Rules every task keeps:
      - `""`: the reason, and no option
   Tests: each raise site's kind and data, the state round trip and an old state file, and `explain_stop` for each kind.
 
-- [ ] RSO-5: Say what you want
+- [x] RSO-5: Say what you want
   Edit `src/whyline/release/resolve.py` and its tests only.
   1. `propose(root, resolution, text, *, ask_agent, run) -> Proposal`. The agent is read-only, as in `ci_failure.ask`. The prompt gives the resolution's title and facts, the user's text under `What the user wants:`, and asks for `<cause>…</cause>` and `<steps>` with one numbered step per line. `Proposal`: `cause`, `steps: tuple[str, ...]` (at most 8), `refused: tuple[str, ...]`.
   2. A step is moved to `refused` when it names a push, a force flag, deleting or moving a tag, a branch or a release, `reset --hard`, `clean`, rebasing, amending a pushed commit, or changing git config or hooks. Each refused step is shown with `whyline won't do that from here`.
