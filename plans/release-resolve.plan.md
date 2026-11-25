@@ -55,7 +55,7 @@ Rules every task keeps:
   3. `explain` never raises: a fact it can't read becomes the line `couldn't read <what>`, and the options that depend on it are left out.
   Tests: one per row above with a temporary repository or fake `run`, the 20-file cap, the next free version skipping one taken on PyPI, an unknown key, and a failing git call giving `couldn't read` and no crash.
 
-- [ ] RSO-2: Running an option, with a preview and a record
+- [x] RSO-2: Running an option, with a preview and a record
   Edit `src/whyline/release/resolve.py` and its tests only.
   1. `preview(root, cfg, version, option, *, message="", run) -> Preview`: `lines` (plain words) and `argv: tuple[tuple[str, ...], ...]`. Options of kind `open`, `copy`, `version` and `recheck` have no argv.
   2. `apply(root, cfg, version, option, *, message="", run, fetch, relay_running=…) -> Outcome` (`ok`, `text`, `commits`, `snapshot_id`):
