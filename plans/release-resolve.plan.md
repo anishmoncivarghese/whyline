@@ -68,7 +68,7 @@ Rules every task keeps:
   5. Nothing here is ever chosen by a model.
   Tests: `test_no_destructive_argv` (every option's preview and every recorded argv from `apply`, searched for `push`, `--force`, `-f`, `tag -d`, `branch -D`, `reset --hard`, `checkout --`, `clean`), `test_dirty_files_survive_every_option`, each option's result in a temporary repository, the empty message, the secret stop, the preview's argv equal to what `apply` ran, `undo` and its refusal, and the log lines.
 
-- [ ] RSO-3: Reading and settling a conflict
+- [x] RSO-3: Reading and settling a conflict
   Create `src/whyline/release/conflicts.py` and `tests/release/test_conflicts.py` only.
   1. `read(root, branch, *, run) -> list[Conflict]`, from `git merge-tree --write-tree HEAD origin/<branch>` and the conflicted files' text in the tree it writes. It changes no ref, index or working file. `Conflict`: `path`, `places: int`, `kind` (`lines`, `deleted`, `binary`), `reading`.
   2. `reading`, decided without a model, else `""`:
