@@ -48978,3 +48978,84 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: c36817ce30d845b1a9497e21a4ef94e5 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-25T13:03:09.914Z"} -->
+
+## 2026-11-25 — Conflict merge returns Outcome for refusals and keeps the fixmode snapshot ref after an abort
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSO-3
+
+**Because:** Resolve apply reports refusals as Outcome, not StepError; the snapshot is the recovery point so abort leaves its ref
+
+**Rejected:**
+
+- raise StepError — callers of Outcome-style options would need a catch
+
+**Files:** src/whyline/release/conflicts.py
+
+<!-- whyline-event: 97d7de3faa7a441ca88bb8923b81e5a1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T13:08:02.928Z"} -->
+
+## 2026-11-25 — Fail: read() raises UnicodeDecodeError on non-UTF-8 binary conflicts instead of returning kind=binary
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-3
+
+**Because:** default_run decodes git cat-file -p as UTF-8, so a PNG or 0xFF blob crashes _scan. The bundled binary test uses NUL+ASCII and hides this. Catch the decode error or avoid dumping the blob as text, and classify the file as binary.
+
+**Rejected:**
+
+- pass because pytest is green — the spec requires kind binary and read() must return Conflict, not raise
+
+**Files:** src/whyline/release/conflicts.py
+
+<!-- whyline-event: bf18ba453e6a47cf99180e2417d3d702 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T13:52:28.005Z"} -->
+
+## 2026-11-25 — Treat UnicodeDecodeError from cat-file of a conflicted blob as a binary conflict
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSO-3
+
+**Because:** default_run decodes stdout as UTF-8, so PNG/0xFF blobs crashed _scan; catching it classifies them binary without a second git call
+
+**Rejected:**
+
+- git diff --numstat on stage blobs — extra git call and extra fake-run surface for the same answer
+
+**Files:** src/whyline/release/conflicts.py
+
+<!-- whyline-event: cfb7c5971bfc4bd2bc38ec6e84d1a639 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T13:53:32.604Z"} -->
+
+## 2026-11-25 — Pass: non-UTF-8 conflicted blobs are kind=binary and the rest of RSO-3 behaves as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-3
+
+**Because:** uv run pytest -q exited 0. The 16 conflict tests cover ticks on this branch, on main, and mixed; each reading and none; ours/theirs touching only conflict places; deleted and binary (NUL and PNG); refusals; the commit message; and abort-on-mismatch leaving status, refs, and index. _scan catches UnicodeDecodeError from cat-file. Extra probes: __version__ reading, read() changes nothing, 0xFF blob is binary.
+
+**Rejected:**
+
+- fail because abort leaves refs/whyline/fix — that snapshot is the recovery point, already decided
+
+**Files:** src/whyline/release/conflicts.py
+
+<!-- whyline-event: c78f0852d7fb4758b770b3311e8471a4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T14:33:39.544Z"} -->
+
+## 2026-11-25 — Approve RSO-3 conflict reading preview and merge implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSO-3
+
+**Because:** The implementation matches the specified readings and choices, uses merge-tree for read-only inspection, verifies and aborts unsafe merges, and uv run pytest -q exited 0 after substantive real-Git coverage
+
+**Files:** src/whyline/release/conflicts.py
+
+<!-- whyline-event: 842c53c1280642cc98757f69a06bd883 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T15:11:28.526Z"} -->
