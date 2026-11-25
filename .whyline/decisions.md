@@ -49298,3 +49298,54 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: cce94e2a03254f85ab58286e71cd4977 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-25T22:13:02.373Z"} -->
+
+## 2026-11-25 — resolve CLI records its own conflicts.merge in the resolve log
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSO-6
+
+**Because:** conflicts.merge does not write the log, so --undo could not find the merge snapshot otherwise
+
+**Rejected:**
+
+- leave merge unrecorded — --undo and --history would miss merges
+
+**Files:** src/whyline/release/cli.py
+
+<!-- whyline-event: 3b3605ed01374e458dd708758a43eca8 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T22:19:30.279Z"} -->
+
+## 2026-11-25 — Pass RSO-6 resolve CLI: all six forms behave and call the shared functions
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-6
+
+**Because:** List, --do, --conflicts/--keep merge, --say, --undo/--history, and unknown-key exit 2 all match the task; tests call explain/apply/conflicts/propose/run_fix; 63 scoped tests passed; the one full-suite failure is a documented console timing flake outside these files and passed on isolated rerun
+
+**Rejected:**
+
+- Fail for the TUI flake — tests/console/test_tui_relay_run.py PlanReleaseScreen mount timing, this task only edits cli.py, isolated rerun passed
+
+**Files:** src/whyline/release/cli.py
+
+<!-- whyline-event: e2399b03a315403ebcd6e9a57c82475a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T23:06:43.622Z"} -->
+
+## 2026-11-25 — Approve RSO-6 release resolve CLI
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSO-6
+
+**Because:** The diff implements all six resolve forms through shared resolve, conflict, and Fix functions; 63 focused CLI tests pass, and the two unrelated full-suite PlanReleaseScreen timing failures pass in isolation
+
+**Rejected:**
+
+- Request changes — no task-related defect or unsafe behavior was found
+
+**Files:** src/whyline/release/cli.py, tests/release/test_cli_resolve.py
+
+<!-- whyline-event: fafca4597232450da2d83fd33e64cc51 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-25T23:58:54.349Z"} -->
