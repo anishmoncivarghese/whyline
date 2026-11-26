@@ -124,7 +124,7 @@ Rules every task keeps:
   6. The Release window gets a collapsed **What was resolved** list from `resolve.history`.
   Tests: `test_nothing_runs_before_do_it` (open Resolve, press an option, cancel: no `run` call that changes anything), the button on each failed line, each option kind, the message input refusing an empty message, Undo calling `resolve.undo`, the recheck on close, and the history list.
 
-- [ ] RSO-8: The conflict view
+- [x] RSO-8: The conflict view
   Edit `src/whyline/console/release_screens.py` and its tests only.
   1. An option of kind `conflicts` opens `ConflictScreen`: one row per file with its places, its reading, and a `Select` of that file's choices. A ticks-only file opens with `Keep the ticked tasks` chosen. Every other file opens with nothing chosen.
   2. **Open both** shows this branch's and main's version of the conflicting places side by side, read-only, `markup=False`.
