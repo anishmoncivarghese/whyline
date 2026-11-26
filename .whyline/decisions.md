@@ -49458,3 +49458,51 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 1729dc5d3eed4f5cbe8758a85cf1dead -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-26T09:27:15.846Z"} -->
+
+## 2026-11-26 — ConflictScreen reads files via conflicts._scan so Open both can show the segments
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSO-8
+
+**Because:** conflicts.read drops the segments and the task limits edits to release_screens.py
+
+**Rejected:**
+
+- Add a public places() to conflicts.py — outside the task's files
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: c0f6938ab5e24d118506b94a1d736dc1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-26T09:33:54.602Z"} -->
+
+## 2026-11-26 — Pass: ConflictScreen matches RSO-8; full suite is green
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-8
+
+**Because:** Ticks-only files open on Keep the ticked tasks and others on nothing; Merge now stays disabled until every file is settled; choices reach conflicts.merge only after Do it; an aborted merge shows Nothing was changed; Undo the merge and the by-hand lines work; Open both is side by side with markup=False; a conflicts option and a merge-conflict failed screen both open ConflictScreen. uv run pytest -q exited 0 with one skip, one unrelated flake rerun then passed, and warnings only.
+
+**Rejected:**
+
+- Fail because tui.py does not pass stop_kind/conflicts — outside this task's files; ReleaseFailedScreen opens ConflictScreen when those args are given
+- Fail because Ask an agent does not yet open the box — that is RSO-9; ConflictScreen dismisses with (ask, path)
+
+**Files:** src/whyline/console/release_screens.py, tests/console/test_release_conflict_screen.py
+
+<!-- whyline-event: bcc0e8bdfbad4b7b8f92a7d86bfee492 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-26T10:15:39.424Z"} -->
+
+## 2026-11-26 — Approve: ConflictScreen satisfies RSO-8
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSO-8
+
+**Because:** The screen renders each conflict with its reading and choices, defaults only ticks-only files, gates merge until all files are settled, previews before Do it, passes choices to conflicts.merge, supports outcomes and undo, shows plain-text side-by-side conflict places and hand-merge guidance, and is reachable from both conflict options and merge-conflict failures; uv run pytest -q completed successfully with one skip, warnings, and unrelated automatic reruns that passed.
+
+**Files:** src/whyline/console/release_screens.py, tests/console/test_release_conflict_screen.py
+
+<!-- whyline-event: d8256a72c3d9418c992997936aa56361 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-26T11:01:02.723Z"} -->

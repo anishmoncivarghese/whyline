@@ -23,6 +23,7 @@ from whyline import account
 from whyline.console import security_screens
 from whyline.release import ci_failure
 from whyline.release import config as release_config
+from whyline.release import conflicts as release_conflicts
 from whyline.release import notes as release_notes
 from whyline.release import plan as release_plan
 from whyline.release import ready as release_ready
@@ -60,6 +61,12 @@ TARGETS = (
     ("homebrew", "Homebrew"), (CUSTOM, "Custom"),
 )
 PRIVATE, PUBLIC = "private", "public"
+PREVIEW_LINES = 20
+BY_HAND = "This one needs an agent or a hand merge"
+CHOICE_LABELS = {
+    "ticks": "Keep the ticked tasks", "ours": "Keep this branch's",
+    "theirs": "Keep main's", "agent": "Ask an agent",
+}
 
 
 def _lines(text: str) -> tuple[str, ...]:
@@ -1689,9 +1696,18 @@ class ResolveScreen(ModalScreen):
             self.dismiss((option.kind, option))
         elif option.kind == "recheck":
             self.dismiss(("recheck", option))
+        elif option.kind == "conflicts":
+            self.app.push_screen(
+                ConflictScreen(self.root, self._cfg, self._version, key=self._item.key,
+                               run=self._run, fetch=self._fetch), self._conflicts_done)
         else:
             self.query_one("#resolve-result", Static).update(
                 "Settle these from a terminal: whyline release resolve --conflicts")
+
+    def _conflicts_done(self, result) -> None:
+        if result and result[0] == "recheck":
+            self._acted = True
+            self.dismiss(("recheck", None))
 
     def _do_it(self) -> None:
         option = self._option
@@ -1714,6 +1730,244 @@ class ResolveScreen(ModalScreen):
         if self._working:
             return
         self.dismiss(("recheck", None) if self._acted else None)
+
+
+class ConflictScreen(ModalScreen):
+    """Settle the files that conflict when main is brought in.
+
+    Dismisses with None, ("recheck", None) after a merge, or ("ask", path) for Ask an agent.
+    Nothing touches the repository before Do it.
+    """
+
+    BINDINGS = [("escape", "close", "Close")]
+    DEFAULT_CSS = """
+    ConflictScreen { align: center middle; }
+    #conflict-box { width: 90%; max-width: 110; height: 90%; border: round $accent;
+                    background: $surface; padding: 1 2; }
+    #conflict-body { height: 1fr; }
+    #conflict-top, #conflict-actions, #conflict-after { height: auto; }
+    #conflict-title { text-style: bold; }
+    .conflict-file { height: auto; margin-bottom: 1; }
+    .conflict-sides { height: auto; }
+    .conflict-side { width: 1fr; border: round $primary; padding: 0 1; }
+    .-hidden { display: none; }
+    """
+
+    def __init__(self, root: Path | str, cfg: release_config.ReleaseConfig, version: str, *,
+                 key: str = "merge-conflict", run: release_ready.Run | None = None,
+                 fetch: release_ready.Fetch | None = None) -> None:
+        super().__init__()
+        self.root = Path(root)
+        self._cfg = cfg
+        self._version = version
+        self._key = key
+        self._run = run or release_ready.default_run
+        self._fetch = fetch or release_ready.default_fetch
+        self._files: list[tuple[release_conflicts.Conflict, list]] = []
+        self._picks: dict[str, str] = {}
+        self._pending: dict[str, str] = {}
+        self._snapshot = ""
+        self._merged = False
+        self._working = False
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="conflict-box"):
+            yield Static("Settle the conflicts", id="conflict-title", markup=False)
+            with Horizontal(id="conflict-top"):
+                yield Button("Open both", id="conflict-open", disabled=True)
+                yield Button("Merge now", id="conflict-merge", variant="primary", disabled=True)
+            with VerticalScroll(id="conflict-body"):
+                yield Static("Reading…", id="conflict-status", markup=False)
+                yield Vertical(id="conflict-files")
+                yield Vertical(id="conflict-both", classes="-hidden")
+                yield Static("", id="conflict-preview", classes="-hidden", markup=False)
+                yield Static("", id="conflict-result", markup=False)
+            with Horizontal(id="conflict-actions", classes="-hidden"):
+                yield Button("Do it", id="conflict-do", variant="primary")
+                yield Button("Cancel", id="conflict-cancel")
+            with Horizontal(id="conflict-after", classes="-hidden"):
+                yield Button("Undo the merge", id="conflict-undo")
+            yield Button("Close", id="conflict-close")
+
+    def on_mount(self) -> None:
+        self._work(self._read_in_thread)
+
+    # -- work ---------------------------------------------------------------
+
+    def _busy(self, busy: bool) -> None:
+        self._working = busy
+        for button in self.query(Button):
+            if button.id not in ("conflict-merge", "conflict-open"):
+                button.disabled = busy
+        self._refresh_merge()
+
+    def _work(self, fn, *args) -> None:
+        self._busy(True)
+        self.run_worker(lambda: fn(*args), thread=True, exclusive=True, name="release-conflicts")
+
+    def _read_in_thread(self) -> None:
+        try:
+            self._fetch(self.root, self._cfg.branch)
+        except Exception:  # noqa: BLE001 - read what is already here
+            pass
+        try:
+            found = release_conflicts._scan(self.root, self._cfg.branch, self._run)  # noqa: SLF001
+        except Exception as exc:  # noqa: BLE001
+            self.app.call_from_thread(self._show_files, None, str(exc) or "it failed")
+            return
+        self.app.call_from_thread(self._show_files, found, "")
+
+    def _show_files(self, found, error: str) -> None:
+        status = self.query_one("#conflict-status", Static)
+        if found is None:
+            status.update(f"✗ {error}")
+        elif not found:
+            status.update(f"Nothing conflicts with origin/{self._cfg.branch}")
+        else:
+            self._files = list(found)
+            status.update("")
+            files = self.query_one("#conflict-files", Vertical)
+            both = self.query_one("#conflict-both", Vertical)
+            for index, (conflict, segments) in enumerate(self._files):
+                if conflict.default:
+                    self._picks[conflict.path] = conflict.default
+                files.mount(self._file_row(index, conflict))
+                both.mount(self._both_row(conflict, segments))
+            self.query_one("#conflict-open", Button).disabled = False
+        self._busy(False)
+
+    def _file_row(self, index: int, conflict) -> Vertical:
+        places = f"{conflict.places} place{'s' if conflict.places != 1 else ''}"
+        children: list = [Static(f"{conflict.path}: {places} ({conflict.kind})", markup=False)]
+        if conflict.reading:
+            children.append(Static(conflict.reading, markup=False))
+        if conflict.kind == "lines":
+            children.append(Select(
+                [(CHOICE_LABELS[c], c) for c in conflict.choices],
+                value=conflict.default or Select.BLANK, prompt="Choose",
+                id=f"conflict-pick-{index}"))
+        hand = Vertical(
+            Static(BY_HAND, markup=False),
+            Static(f"git merge origin/{self._cfg.branch}\n"
+                   f"# fix {conflict.path}, then:\n"
+                   f"git add {conflict.path} && git commit", markup=False),
+            Button("Ask an agent", id=f"conflict-ask-{index}"),
+            id=f"conflict-hand-{index}", classes="" if conflict.kind != "lines" else "-hidden")
+        children.append(hand)
+        return Vertical(*children, classes="conflict-file")
+
+    def _both_row(self, conflict, segments) -> Vertical:
+        rows: list = [Static(conflict.path, markup=False)]
+        for ours, theirs in release_conflicts._places(segments):  # noqa: SLF001
+            rows.append(Horizontal(
+                Static("This branch\n" + "".join(ours).rstrip("\n"),
+                       classes="conflict-side", markup=False),
+                Static(f"{self._cfg.branch}\n" + "".join(theirs).rstrip("\n"),
+                       classes="conflict-side", markup=False),
+                classes="conflict-sides"))
+        return Vertical(*rows)
+
+    def _refresh_merge(self) -> None:
+        settled = bool(self._files) and all(
+            self._picks.get(c.path, "") not in ("", "agent") for c, _ in self._files)
+        try:
+            self.query_one("#conflict-merge", Button).disabled = not settled or self._working
+        except NoMatches:
+            pass
+
+    def _preview_in_thread(self, choices: dict[str, str]) -> None:
+        try:
+            texts = release_conflicts.preview(self.root, self._cfg.branch, choices,
+                                              run=self._run)
+        except Exception as exc:  # noqa: BLE001
+            self.app.call_from_thread(
+                self._show_outcome, release_resolve.Outcome(False, str(exc) or "it failed"))
+            return
+        self.app.call_from_thread(self._show_preview, choices, texts)
+
+    def _show_preview(self, choices: dict[str, str], texts: dict[str, str]) -> None:
+        lines: list[str] = []
+        for path, text in texts.items():
+            body = text.splitlines()
+            lines.append(f"{path}: keep {choices[path]}, {len(body)} lines")
+            lines.extend(f"    {line}" for line in body[:PREVIEW_LINES])
+            if len(body) > PREVIEW_LINES:
+                lines.append(f"    ... {len(body) - PREVIEW_LINES} more lines")
+        self._pending = dict(choices)
+        self.query_one("#conflict-preview", Static).update("\n".join(lines))
+        self.query_one("#conflict-preview").remove_class("-hidden")
+        self.query_one("#conflict-actions").remove_class("-hidden")
+        self.query_one("#conflict-result", Static).update("")
+        self._busy(False)
+
+    def _merge_in_thread(self, choices: dict[str, str]) -> None:
+        out = release_conflicts.merge(self.root, self._cfg, self._version, choices,
+                                      run=self._run)
+        try:
+            release_resolve._record(self._run, self.root, "merge", self._key, "", out)  # noqa: SLF001
+        except Exception:  # noqa: BLE001 - the history is best effort
+            pass
+        self.app.call_from_thread(self._show_outcome, out)
+
+    def _show_outcome(self, out: release_resolve.Outcome) -> None:
+        self._merged = self._merged or out.ok
+        self._snapshot = out.snapshot_id
+        for widget_id in ("#conflict-preview", "#conflict-actions"):
+            self.query_one(widget_id).add_class("-hidden")
+        self.query_one("#conflict-result", Static).update(
+            f"{'✓' if out.ok else '✗'} {out.text}")
+        self.query_one("#conflict-after").set_class(not (out.ok and out.snapshot_id), "-hidden")
+        self._busy(False)
+
+    def _undo_in_thread(self, snapshot: str) -> None:
+        text = release_resolve.undo(self.root, snapshot, run=self._run)
+        self.app.call_from_thread(self._show_undone, text)
+
+    def _show_undone(self, text: str) -> None:
+        self.query_one("#conflict-result", Static).update(text)
+        self.query_one("#conflict-after").add_class("-hidden")
+        self._busy(False)
+
+    # -- events -------------------------------------------------------------
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        event.stop()
+        select_id = event.select.id or ""
+        if not select_id.startswith("conflict-pick-"):
+            return
+        index = int(select_id.removeprefix("conflict-pick-"))
+        value = event.value
+        self._picks[self._files[index][0].path] = "" if value is Select.BLANK else str(value)
+        self.query_one(f"#conflict-hand-{index}").set_class(value != "agent", "-hidden")
+        self._refresh_merge()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        button_id = event.button.id or ""
+        if self._working:
+            return
+        if button_id == "conflict-open":
+            both = self.query_one("#conflict-both")
+            both.set_class(not both.has_class("-hidden"), "-hidden")
+        elif button_id == "conflict-merge":
+            self._work(self._preview_in_thread, {p: c for p, c in self._picks.items() if c})
+        elif button_id == "conflict-do":
+            self._work(self._merge_in_thread, dict(self._pending))
+        elif button_id == "conflict-cancel":
+            for widget_id in ("#conflict-preview", "#conflict-actions"):
+                self.query_one(widget_id).add_class("-hidden")
+        elif button_id == "conflict-undo":
+            self._work(self._undo_in_thread, self._snapshot)
+        elif button_id.startswith("conflict-ask-"):
+            index = int(button_id.removeprefix("conflict-ask-"))
+            self.dismiss(("ask", self._files[index][0].path))
+        elif button_id == "conflict-close":
+            self.action_close()
+
+    def action_close(self) -> None:
+        if self._working:
+            return
+        self.dismiss(("recheck", None) if self._merged else None)
 
 
 # -- the run's popups ---------------------------------------------------------
@@ -1999,8 +2253,12 @@ class ReleaseFailedScreen(ModalScreen):
         failure: ci_failure.Failure | None = None,
         open_url: Callable[[str], object] | None = None,
         on_no_runner: str | None = None,
+        stop_kind: str = "",
+        conflicts: Callable[[], ConflictScreen] | None = None,
     ) -> None:
         super().__init__()
+        self._stop_kind = stop_kind
+        self._conflicts = conflicts
         self._on_no_runner = on_no_runner
         self._reason = reason
         self._open_pr = open_pr
@@ -2033,6 +2291,9 @@ class ReleaseFailedScreen(ModalScreen):
                     yield Button("Ask an agent", id="release-ask",
                                  variant="default" if rerun_first else "primary")
                     yield Button("Open run", id="release-open-run")
+                if self._stop_kind == "merge-conflict" and self._conflicts is not None:
+                    yield Button("Settle the conflicts", id="release-conflicts",
+                                 variant="primary")
                 if self._open_pr:
                     yield Button("Open PR", id="release-open-pr")
                 yield Button("Close", id="release-failed-close")
@@ -2047,10 +2308,17 @@ class ReleaseFailedScreen(ModalScreen):
                 self.dismiss(RERUN)
         elif button == "release-open-run":
             self._open_run()
+        elif button == "release-conflicts":
+            if self._conflicts is not None:
+                self.app.push_screen(self._conflicts(), self._conflicts_done)
         else:
             choices = {"release-resume": RESUME, "release-ask": ASK,
                        "release-open-pr": OPEN_PR}
             self.dismiss(choices.get(button))
+
+    def _conflicts_done(self, result) -> None:
+        if result and result[0] == "recheck":
+            self.dismiss(RESUME)
 
     def _rerun_answer(self, rerun: bool | None) -> None:
         if rerun:
