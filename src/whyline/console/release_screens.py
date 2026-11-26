@@ -16,7 +16,7 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.css.query import NoMatches
 from textual.screen import ModalScreen
 from textual.widgets import (
-    Button, Checkbox, Input, Label, Select, Static, TabbedContent, TabPane, TextArea,
+    Button, Checkbox, Collapsible, Input, Label, Select, Static, TabbedContent, TabPane, TextArea,
 )
 
 from whyline import account
@@ -26,6 +26,7 @@ from whyline.release import config as release_config
 from whyline.release import notes as release_notes
 from whyline.release import plan as release_plan
 from whyline.release import ready as release_ready
+from whyline.release import resolve as release_resolve
 from whyline.release import setup_github
 from whyline.release import state as release_state
 from whyline.release import targets as release_targets
@@ -112,6 +113,8 @@ class ReleaseScreen(ModalScreen):
     #release-body, #rs-body { height: 1fr; }
     #release-custom { display: none; }
     #release-actions { height: auto; }
+    #release-resolve { height: auto; }
+    #release-resolve Button { height: 1; border: none; min-width: 0; padding: 0 1; }
     .-hidden { display: none; }
     /* The tab content sits right under the tab bar, and a row with no status is one line. */
     #release-box TabPane { padding: 0; }
@@ -151,9 +154,15 @@ class ReleaseScreen(ModalScreen):
         target_check: Callable[[str, release_config.ReleaseConfig, str],
                                list[release_ready.ReadyItem]] | None = None,
         enabled_agents: tuple[str, ...] | None = None,
+        resolve_run: release_ready.Run | None = None,
+        resolve_fetch: release_ready.Fetch | None = None,
     ) -> None:
         super().__init__()
         self.root = Path(root)
+        self._resolve_run = resolve_run
+        self._resolve_fetch = resolve_fetch
+        self._resolve_buttons: dict[str, release_ready.ReadyItem] = {}
+        self._resolve_gen = 0
         self._target_check = target_check
         self._target_results = release_state.load_targets(self.root)
         self._security_screen = security_screen
@@ -271,7 +280,10 @@ class ReleaseScreen(ModalScreen):
                         yield Select([(m, m) for m in release_config.MODES], value=mode,
                                      allow_blank=False, id="release-mode")
                         yield Static("", id="release-check-result", markup=False)
-                        yield Button("Open Security…", id="release-fix-security", classes="-hidden")
+                        yield Vertical(id="release-resolve")
+                        with Collapsible(title="What was resolved", collapsed=True,
+                                         id="release-history"):
+                            yield Static("", id="release-history-text", markup=False)
                         yield Static("", id="release-source", markup=False)
                         yield Static("", id="release-steps", markup=False)
                 with TabPane("Set up", id="setup-tab"):
@@ -298,6 +310,7 @@ class ReleaseScreen(ModalScreen):
 
     def on_mount(self) -> None:
         self._show_steps()
+        self._show_history()
         self._saved_form = self._collect()
         self.run_worker(self._source_in_thread, thread=True, exclusive=True,
                         group="release-source", name="release-source")
@@ -347,7 +360,9 @@ class ReleaseScreen(ModalScreen):
             self.action_close()
         elif button_id == "release-check":
             self._run_check()
-        elif button_id in ("release-security", "release-fix-security", "rs-sec-open"):
+        elif button_id in self._resolve_buttons:
+            self._open_resolve(self._resolve_buttons[button_id])
+        elif button_id in ("release-security", "rs-sec-open"):
             self._open_security()
         elif button_id == "rs-sec-copy":
             self.app.copy_to_clipboard(security_screens.BREW_COMMAND)
@@ -1383,10 +1398,96 @@ class ReleaseScreen(ModalScreen):
             if not item.ok and item.fix:
                 lines.append(f"    {item.fix}")
         self.query_one("#release-check-result", Static).update("\n".join(lines))
-        self.query_one("#release-fix-security", Button).set_class(
-            not any(item.key == "security" and not item.ok for item in items), "-hidden")
+        self._show_resolve_buttons(items)
         self.query_one("#release-start", Button).disabled = not (
             items and release_ready.ok(items))
+
+    # -- resolve ------------------------------------------------------------
+
+    def _show_resolve_buttons(self, items: list[release_ready.ReadyItem]) -> None:
+        """One Resolve… per failed line; the first is the default button."""
+        box = self.query_one("#release-resolve", Vertical)
+        box.remove_children()
+        self._resolve_gen += 1
+        self._resolve_buttons = {}
+        for item in items:
+            if item.ok:
+                continue
+            button_id = f"release-resolve-{self._resolve_gen}-{len(self._resolve_buttons)}"
+            self._resolve_buttons[button_id] = item
+            first = len(self._resolve_buttons) == 1
+            box.mount(Button(f"Resolve… {item.key}", id=button_id, classes="release-resolve",
+                             variant="primary" if first else "default"))
+
+    def _open_resolve(self, item: release_ready.ReadyItem) -> None:
+        screen = ResolveScreen(self.root, self._config(), self._checked_version
+                               or self.chosen_version(), item,
+                               run=self._resolve_run, fetch=self._resolve_fetch)
+        self.app.push_screen(screen, self._resolved)
+
+    def _resolved(self, result: tuple[str, object] | None) -> None:
+        self._show_history()
+        if not result:
+            return
+        action, option = result
+        if action == "recheck":
+            self._run_check()
+        elif action == "open":
+            self._open_place(option)
+        elif action == "version":
+            self._use_version(str(option.id)[len("version-"):])
+
+    def _open_place(self, option: release_resolve.Option) -> None:
+        if option.id == "open-security":
+            self._open_security()
+        elif option.id.startswith("open-setup-"):
+            self.query_one(TabbedContent).active = "setup-tab"
+        elif option.id in ("open-files", "open-relay", "open-relay-resolve"):
+            self._open_console(option.id)
+        else:
+            self.query_one("#release-check-result", Static).update(
+                f"{option.label}: open it from the console's main screen.")
+
+    def _open_console(self, option_id: str) -> None:
+        """Close the Release window and show the console's file pane or relay
+        controls; for a paused relay, press its Resolve button."""
+        app = self.app
+        self.dismiss(None)
+        if option_id == "open-files":
+            select = getattr(app, "_select_file_choice", None)
+            if select is not None:
+                select("all")
+        elif option_id == "open-relay-resolve":
+            main = getattr(app, "_main", None)
+            if main is not None:
+                try:
+                    button = main("#relay-resolve", Button)
+                except Exception:  # noqa: BLE001 - not a console screen
+                    return
+                if not button.disabled:
+                    button.press()
+
+    def _use_version(self, version: str) -> None:
+        self.query_one("#release-kind", Select).value = CUSTOM
+        self.query_one("#release-custom", Input).value = version
+
+    def _show_history(self) -> None:
+        self.run_worker(self._history_in_thread, thread=True, exclusive=True,
+                        group="release-history", name="release-history")
+
+    def _history_in_thread(self) -> None:
+        try:
+            entries = release_resolve.history(
+                self.root, run=self._resolve_run or release_ready.default_run)
+        except Exception:  # noqa: BLE001 - the list is a convenience
+            entries = []
+        self.app.call_from_thread(self._fill_history, entries)
+
+    def _fill_history(self, entries: list[release_resolve.Entry]) -> None:
+        rows = [f"{e.time} · {e.key} · {e.option}"
+                + (f" · {e.text}" if e.text else "") + f" ({e.result})" for e in entries]
+        self.query_one("#release-history-text", Static).update(
+            "\n".join(rows) or "Nothing has been resolved here yet.")
 
     # -- security -----------------------------------------------------------
 
@@ -1424,6 +1525,195 @@ class ReleaseScreen(ModalScreen):
     def _go(self, choice: ReleaseChoice) -> None:
         self.dismiss(None)
         self._start_release(choice)
+
+
+class ResolveScreen(ModalScreen):
+    """What is wrong with one failed check, and the options to put it right.
+
+    Dismisses with None, or (action, option) where action is recheck, open or version.
+    Nothing that changes the repository runs before Do it.
+    """
+
+    BINDINGS = [("escape", "close", "Close")]
+    DEFAULT_CSS = """
+    ResolveScreen { align: center middle; }
+    #resolve-box { width: 90%; max-width: 100; height: 90%; border: round $accent;
+                   background: $surface; padding: 1 2; }
+    #resolve-body { height: 1fr; }
+    #resolve-options, #resolve-actions, #resolve-after, #resolve-ask { height: auto; }
+    #resolve-title { text-style: bold; }
+    #resolve-say { width: 1fr; }
+    .-hidden { display: none; }
+    """
+
+    def __init__(self, root: Path | str, cfg: release_config.ReleaseConfig, version: str,
+                 item: release_ready.ReadyItem, *, run: release_ready.Run | None = None,
+                 fetch: release_ready.Fetch | None = None) -> None:
+        super().__init__()
+        self.root = Path(root)
+        self._cfg = cfg
+        self._version = version
+        self._item = item
+        self._run = run or release_ready.default_run
+        self._fetch = fetch or release_ready.default_fetch
+        self._res: release_resolve.Resolution | None = None
+        self._option: release_resolve.Option | None = None
+        self._buttons: dict[str, release_resolve.Option] = {}
+        self._acted = False
+        self._snapshot = ""
+        self._working = False
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="resolve-box"):
+            yield Static(self._item.text, id="resolve-title", markup=False)
+            with VerticalScroll(id="resolve-body"):
+                yield Static("Reading…", id="resolve-facts", markup=False)
+                yield Vertical(id="resolve-options")
+                yield Static("", id="resolve-preview", classes="-hidden", markup=False)
+                yield Input(placeholder="Commit message", id="resolve-message",
+                            classes="-hidden")
+                yield Static("", id="resolve-result", markup=False)
+            with Horizontal(id="resolve-actions", classes="-hidden"):
+                yield Button("Do it", id="resolve-do", variant="primary")
+                yield Button("Cancel", id="resolve-cancel")
+            with Horizontal(id="resolve-after", classes="-hidden"):
+                yield Button("Undo", id="resolve-undo")
+            with Horizontal(id="resolve-ask"):
+                yield Input(placeholder="Say what you want to do", id="resolve-say")
+                yield Button("Ask", id="resolve-ask-go", disabled=True)
+            yield Button("Close", id="resolve-close")
+
+    def on_mount(self) -> None:
+        self._work(self._explain_in_thread)
+
+    # -- work ---------------------------------------------------------------
+
+    def _controls(self) -> list[Button]:
+        ids = {"resolve-do", "resolve-cancel", "resolve-undo", "resolve-close", *self._buttons}
+        return [b for b in self.query(Button) if b.id in ids]
+
+    def _busy(self, busy: bool) -> None:
+        self._working = busy
+        for button in self._controls():
+            button.disabled = busy
+
+    def _work(self, fn, *args) -> None:
+        self._busy(True)
+        self.run_worker(lambda: fn(*args), thread=True, exclusive=True, name="release-resolve")
+
+    def _explain_in_thread(self) -> None:
+        res = release_resolve.explain(self.root, self._cfg, self._version, self._item,
+                                      run=self._run, fetch=self._fetch)
+        self.app.call_from_thread(self._show_resolution, res)
+
+    def _show_resolution(self, res: release_resolve.Resolution) -> None:
+        self._res = res
+        self.query_one("#resolve-title", Static).update(res.title)
+        self.query_one("#resolve-facts", Static).update("\n".join(res.facts))
+        options = sorted(res.options, key=lambda o: not o.recommended)
+        box = self.query_one("#resolve-options", Vertical)
+        for index, option in enumerate(options):
+            button_id = f"resolve-opt-{index}"
+            self._buttons[button_id] = option
+            box.mount(Button(option.label, id=button_id,
+                             variant="primary" if index == 0 else "default"))
+        self._busy(False)
+
+    def _preview_in_thread(self, option: release_resolve.Option) -> None:
+        shown = release_resolve.preview(self.root, self._cfg, self._version, option,
+                                        run=self._run)
+        self.app.call_from_thread(self._show_preview, option, shown)
+
+    def _show_preview(self, option: release_resolve.Option,
+                      shown: release_resolve.Preview) -> None:
+        self._option = option
+        lines = [*shown.lines, *(" ".join(argv) for argv in shown.argv)]
+        self.query_one("#resolve-preview", Static).update("\n".join(lines))
+        self.query_one("#resolve-preview").remove_class("-hidden")
+        self.query_one("#resolve-message").set_class(option.needs != "message", "-hidden")
+        self.query_one("#resolve-options").add_class("-hidden")
+        self.query_one("#resolve-actions").remove_class("-hidden")
+        self.query_one("#resolve-result", Static).update("")
+        self._busy(False)
+
+    def _apply_in_thread(self, option: release_resolve.Option, message: str) -> None:
+        out = release_resolve.apply(self.root, self._cfg, self._version, option,
+                                    message=message, run=self._run, fetch=self._fetch,
+                                    key=self._item.key)
+        self.app.call_from_thread(self._show_outcome, out)
+
+    def _show_outcome(self, out: release_resolve.Outcome) -> None:
+        self._acted = True
+        self._snapshot = out.snapshot_id
+        for widget_id in ("#resolve-preview", "#resolve-message", "#resolve-actions"):
+            self.query_one(widget_id).add_class("-hidden")
+        self.query_one("#resolve-result", Static).update(
+            f"{'✓' if out.ok else '✗'} {out.text}")
+        self.query_one("#resolve-after").set_class(not out.snapshot_id, "-hidden")
+        self._busy(False)
+
+    def _undo_in_thread(self, snapshot: str) -> None:
+        text = release_resolve.undo(self.root, snapshot, run=self._run)
+        self.app.call_from_thread(self._show_undone, text)
+
+    def _show_undone(self, text: str) -> None:
+        self.query_one("#resolve-result", Static).update(text)
+        self.query_one("#resolve-after").add_class("-hidden")
+        self._busy(False)
+
+    # -- events -------------------------------------------------------------
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        button_id = event.button.id or ""
+        if self._working:
+            return
+        if button_id in self._buttons:
+            self._pick(self._buttons[button_id])
+        elif button_id == "resolve-do":
+            self._do_it()
+        elif button_id == "resolve-cancel":
+            self._cancel()
+        elif button_id == "resolve-undo":
+            self._work(self._undo_in_thread, self._snapshot)
+        elif button_id == "resolve-close":
+            self.action_close()
+
+    def _pick(self, option: release_resolve.Option) -> None:
+        if option.kind == "run":
+            self._work(self._preview_in_thread, option)
+        elif option.kind == "copy":
+            self.app.copy_to_clipboard(self._item.fix or self._item.text)
+            self.query_one("#resolve-result", Static).update("Copied.")
+        elif option.kind in ("open", "version"):
+            self.dismiss((option.kind, option))
+        elif option.kind == "recheck":
+            self.dismiss(("recheck", option))
+        else:
+            self.query_one("#resolve-result", Static).update(
+                "Settle these from a terminal: whyline release resolve --conflicts")
+
+    def _do_it(self) -> None:
+        option = self._option
+        if option is None:
+            return
+        message = self.query_one("#resolve-message", Input).value.strip()
+        if option.needs == "message" and not message:
+            self.query_one("#resolve-result", Static).update("Type a commit message first")
+            return
+        self._work(self._apply_in_thread, option, message)
+
+    def _cancel(self) -> None:
+        self._option = None
+        for widget_id in ("#resolve-preview", "#resolve-message", "#resolve-actions"):
+            self.query_one(widget_id).add_class("-hidden")
+        self.query_one("#resolve-options").remove_class("-hidden")
+        self.query_one("#resolve-result", Static).update("")
+
+    def action_close(self) -> None:
+        if self._working:
+            return
+        self.dismiss(("recheck", None) if self._acted else None)
 
 
 # -- the run's popups ---------------------------------------------------------

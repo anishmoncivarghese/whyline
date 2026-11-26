@@ -49349,3 +49349,112 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: fafca4597232450da2d83fd33e64cc51 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-25T23:58:54.349Z"} -->
+
+## 2026-11-26 — ResolveScreen dismisses with (action, option) and ReleaseScreen performs open/version/recheck itself
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSO-7
+
+**Because:** The Release window owns the version select, the Set up tab, Security and Check, so Resolve stays a pure view over resolve.explain/preview/apply/undo
+
+**Rejected:**
+
+- ResolveScreen touching ReleaseScreen widgets directly — couples the two screens and is harder to test
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: 1cc6f268b615423f8724731768818254 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-26T00:05:16.746Z"} -->
+
+## 2026-11-26 — Fail: full suite still expects the removed Open Security button
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-7
+
+**Because:** uv run pytest -q fails on tests/console/test_security_screens.py::test_failed_security_item_offers_the_fix (NoMatches for #release-fix-security). RSO-7's own 79 tests pass. Resolve already maps open-security to the Security screen; rewrite that test to Check, press Resolve…, press Open Security, and assert SecurityScreen.
+
+**Test:** uv run pytest -q: 1 failed (test_failed_security_item_offers_the_fix); 1 flaky rerun passed
+
+**Files:** src/whyline/console/release_screens.py, tests/console/test_security_screens.py, tests/console/test_release_resolve_screen.py
+
+<!-- whyline-event: 05714ca8ff714fb087f68251c2c98e9b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-26T01:01:49.406Z"} -->
+
+## 2026-11-26 — Pass: Resolve on the Ready list matches RSO-7 and the full suite is green
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-7
+
+**Because:** uv run pytest -q exited 0. RSO-7 tests cover Resolve on each failed line, recommended-first options, nothing before Do it, empty message refused, each option kind, Undo, recheck on close, and the history list. The rewritten security test now Check, Resolve, Open Security, SecurityScreen. One unrelated flaky rerun then passed; one skip; warnings only.
+
+**Files:** src/whyline/console/release_screens.py, tests/console/test_release_resolve_screen.py, tests/console/test_security_screens.py
+
+<!-- whyline-event: ab79cc1c18bf4fef8250de59e19996ea -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-26T07:14:53.304Z"} -->
+
+## 2026-11-26 — Reject RSO-7 until every production open option opens its destination
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSO-7
+
+**Because:** The full suite passes, but ReleaseScreen._open_place handles only open-security and open-setup-*; resolve.explain also emits open-files, open-relay, and open-relay-resolve, which currently fall back to telling the user to navigate manually, and the option-kind test covers only open-setup-pypi.
+
+**Rejected:**
+
+- Approve based on the green suite — the focused open-kind test does not exercise all production option IDs.
+
+**Files:** src/whyline/console/release_screens.py, tests/console/test_release_resolve_screen.py
+
+<!-- whyline-event: b087e2ee5a4f4b5aab78ebc934d28cac -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-26T07:51:21.142Z"} -->
+
+## 2026-11-26 — Open-files/open-relay/open-relay-resolve close the Release window and drive the console (file pane All files / press relay Resolve)
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSO-7
+
+**Because:** The Release window is a modal over the console, so navigation must dismiss it and then use the main screen's own file-choice and Resolve button
+
+**Rejected:**
+
+- Keep the 'open from main screen' message — reviewer found it does not open the destination
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: 9b1899d76d01466586e527a89d3daf7a -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-26T08:03:52.013Z"} -->
+
+## 2026-11-26 — Pass: Resolve on the Ready list matches RSO-7; production open options navigate, and the full suite is green
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-7
+
+**Because:** uv run pytest -q exited 0. RSO-7 tests cover Resolve on each failed line, recommended-first options, nothing before Do it, empty message refused, each option kind, Undo, recheck on close, and the history list. open-files/open-relay/open-relay-resolve close Release and drive the console. The security test is Check, Resolve, Open Security, SecurityScreen. One unrelated flaky rerun then passed; one skip; warnings only.
+
+**Rejected:**
+
+- Fail because open-setup-* only switches to the Set up tab — the option is Open Set up, the kind test checks that tab, and the last reject was the three console open IDs now covered
+
+**Files:** src/whyline/console/release_screens.py, tests/console/test_release_resolve_screen.py, tests/console/test_security_screens.py
+
+<!-- whyline-event: ad0486f4ff2b419a9750fd788161efb4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-26T08:51:37.643Z"} -->
+
+## 2026-11-26 — Approve: Resolve on the Ready list satisfies RSO-7
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSO-7
+
+**Because:** The diff provides a Resolve button for every failed Ready item, a worker-backed ResolveScreen for every required option kind, safe preview and apply controls, undo and automatic recheck, non-markup result rendering, history, and real console navigation; uv run pytest -q exited 0 with one skip and warnings only.
+
+**Files:** src/whyline/console/release_screens.py, tests/console/test_release_resolve_screen.py, tests/console/test_security_screens.py
+
+<!-- whyline-event: 1729dc5d3eed4f5cbe8758a85cf1dead -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-26T09:27:15.846Z"} -->

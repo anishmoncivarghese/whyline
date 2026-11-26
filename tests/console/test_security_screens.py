@@ -246,12 +246,13 @@ async def test_failed_security_item_offers_the_fix(tmp_path):
     async with host.run_test(size=(120, 50)) as pilot:
         await _settle(pilot)
         release = pilot.app.screen
-        fix = release.query_one("#release-fix-security", Button)
-        assert fix.has_class("-hidden")
         release.query_one("#release-check", Button).press()
         await _settle(pilot, 40)
-        assert not fix.has_class("-hidden")
-        fix.press()
+        resolve = release.query(".release-resolve").first(Button)
+        resolve.press()
+        await _settle(pilot)
+        assert pilot.app.screen.query_one("#resolve-opt-0", Button)
+        pilot.app.screen.query_one("#resolve-opt-0", Button).press()
         await _settle(pilot)
         assert isinstance(pilot.app.screen, ss.SecurityScreen)
 
