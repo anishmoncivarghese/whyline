@@ -114,7 +114,7 @@ Rules every task keeps:
   6. An unknown key or option exits 2 with the choices.
   Tests: each form calling the same function the console will, nothing run on `n`, the recheck line, the undo, and the exit codes.
 
-- [ ] RSO-7: Resolve on the Ready list
+- [x] RSO-7: Resolve on the Ready list
   Edit `src/whyline/console/release_screens.py` and its tests only.
   1. Each failed Ready line gets **Resolve…**. The first one is the default button. The existing **Open Security…** button is replaced by it.
   2. `ResolveScreen` shows the title, the facts, the option buttons (the recommended one first and primary), and the box `Say what you want to do` with **Ask** (wired in RSO-9; until then it is shown disabled).
