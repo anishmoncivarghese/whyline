@@ -49772,3 +49772,21 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: e26f464febc34783af098984cf85831f -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-28T13:07:51.417Z"} -->
+
+## 2026-11-28 — Merge origin/main into relay/release-resolve.plan before release, keeping both sides of test_source.py
+
+**Actor:** claude
+**Role:** implementer
+**Task:** release-resolve
+
+**Because:** Release readiness check failed on a conflict in tests/release/test_source.py and a stale 0.3.79 version; main's Windows fix changed one assert to read_text(encoding='utf-8') and RSO-4 appended a new test, so both changes are kept; full uv run pytest -q exited 0
+
+**Rejected:**
+
+- Pick another version in the window — the tag error was only because the branch still had 0.3.79; after the merge it reads 0.3.83
+- Take one side only — would drop either the Windows encoding fix or RSO-4's stop test
+
+**Files:** tests/release/test_source.py
+
+<!-- whyline-event: 533204d3aed040a292bb7d1df8a60540 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-28T17:10:51.881Z"} -->
