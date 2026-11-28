@@ -142,7 +142,7 @@ Rules every task keeps:
   5. In `auto` mode and from the queue, nothing here starts by itself: the stop message gains the line `Resolve is waiting in the Release window.`
   Tests: Ask calling `propose`, refused steps shown, Do this starting the Fix turn with the request, Keep and Undo, Resolve on each stop kind, a CI failure showing the old buttons only, Resume primary after a kept fix, and the auto-mode line.
 
-- [ ] RSO-10: Docs
+- [x] RSO-10: Docs
   Edit `docs/release.md` and `README.md` only.
   Cover: Resolve on a failed check with the table of options, what each one runs, the conflict view and what each choice does, why ticked tasks are kept, the box and what it will refuse, Undo and when it stops being offered, Resolve on a stopped release, `whyline release resolve`, and the record of what was resolved.
   Verify with `uv run pytest -q`.
