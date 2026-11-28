@@ -113,6 +113,13 @@ idea → brainstorm → spec and plan → implement → test → review → veri
   commit-list fallback was used. Choose
   whether to use a second agent and which reviewer in **Release → Set up**;
   check a hand-written file with `whyline release notes --check <file>`.
+  **Resolve…** on a failed Ready check or a stopped release explains what is
+  wrong and offers fixes (commit or stash changes, pull, bring in `main`, pick a
+  free version), settles merge conflicts file by file in the window, and has a
+  box to say what you want instead. Every fix that changes anything is shown
+  before it runs (options that only open, copy, set the version or recheck act directly), never
+  pushes or deletes, and most can be undone; the same is in
+  `whyline release resolve`.
   Per-target setup, all four notes-summary forms, fallback groups, how to
   check each target by hand and a troubleshooting list are in
   [docs/release.md](docs/release.md).

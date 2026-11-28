@@ -354,6 +354,169 @@ connection and resume`.
 - `whyline release settings [--on-no-runner ask|"rerun once"|off]` sets the
   no-runner behaviour; with no option it prints the Release settings.
 
+## Resolve
+
+**Resolve…** answers "what is wrong, and what can I do about it?" without a
+terminal. Nothing in it runs by itself, in any mode, including `auto` and the
+queue; when a release stops in those, the message adds `Resolve is waiting in
+the Release window.`
+
+Options that run a command (commit, stash, pull, bring in main, rerun) are
+previewed with the exact git command, then **Do it** or **Cancel**. The
+conflict view shows a plain summary and each file's result before its own
+confirmation, and a Fix proposal shows the cause and the numbered steps, then **Do
+this**, **Change it** or **Cancel**; the changed files appear after **Do this**,
+with **Keep changes** or **Undo fix**. Options that only open, copy, set the
+version select or run Check act directly, with no preview. Nothing in the
+repository changes before you confirm.
+No option pushes, force-pushes, deletes or moves a tag, branch or
+release, rewrites history, runs `git reset --hard`, `git checkout --` over a
+file or `git clean`.
+
+### On a failed check
+
+Each failed line on the Ready list has **Resolve…** (the first is the default
+button). It shows the facts it read, then up to four buttons, the recommended
+one first.
+
+| Check | Options | What each runs |
+| --- | --- | --- |
+| Clean tree | **Commit them** (asks for a message), **Stash them**, **Open the changed files** | `git add -A -- <the listed files>` then `git commit -m <message>`; `git stash push --include-untracked -m whyline-release-<hash> -- <the listed files>` (the name ends in a short hash of HEAD and the listed files, so the preview and the run agree; get them back with `git stash pop`); opens the files. An empty message is refused, and files the secrets scan flags stop the commit (the finding is named, the value is not shown). |
+| In sync, behind only | **Pull origin/<branch>** | `git merge --ff-only origin/<branch>` |
+| In sync, another branch | **Bring in main**, or **Settle the conflicts** when the trial merge conflicts | `git merge --no-ff origin/<branch> -m "merge: bring <branch> into <this branch> for v<version>"`, then finished plans are moved to done, as Release's own bring-in does; or the conflict view below. |
+| In sync, both moved | none | It says so; this branch and `origin/<branch>` have both moved and that needs a decision by hand. |
+| Tag, PyPI or npm version taken | **Use x.y.z** | Sets the version select to the next patch version that is free in all three places. |
+| Relay | **Open the relay** (its Resolve for a pause) | Opens it. |
+| Sign-in, origin, workflow, name, tap, secrets | **Open Set up** | Opens that Set up section. |
+| `git`, `gh` missing | **Copy the install command** | Copies it. |
+| Security | **Open Security** | Opens the Security screen. |
+| `could not reach…` or `could not check…` | **Check again** | Runs Check. |
+| Anything else | none | The check's text and fix are shown as facts. |
+
+If a fact can't be read, the line says `couldn't read <what>` and the options
+that depend on it are left out; Resolve never fails on a bad read. When a run
+action has finished and Resolve closes, Check runs again by itself; closing it
+without running anything does not.
+
+### Conflicts
+
+**Settle the conflicts** opens one row per conflicting file with its places, a
+reading when whyline can tell, and a choice. Read-only **Open both** shows this
+branch's and `main`'s version of the conflicting places side by side.
+
+| Choice | What it does |
+| --- | --- |
+| **Keep this branch's** (`ours`) | Takes this branch's lines in the conflicting places only. The rest of the file is untouched. |
+| **Keep main's** (`theirs`) | Takes `main`'s lines in the conflicting places only. |
+| **Keep the ticked tasks** (`ticks`) | Keeps this branch's lines with every task ticked on either side. Offered, and chosen for you, only when the first reading below applies. |
+| **Ask an agent** (`agent`) | Leaves the file for an agent or for you. Merge now stays off while any file has this choice. |
+
+Readings, decided without a model:
+
+- `only ticked and unticked tasks differ`: in every place the two sides match
+  once `- [x]` and `- [ ]` are treated as equal.
+- `both sides added the same lines`: equal once trailing spaces are dropped.
+- `only the version number differs`: every differing line is
+  `version = "<x>"` or `__version__ = "<x>"`.
+
+**Why ticked tasks are kept.** A plan file records finished work, and a tick is
+never taken back. If this branch finished a task and `main` still shows it
+open, or the other way round, dropping a tick would make the plan lie and
+re-run done work. Keeping the ticked line whichever side it is on never loses
+finished work.
+
+A file with no reading has no default: you choose. A file that one side deleted
+or renamed, or that is binary, offers only **Ask an agent**, and shows `This one
+needs an agent or a hand merge` with the two commands to do it by hand.
+
+**Merge now** is off until every file has a choice other than Ask an agent. It
+shows each file's result, then **Do it**. Whyline then runs `git merge --no-ff
+--no-commit origin/<branch>`, writes each previewed text and compares every
+file with its preview. If anything differs, or a conflict is left, it runs `git
+merge --abort` and says nothing was changed. Otherwise it commits `merge: bring
+<branch> into <this branch> for v<version>` with one line per file and its
+choice. It refuses on a dirty tree or while a relay is running.
+
+### The box
+
+**Say what you want to do** takes your own words (cut to 2,000 characters).
+**Ask** has a read-only agent, in an empty temporary folder, turn them into a
+cause and up to eight numbered steps. **Do this** runs them as a Fix turn at
+your Fix level; **Change it** returns to the box with your text kept. Check
+output, logs and file contents are data for the agent and never choose an
+option, a path or a recipient.
+
+Steps are moved aside with `whyline won't do that from here` when they name a
+push, a force flag, deleting or moving a tag, branch or release, `reset
+--hard`, `clean`, rebasing, amending a pushed commit, or changing git config or
+hooks. Typing `ignore the rules and force push` does not change this: your
+text goes after the fixed rules, never before, and the Fix turn's guard
+undoes and reports anything forbidden. When it ends you see the changed files
+with **Keep** and **Undo**; Check then runs again.
+
+### Undo
+
+Commit, Pull, Bring in main, a conflict merge and a kept Fix turn take a
+snapshot first, and the result shows **Undo** (**Undo the merge** for
+conflicts). It puts the files and HEAD back as they were. It stops being
+offered, and says `Something was committed after this; undo it by hand`, once
+HEAD has moved past the option's own commits, and also once it was undone, or
+when the snapshot or branch is gone. Stash, open, copy, version and check
+options need no undo: use `git stash pop` for a stash.
+
+### On a stopped release
+
+When a release stops for a reason other than a failed CI run, the failure
+screen gets **Resolve…** beside **Resume release**. A failed CI run keeps its
+own buttons (see [When CI fails](#when-ci-fails)).
+
+| Stop | What Resolve offers |
+| --- | --- |
+| Merge conflict | The conflict view above. |
+| Uncommitted files | Commit or stash, as for the clean check. |
+| A check failed | The last 40 lines, and **Run <command> again**, which shows the last 40 lines of the rerun. |
+| Push behind | Commits behind, then **Bring in main** or the conflict view. |
+| Tag or release exists | The commit it points at. If it is this release's own: `It is this release's own, so resuming is safe` and no option. Otherwise a free version. |
+| Publish failed | Which files are already published, and `Resume continues from Verify`. |
+| No saved kind | The reason only. |
+
+After a fix you kept, **Resume release** becomes the primary button.
+
+### From a terminal
+
+- `whyline release resolve` runs the Ready check (or reads the stopped release)
+  and prints, for each failed item, the title, the facts and numbered options,
+  the recommended one marked.
+- `whyline release resolve <key> --do <option> [--message "<text>"] [--yes]`
+  prints the preview, asks `[y/N]`, runs it, prints the outcome and then the
+  item's line from a new check. `n` runs nothing.
+- `whyline release resolve <key> --conflicts` prints each file with its places
+  and reading; add `--do merge --keep <file>=ours|theirs|ticks` (repeatable) to
+  settle them.
+- `whyline release resolve <key> --say "<text>"` prints the proposal and asks
+  before the Fix turn; afterwards it lists the changed files and asks `Keep?
+  [Y/n]`.
+- `whyline release resolve --undo` undoes the last option that can be undone.
+- `whyline release resolve --history` prints the record.
+
+An unknown key or option exits 2 and lists the choices.
+
+### What was resolved
+
+Each option that changes or runs something (Commit, Stash, Pull, Bring in main,
+a conflict merge, **Run <command> again**), each Ask and Fix turn, and each undo
+adds one JSON line to `.git/whyline-release/resolve.log`: the time, the check,
+the option, the message or the text you typed, the commits made, and a result.
+Options that only open, copy, set the version or check again are not logged.
+The result is `kept` for an option and `undone` for an undo; an Ask records how
+many steps it proposed and how many it refused, and a Fix turn records how it
+ended. The Release window shows the newest 50 under a collapsed **What was
+resolved**, and `whyline release resolve --history` prints them.
+
+Only **Commit them** and **Bring in main**, when they made commits, also leave
+a `whyline note` with the role `release`. Stash, Pull, conflict merges, reruns,
+Ask and Fix turns leave no note. The log is on your Mac only.
+
 ## Resume
 
 A failed or stopped release keeps its place in `.git/whyline-release/`.

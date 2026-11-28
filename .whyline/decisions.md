@@ -49611,3 +49611,164 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d211ae1c3acf491192394f130d49c325 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-28T06:21:26.035Z"} -->
+
+## 2026-11-28 — Pass RSO-10: Resolve docs cover every required topic and match the console
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-10
+
+**Because:** docs/release.md has the failed-check options table and commands, conflict choices and why ticks are kept, the box and refusals, Undo, the stopped-release table, whyline release resolve forms, and the resolve.log record; README summarises the same; option labels and CLI flags match resolve.py, release_screens.py and cli.py; git diff --check is clean; uv run pytest -q reached 100% with exit code 0
+
+**Rejected:**
+
+- Fail for stash -m whyline-release-<time> — the code uses a hash of HEAD and files so preview and apply agree, and recovery is git stash pop as documented
+
+**Files:** docs/release.md, README.md
+
+<!-- whyline-event: 0fc1e4ce36094a1ea7cd3ae3aa177473 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-28T07:10:44.843Z"} -->
+
+## 2026-11-28 — Reject RSO-10 Round 3: Resolve docs do not yet match the commands and history implementation
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSO-10
+
+**Because:** docs/release.md:378 calls the deterministic hash-based stash suffix <time>; line 380 does not state what Bring in main runs despite the requested command table; lines 499-504 say every option is logged with kept/undone and every committing option writes a note, but open/copy/version/recheck are not logged, proposal and Fix results use other statuses, and conflict merges do not write a whyline note; uv run pytest -q completed at 100% with exit code 0 and one skipped test
+
+**Rejected:**
+
+- Approve — passing tests do not make factual documentation mismatches acceptable
+
+**Files:** docs/release.md
+
+<!-- whyline-event: 56acab4cbd5e4fada7ff1e4150e6e499 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-28T07:37:18.051Z"} -->
+
+## 2026-11-28 — RSO-10 docs describe resolve.log and notes as implemented
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSO-10
+
+**Because:** log covers commit/stash/pull/bring/merge/rerun/ask/fix/undo; only commit and bring in main write a whyline note; stash name is a hash
+
+**Rejected:**
+
+- Say every option is logged and noted — open/copy/version/recheck are not logged and merges write no note
+
+**Files:** docs/release.md
+
+<!-- whyline-event: bc0a64d3f98d4f6c84b80f4b51106d2b -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-28T08:14:12.237Z"} -->
+
+## 2026-11-28 — Pass RSO-10: Resolve docs cover every required topic and match the console
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-10
+
+**Because:** docs/release.md has the failed-check options table and commands, conflict choices and why ticks are kept, the box and refusals, Undo, the stopped-release table, whyline release resolve forms, and the resolve.log record; README summarises the same; option labels and CLI flags match resolve.py, release_screens.py and cli.py; stash is whyline-release-<hash> of HEAD and files; Bring in main runs merge --no-ff then moves finished plans; log covers commit/stash/pull/bring/merge/rerun/ask/fix/undo and does not claim every option is kept/noted; git diff --check is clean; uv run pytest -q reached 100% with exit code 0 and one skipped test
+
+**Rejected:**
+
+- Fail for Keep/Undo vs Keep changes/Undo fix — the CLI Keep? prompt and those buttons still keep or undo the Fix turn, and the rest of the labels match
+
+**Files:** docs/release.md, README.md
+
+<!-- whyline-event: 375266015a6a4ff2940da71729e08782 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-28T08:43:46.981Z"} -->
+
+## 2026-11-28 — Reject RSO-10 Round 6: Resolve preview and recheck guarantees overstate the UI
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSO-10
+
+**Because:** docs/release.md:364-365 says every fix shows exact commands and uses Do it/Cancel, but open, copy, version and recheck options bypass preview/apply and conflict/Fix previews do not show exact commands; docs/release.md:390-392 says Check reruns whenever Resolve closes, while tests and action_close show it reruns only after a run action. uv run pytest -q exited 0 at 100%, with one skipped test and one rerun that passed.
+
+**Files:** docs/release.md
+
+<!-- whyline-event: 75cdf34588d94f729b3b902300084eb1 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-28T09:09:50.687Z"} -->
+
+## 2026-11-28 — Pass RSO-10: Resolve docs cover every required topic and match the console
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-10
+
+**Because:** docs/release.md has the failed-check options table and commands, conflict choices and why ticks are kept, the box and refusals, Undo, the stopped-release table, whyline release resolve forms, and the resolve.log record; README summarises the same; Round 7 wording matches the UI: command-running options preview then Do it/Cancel with exact git argv, conflict/Fix show a summary, open/copy/version/recheck act with no preview, and Check reruns only after a run action via action_close; option labels and CLI flags match resolve.py, release_screens.py and cli.py; stash is whyline-release-<hash> of HEAD and files; Bring in main runs merge --no-ff then moves finished plans; log covers commit/stash/pull/bring/merge/rerun/ask/fix/undo and does not claim every option is kept/noted; git diff --check is clean; uv run pytest -q reached 100% with exit code 0 and one skipped test
+
+**Rejected:**
+
+- Fail for Keep/Undo vs Keep changes/Undo fix — the CLI Keep? prompt and those buttons still keep or undo the Fix turn, and the rest of the labels match
+- Fail for README Every fix is shown before it runs — the summary is about command-running options, and docs/release.md now names the options that skip preview
+
+**Files:** docs/release.md, README.md
+
+<!-- whyline-event: 1452a0d4dd7c4865b2f389db7194b9ac -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-28T10:00:06.823Z"} -->
+
+## 2026-11-28 — Reject RSO-10 Round 9: Resolve confirmation controls are still overstated
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSO-10
+
+**Because:** README.md:119 says every fix is shown before it runs although open, copy, version and recheck actions execute directly; docs/release.md:364-369 groups the Fix turn under Do it/Cancel even though the console presents Do this, Change it and Cancel, so the changed docs do not yet match the UI. The required uv run pytest -q completed at 100% with exit code 0 and one skipped test.
+
+**Files:** README.md, docs/release.md
+
+<!-- whyline-event: 51bf26c77a8e47238502f04e7f5d26e3 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-28T10:26:09.717Z"} -->
+
+## 2026-11-28 — Fail RSO-10: README still omits version from skip-preview, and the Fix proposal is described as showing files
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-10
+
+**Because:** README.md:119-120 lists pick a free version as a fix then says every fix that changes anything is shown first (open, copy or recheck act directly), but Use x.y.z sets the version select with no preview. docs/release.md:366-368 says a Fix proposal shows a summary and the files then Do this/Change it/Cancel, but the proposal screen shows cause and numbered steps; files appear after the Fix turn. Required topics are otherwise covered. git diff --check is clean. uv run pytest -q reached 100% with exit 0 and one skipped test.
+
+**Rejected:**
+
+- Pass — Round 9 already rejected the README overstatement and version is still missing from the parenthetical
+- Fail for Keep/Undo vs Keep changes/Undo fix — the CLI Keep? prompt and those buttons still keep or undo the Fix turn
+
+**Files:** README.md, docs/release.md
+
+<!-- whyline-event: 9f9fc82ec2f94c9cbd2991a7e56a19fe -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-28T11:54:07.360Z"} -->
+
+## 2026-11-28 — Pass RSO-10: Resolve docs cover every required topic and match the console
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-10
+
+**Because:** docs/release.md has the failed-check options table and commands, conflict choices and why ticks are kept, the box and refusals, Undo, the stopped-release table, whyline release resolve forms, and the resolve.log record; README summarises the same; Round 13 wording matches the UI: run options preview then Do it/Cancel, a Fix proposal shows cause and numbered steps then Do this/Change it/Cancel with files after Do this, open/copy/version/recheck act with no preview, and README names set the version among those; git diff --check is clean; uv run pytest -q reached 100% with exit code 0 and one skipped test
+
+**Rejected:**
+
+- Fail for rerun listed with exact git command — rerun is a run option with Do it/Cancel; its preview is the check command and last-40-lines note, not git argv
+- Fail for Keep/Undo vs Keep changes/Undo fix — the CLI Keep? prompt and those buttons still keep or undo the Fix turn
+
+**Files:** README.md, docs/release.md
+
+<!-- whyline-event: 1a026fa90ad04dd6b62b8084ee256ef4 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-28T12:42:31.594Z"} -->
+
+## 2026-11-28 — Approve RSO-10: Resolve documentation is complete and accurate
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSO-10
+
+**Because:** README.md gives a concise Resolve overview and docs/release.md covers the failed-check option table and commands, conflict choices and preserved ticks, guarded request box, Undo limits, stopped releases, terminal forms, and resolve history; the claims match the implementation, git diff --check is clean, and uv run pytest -q completed at 100% with exit 0 and one skipped test
+
+**Files:** README.md, docs/release.md
+
+<!-- whyline-event: e26f464febc34783af098984cf85831f -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-28T13:07:51.417Z"} -->
