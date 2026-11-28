@@ -133,7 +133,7 @@ Rules every task keeps:
   5. `ReleaseFailedScreen` opens the same screen for a `merge-conflict` stop.
   Tests: the default for a ticks-only file and none for others, Merge now disabled until settled, the choices passed to `conflicts.merge`, an aborted merge's message, Undo, and the by-hand lines.
 
-- [ ] RSO-9: The box, and Resolve on a stopped release
+- [x] RSO-9: The box, and Resolve on a stopped release
   Edit `src/whyline/console/release_screens.py`, `src/whyline/console/tui.py` and their tests only.
   1. **Ask** in `ResolveScreen` calls `resolve.propose` in a worker with the agent picker Release's Ask an agent already uses. It shows the cause, the steps, any refused steps with their line, and **Do this**, **Change it** (back to the box with the text kept) and **Cancel**. With no steps, only **Change it** and **Close**.
   2. **Do this** starts a Fix turn through the path `_begin_release_fix` uses, with `resolve.fix_request` as its instruction. The result uses `ReleaseFixResultScreen` with **Keep** and **Undo**. Then Check runs again.
