@@ -328,3 +328,18 @@ def test_conflict_and_dirty_stops_carry_kind_and_files(tmp_path):
     with pytest.raises(StepError) as err:
         bring(root)
     assert err.value.kind == "dirty" and err.value.data == {"files": ["loose.txt"]}
+
+
+def test_a_branch_behind_main_starts_from_main_version(tmp_path):
+    from whyline.release.version import starting
+
+    root = make_repo(tmp_path)
+    (root / "pyproject.toml").write_text('[project]\nname = "p"\nversion = "0.1.0"\n')
+    git(root, "add", "pyproject.toml")
+    git(root, "commit", "-m", "version")
+    git(root, "push", "origin", "main")
+    git(root, "checkout", "-b", "relay/x")
+    commit(root, "branch-work")
+    push_to_main(tmp_path, "pyproject.toml", '[project]\nname = "p"\nversion = "0.1.4"\n')
+    git(root, "fetch", "origin")
+    assert starting(root, ReleaseConfig(), run=default_run) == "0.1.4"

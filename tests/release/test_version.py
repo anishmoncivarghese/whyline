@@ -148,3 +148,59 @@ def test_released_is_false_with_no_tag_anywhere(tmp_path):
     from whyline.release.version import released
 
     assert released(tmp_path, "1.2.3", run=_Git()) is False
+
+
+class _Show:
+    """Fake git that answers `git show origin/<branch>:<file>`."""
+
+    def __init__(self, files: dict[str, str] | None = None, rc: int = 0) -> None:
+        self.files = files or {}
+        self.rc = rc
+        self.calls: list[list[str]] = []
+
+    def __call__(self, args, cwd=None, env=None, timeout=None):
+        from types import SimpleNamespace
+
+        self.calls.append(list(args))
+        name = args[-1].split(":", 1)[-1]
+        if self.rc or name not in self.files:
+            return SimpleNamespace(returncode=128, stdout="", stderr="fatal: not found")
+        return SimpleNamespace(returncode=0, stdout=self.files[name], stderr="")
+
+
+def test_starting_uses_main_when_the_branch_is_behind(tmp_path):
+    from whyline.release.version import starting
+
+    (tmp_path / "pyproject.toml").write_text(PYPROJECT)
+    git = _Show({"pyproject.toml": PYPROJECT.replace("1.2.3", "1.2.7")})
+    assert starting(tmp_path, ReleaseConfig(), run=git) == "1.2.7"
+    assert ["git", "show", "origin/main:pyproject.toml"] in git.calls
+
+
+def test_starting_keeps_a_branch_version_ahead_of_main(tmp_path):
+    from whyline.release.version import starting
+
+    (tmp_path / "pyproject.toml").write_text(PYPROJECT.replace("1.2.3", "1.3.0"))
+    git = _Show({"pyproject.toml": PYPROJECT.replace("1.2.3", "1.2.9")})
+    assert starting(tmp_path, ReleaseConfig(), run=git) == "1.3.0"
+
+
+def test_starting_reads_main_package_json_and_the_configured_branch(tmp_path):
+    from whyline.release.version import starting
+
+    (tmp_path / "package.json").write_text(json.dumps({"version": "2.0.0"}))
+    git = _Show({"package.json": json.dumps({"version": "2.0.10"})})
+    assert starting(tmp_path, ReleaseConfig(branch="trunk"), run=git) == "2.0.10"
+    assert ["git", "show", "origin/trunk:package.json"] in git.calls
+
+
+def test_starting_falls_back_to_the_branch_when_main_cannot_be_read(tmp_path):
+    from whyline.release.version import starting
+
+    (tmp_path / "pyproject.toml").write_text(PYPROJECT)
+    assert starting(tmp_path, ReleaseConfig(), run=_Show(rc=128)) == "1.2.3"
+
+    def broken(args, **_):
+        raise OSError("no git")
+
+    assert starting(tmp_path, ReleaseConfig(), run=broken) == "1.2.3"

@@ -60,6 +60,63 @@ def current(root: Path, cfg: ReleaseConfig) -> str:
     return version
 
 
+def _order(version: str) -> tuple[int, int, int, int, int] | None:
+    """Sort key: numbers first, a release candidate before its final version."""
+    match = re.match(r"^(\d+)\.(\d+)\.(\d+)(?:-?rc\.?(\d+))?$", version)
+    if not match:
+        return None
+    major, minor, patch, rc = match.groups()
+    final = 1 if rc is None else 0
+    return int(major), int(minor), int(patch), final, int(rc or 0)
+
+
+def _branch_version(root: Path, branch: str, *, run: Run) -> str:
+    """The version origin/<branch> holds, or "" when git cannot show it."""
+    for name, read in (("pyproject.toml", _toml_text_version),
+                       ("package.json", _json_text_version)):
+        try:
+            res = run(["git", "show", f"origin/{branch}:{name}"], cwd=root)
+        except Exception:  # noqa: BLE001 - git missing or timed out: use the branch
+            return ""
+        if getattr(res, "returncode", 1) == 0:
+            value = read(getattr(res, "stdout", "") or "")
+            if value:
+                return value
+    return ""
+
+
+def _toml_text_version(text: str) -> str:
+    try:
+        project = tomllib.loads(text).get("project", {})
+    except tomllib.TOMLDecodeError:
+        return ""
+    value = project.get("version") if isinstance(project, dict) else None
+    return value if isinstance(value, str) else ""
+
+
+def _json_text_version(text: str) -> str:
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return ""
+    value = data.get("version") if isinstance(data, dict) else None
+    return value if isinstance(value, str) else ""
+
+
+def starting(root: Path, cfg: ReleaseConfig, *, run: Run) -> str:
+    """The version a release starts from: this checkout's, or origin/<branch>'s if higher.
+
+    Release brings in the main branch before it sets the version, so a branch that
+    is behind must not offer a version main has already released.
+    """
+    here = current(root, cfg)
+    there = _branch_version(root, cfg.branch, run=run)
+    here_key, there_key = _order(here), _order(there)
+    if here_key is not None and there_key is not None and there_key > here_key:
+        return there
+    return here
+
+
 def released(root: Path, version: str, *, run: Run) -> bool:
     """Whether tag v<version> exists locally or on origin.
 

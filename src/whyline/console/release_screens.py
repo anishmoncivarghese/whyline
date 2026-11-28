@@ -222,7 +222,8 @@ class ReleaseScreen(ModalScreen):
 
     def current_version(self) -> str:
         if self._current is None:
-            self._current = release_version.current(self.root, self._config())
+            self._current = release_version.starting(
+                self.root, self._config(), run=release_ready.default_run)
         return self._current
 
     def _version_options(self) -> dict[str, str]:

@@ -124,7 +124,7 @@ def _ask_current_instead(root: Path, cfg, current: str, args) -> bool:
 def _next_version(root: Path, cfg, args) -> str:
     if getattr(args, "version", None):
         return release_version.validate(args.version)
-    current = release_version.current(root, cfg)
+    current = release_version.starting(root, cfg, run=release_ready.default_run)
     kind = getattr(args, "bump", None)
     is_run = getattr(args, "release_command", "") == "run"
     if kind is None and is_run:

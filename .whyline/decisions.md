@@ -49790,3 +49790,22 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: 533204d3aed040a292bb7d1df8a60540 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-28T17:10:51.881Z"} -->
+
+## 2026-11-28 — Release window and CLI start the version from origin/<branch> when it is higher than the checkout's
+
+**Actor:** claude
+**Role:** implementer
+**Task:** release-resolve
+
+**Because:** Release brings in main before Set version, so a branch behind main offered an already-released version (0.3.80 while main was at 0.3.83) and failed the tag check; release_version.starting reads origin/<branch>:pyproject.toml or package.json via git show and keeps the higher version, falling back to the checkout when git cannot read it
+
+**Rejected:**
+
+- Always use main's version — a branch that already bumped ahead of main would be pulled back
+- Change current() itself — plan.version_done compares the written version after Bring in main and must read the checkout
+- Fetch before reading — the ready check already fetches; an extra network call on window open would slow it
+
+**Files:** src/whyline/release/version.py, src/whyline/console/release_screens.py, src/whyline/release/cli.py
+
+<!-- whyline-event: 0283814879564a5ea464e5ec9cca7376 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-28T17:45:57.548Z"} -->
