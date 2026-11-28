@@ -80,7 +80,7 @@ def test_metadata_file_has_no_value_and_is_private(home):
     store = Store()
     cr.save(cr.Credential("gh", "bearer"), SECRET, run=store.run, **MAC)
     target = home / ".whyline" / "credentials.toml"
-    assert SECRET not in target.read_text()
+    assert SECRET not in target.read_text(encoding="utf-8")
     if os.name != "nt":
         assert target.stat().st_mode & 0o777 == 0o600
 

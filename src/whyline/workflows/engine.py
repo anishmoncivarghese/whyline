@@ -20,6 +20,7 @@ from whyline.workflows import paths, state
 from whyline.workflows.definitions import Step
 from whyline.workflows.expr import TemplateError
 from whyline.workflows.steps import STEP_TYPES
+from whyline.processes import windows_pid_alive
 
 MAX_OUTPUT_BYTES = 1_000_000
 MAX_RUN = timedelta(hours=2)
@@ -77,6 +78,8 @@ def _stamp(moment: datetime | None = None) -> str:
 def _alive(pid: int | None) -> bool:
     if not pid:
         return False
+    if os.name == "nt":
+        return windows_pid_alive(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:

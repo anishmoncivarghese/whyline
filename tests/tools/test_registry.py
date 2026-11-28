@@ -5,7 +5,7 @@ from pathlib import Path
 
 from whyline.tools import cli, registry
 
-FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "registry_search.json").read_text())
+FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "registry_search.json").read_text(encoding="utf-8"))
 
 
 def fake_get(url, *, timeout):

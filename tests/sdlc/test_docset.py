@@ -92,7 +92,7 @@ def test_paths_and_fields(tmp_path):
         brainstorm_first=True, prd_major=True, build=False, roles=ROLES,
     )
     assert made.slug == "login-flow"
-    raw = json.loads((tmp_path / "docs/sdlc/login-flow/docset.json").read_text())
+    raw = json.loads((tmp_path / "docs/sdlc/login-flow/docset.json").read_text(encoding="utf-8"))
     assert raw["schema"] == 1
     assert raw["prd_major"] is True
     assert raw["build"] is False
@@ -160,6 +160,7 @@ def _git(cwd, *args):
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     root = tmp_path / "proj"
     root.mkdir()
     _git(root, "init", "-b", "main")
@@ -175,9 +176,9 @@ def test_versions_and_history(tmp_path):
     made = docset.create(tmp_path, "Login", "small", "human", roles=ROLES)
     assert docset.add_version(tmp_path, made, "spec", "one", author="claude", note="first") == 1
     assert docset.add_version(tmp_path, made, "spec", "two", author="claude", note="again") == 2
-    assert docset.strip_header((tmp_path / "docs/sdlc/login/spec.md").read_text()) == "two"
-    assert (tmp_path / "docs/sdlc/login/history/spec-v1.md").read_text() == "one"
-    assert (tmp_path / "docs/sdlc/login/history/spec-v2.md").read_text() == "two"
+    assert docset.strip_header((tmp_path / "docs/sdlc/login/spec.md").read_text(encoding="utf-8")) == "two"
+    assert (tmp_path / "docs/sdlc/login/history/spec-v1.md").read_text(encoding="utf-8") == "one"
+    assert (tmp_path / "docs/sdlc/login/history/spec-v2.md").read_text(encoding="utf-8") == "two"
     loaded = docset.load(tmp_path, "login")
     assert loaded.document("spec")["version"] == 2
     assert loaded.document("spec")["status"] == "in_review"
@@ -187,7 +188,7 @@ def test_plan_version_writes_no_plans_file(tmp_path):
     made = docset.create(tmp_path, "Login", "small", "human", roles=ROLES)
     docset.add_version(tmp_path, made, "plan", "the plan", author="claude", note="n")
     assert not (tmp_path / "plans").exists()
-    assert (tmp_path / "docs/sdlc/login/history/plan-v1.md").read_text() == "the plan"
+    assert (tmp_path / "docs/sdlc/login/history/plan-v1.md").read_text(encoding="utf-8") == "the plan"
 
 
 def test_review_log_entries(tmp_path):
@@ -204,7 +205,7 @@ def test_review_log_entries(tmp_path):
         changed_sections=["Goals", "Scope"],
     )
     docset.log_review(tmp_path, made, "spec", actor="codex", action="comment")
-    text = (tmp_path / "docs/sdlc/login/review-log.md").read_text()
+    text = (tmp_path / "docs/sdlc/login/review-log.md").read_text(encoding="utf-8")
     assert " · spec v1 · changes requested · codex\n" in text
     assert text.startswith("### 20")
     assert "Too vague" in text and "Goals" in text and "Changed: Goals, Scope" in text
@@ -222,7 +223,7 @@ def test_approve_records_upstream_hashes(tmp_path):
     assert spec["status"] == "approved" and spec["approved_by"] == "anish"
     assert spec["approved_at"] and spec["upstream"] == {}
     assert plan["upstream"] == {"spec": hashlib.sha256(b"spec text").hexdigest()}
-    assert "approved · anish" in (tmp_path / "docs/sdlc/login/review-log.md").read_text()
+    assert "approved · anish" in (tmp_path / "docs/sdlc/login/review-log.md").read_text(encoding="utf-8")
 
 
 def test_commit_touches_only_the_sets_paths(repo):
@@ -242,13 +243,13 @@ def test_header_round_trip_leaves_body_untouched(tmp_path):
     body = "# Spec\n\nline  with trailing  \n\n\nend"
     docset.add_version(tmp_path, made, "spec", body, author="claude", note="n")
     path = tmp_path / "docs/sdlc/login/spec.md"
-    first = path.read_text()
+    first = path.read_text(encoding="utf-8")
     assert first.startswith(docset.HEADER_START)
     assert first.endswith(body) and docset.strip_header(first) == body
     assert "In review" in first and "v1" in first and "claude" in first
     assert "[Plan](../../../plans/login.plan.md)" in first
     docset.approve(tmp_path, made, "spec", approver="anish")
-    second = path.read_text()
+    second = path.read_text(encoding="utf-8")
     assert "Approved by:** anish on" in second
     assert second.count(docset.HEADER_START) == 1
     assert docset.strip_header(second) == body
@@ -269,14 +270,14 @@ def test_plan_gets_no_header(tmp_path):
     plan.write_text("# plan\n")
     docset.add_version(tmp_path, made, "plan", "the plan", author="claude", note="n")
     docset.approve(tmp_path, made, "plan", approver="anish")
-    assert plan.read_text() == "# plan\n"
+    assert plan.read_text(encoding="utf-8") == "# plan\n"
 
 
 def test_index_content(tmp_path):
     made = docset.create(tmp_path, "Login", "small", "human", roles=ROLES)
     docset.add_version(tmp_path, made, "spec", "s", author="claude", note="n")
     docset.approve(tmp_path, made, "spec", approver="anish")
-    text = (tmp_path / "docs/sdlc/login/index.md").read_text()
+    text = (tmp_path / "docs/sdlc/login/index.md").read_text(encoding="utf-8")
     assert text.startswith("# Login")
     assert "Small" in text and "Human in the loop" in text
     assert "| [Spec](spec.md) | Approved | v1 | anish on 20" in text
@@ -302,18 +303,18 @@ def test_prd_reapproval_marks_the_spec(tmp_path):
     marked = docset.refresh_out_of_date(tmp_path, made)
     assert marked == [("spec", "PRD changed (v1 \u2192 v2) after this was approved")]
     assert docset.load(tmp_path, "login").document("spec")["status"] == "out_of_date"
-    assert "Out of date" in (tmp_path / "docs/sdlc/login/spec.md").read_text()
+    assert "Out of date" in (tmp_path / "docs/sdlc/login/spec.md").read_text(encoding="utf-8")
 
 
 def test_edit_on_disk_marks_and_revert_clears(tmp_path):
     made = _approved_feature(tmp_path)
     prd = tmp_path / made.document("prd")["path"]
-    original = prd.read_text()
-    prd.write_text(original + "extra")
+    original = prd.read_text(encoding="utf-8")
+    prd.write_text(original + "extra", encoding="utf-8")
     marked = docset.refresh_out_of_date(tmp_path, made)
     assert marked == [("spec", "PRD was edited on disk after this was approved")]
     assert docset.refresh_out_of_date(tmp_path, made) == []
-    prd.write_text(original)
+    prd.write_text(original, encoding="utf-8")
     assert docset.refresh_out_of_date(tmp_path, made) == []
     assert made.document("spec")["status"] == "approved"
     assert "out_of_date_reason" not in made.document("spec")

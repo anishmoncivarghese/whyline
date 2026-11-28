@@ -231,7 +231,7 @@ def test_every_target_runs_to_the_end(env):
     assert release_state.load(env.root) is None
     assert git(env.origin, "tag", "--list") == TAG
     assert git(env.origin, "log", "-1", "--format=%s", "main") == f"chore: release {TAG}"
-    assert 'version = "1.0.1"' in (env.root / "pyproject.toml").read_text()
+    assert 'version = "1.0.1"' in (env.root / "pyproject.toml").read_text(encoding="utf-8")
     assert (env.root / "docs" / "releases" / f"v{VERSION}.md").is_file()
     assert fakes.count("gh", "release", "create") == 1
     assert fakes.count("brew", "update-python-resources") == 1

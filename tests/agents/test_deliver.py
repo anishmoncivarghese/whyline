@@ -197,7 +197,7 @@ def test_the_command_gets_its_environment_and_log(agent, monkeypatch):
     assert seen["WHYLINE_REPORT"].endswith("final.md") and seen["WHYLINE_ATTACHMENT"].endswith(".md")
     assert "Open: 6" in seen["WHYLINE_SUMMARY"] and seen["WHYLINE_RUN_ID"] == record.run_id
     assert results == [{"to": "command", "ok": False, "detail": "command failed (exit 3): last line"}]
-    assert "last line" in (records.run_folder(record.run_id) / "command.log").read_text()
+    assert "last line" in (records.run_folder(record.run_id) / "command.log").read_text(encoding="utf-8")
 
 
 def test_a_command_timeout(agent, monkeypatch):
@@ -255,8 +255,8 @@ def test_morning_brief_delivery_drops_the_block_and_makes_cards(agent, monkeypat
     caption = tg.sent[0][3]
     assert "brief-actions" not in caption and "Body." in caption
     folder = records.run_folder(record.run_id)
-    assert "brief-actions" not in (folder / "morning-brief-2026-10-09.md").read_text()
-    assert "brief-actions" in (folder / "final.md").read_text()
+    assert "brief-actions" not in (folder / "morning-brief-2026-10-09.md").read_text(encoding="utf-8")
+    assert "brief-actions" in (folder / "final.md").read_text(encoding="utf-8")
 
 
 def test_other_agents_are_unaffected(agent, monkeypatch):
@@ -268,7 +268,7 @@ def test_other_agents_are_unaffected(agent, monkeypatch):
     results = deliver.after_run(agent, record, delivery=dl.Delivery(telegram_chat=-100), tg=tg)
     assert [r["to"] for r in results] == ["telegram"]
     folder = records.run_folder(record.run_id)
-    assert "brief-actions" in (folder / "jobs-2026-10-09.md").read_text()
+    assert "brief-actions" in (folder / "jobs-2026-10-09.md").read_text(encoding="utf-8")
 
 
 def test_send_test(home, monkeypatch, tmp_path):

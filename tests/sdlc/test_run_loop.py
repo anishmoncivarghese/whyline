@@ -49,7 +49,7 @@ def auto(tmp_path, monkeypatch):
         items = log.findings.pop(0) if log.findings else []
         missing = log.not_run.pop(0) if log.not_run else []
         path = tmp_path / f"{kind}-report.md"
-        path.write_text(f"Blockers: 0 · Major: 0 · Nits: 0 · Not run: none · Reviewer: {agent}\n")
+        path.write_text(f"Blockers: 0 · Major: 0 · Nits: 0 · Not run: none · Reviewer: {agent}\n", encoding="utf-8")
         return goldfish.Review(path, items, missing, agent)
 
     monkeypatch.setattr(goldfish, "review_document", review_document)
@@ -297,7 +297,7 @@ def test_choose_home_here_keeps_the_home_record_and_git_clean(tmp_path, monkeypa
     monkeypatch.setattr(guard, "check", lambda root: None)
     root, made, manifest, _git, json = _real_project(tmp_path)
     got = runner.choose_home(root, made.slug, choice="here", agents=[], progress=None)
-    data = json.loads(manifest.read_text())
+    data = json.loads(manifest.read_text(encoding="utf-8"))
     assert got == root
     assert data["home"]["here"] is True and data["skipped"]["home"]
     assert _status(root) == ""
@@ -323,7 +323,7 @@ def test_choose_home_new_keeps_the_home_record_and_git_clean(tmp_path, monkeypat
     parent.mkdir()
     target = runner.choose_home(root, made.slug, choice="new", parent=parent, folder="login",
                                 name="Login", agents=["claude"], progress=None)
-    copied = json.loads((target / "docs" / "sdlc" / made.slug / "docset.json").read_text())
+    copied = json.loads((target / "docs" / "sdlc" / made.slug / "docset.json").read_text(encoding="utf-8"))
     assert copied["home"]["created_from"] == str(root) and copied["skipped"]["home"]
     assert _status(target) == "" and _status(root) == ""
 
@@ -404,10 +404,11 @@ def test_approving_with_blockers_is_logged(auto):
     report.parent.mkdir(parents=True, exist_ok=True)
     report.write_text(
         "Blockers: 1 · Major: 0 · Nits: 0 · Not run: none · Reviewer: codex\n\n## Blockers\n\n"
-        "- Scope — Vague — Say what (lenses: readiness)\n"
+        "- Scope — Vague — Say what (lenses: readiness)\n",
+        encoding="utf-8",
     )
     review.approve(auto.project, made.slug, "spec", approver="anish")
-    log_text = (auto.root / "docs" / "sdlc" / made.slug / "review-log.md").read_text()
+    log_text = (auto.root / "docs" / "sdlc" / made.slug / "review-log.md").read_text(encoding="utf-8")
     assert "approved with 1 blockers" in log_text
 
 

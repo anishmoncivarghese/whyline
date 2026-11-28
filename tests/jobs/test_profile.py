@@ -155,7 +155,8 @@ def test_permissions_are_0700_for_home_and_0600_for_managed_files(
 
     jobs_dir = paths.home()
     assert jobs_dir == loose_dir
-    assert (jobs_dir.stat().st_mode & 0o777) == 0o700
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        assert (jobs_dir.stat().st_mode & 0o777) == 0o700
 
     # Pre-seed loose files to ensure atomic replacement resets permissions to 0600.
     for filename in profile.MANAGED_FILES:
@@ -171,7 +172,8 @@ def test_permissions_are_0700_for_home_and_0600_for_managed_files(
     for filename in profile.MANAGED_FILES:
         managed = jobs_dir / filename
         assert managed.is_file()
-        assert (managed.stat().st_mode & 0o777) == 0o600
+        if os.name != "nt":  # Windows files have no POSIX mode bits
+            assert (managed.stat().st_mode & 0o777) == 0o600
 
     # Symlinked target files inside ~/.whyline/jobs are refused without clobbering outside files.
     outside = tmp_path / "outside.md"
@@ -372,13 +374,10 @@ def test_import_cv_accepts_quoted_escaped_and_file_url_paths(tmp_path: Path) -> 
     folder.mkdir()
     src = folder / "Resume Sep 2026.md"
     src.write_text("Ada\n", encoding="utf-8")
-    for raw in (
-        f"'{src}'",
-        f'"{src}"',
-        f"  '{src}'  ",
-        str(src).replace(" ", "\\ "),
-        "file://" + str(src).replace(" ", "%20"),
-    ):
+    pasted = [f"'{src}'", f'"{src}"', f"  '{src}'  ", src.as_uri()]
+    if os.name != "nt":  # a backslash is a separator on Windows, not an escape
+        pasted += [str(src).replace(" ", "\\ "), "file://" + str(src).replace(" ", "%20")]
+    for raw in pasted:
         assert profile.import_cv(raw).read_text(encoding="utf-8") == "Ada\n", raw
 
 

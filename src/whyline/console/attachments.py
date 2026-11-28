@@ -173,19 +173,27 @@ def stage(
     )
 
 
+def split_pasted(text: str) -> list[str]:
+    """Split pasted or dropped paths the way this platform's terminals write
+    them. Raises ValueError on an unbalanced quote. Never runs a shell."""
+    windows = os.name == "nt"
+    # Windows terminals quote dropped paths ("C:\\My Shot.png") and use
+    # backslashes as separators, not escapes; macOS/Linux ones escape.
+    tokens = shlex.split(text.strip(), posix=not windows)
+    if windows:
+        tokens = [t[1:-1] if len(t) >= 2 and t[0] == t[-1] and t[0] in "\"'" else t
+                  for t in tokens]
+    return tokens
+
+
 def dropped_paths(text: str) -> list[Path] | None:
     """The files a drag-and-drop pasted, or None when the text is anything
     else. Never runs the text through a shell."""
     windows = os.name == "nt"
     try:
-        # Windows terminals quote dropped paths ("C:\\My Shot.png") and use
-        # backslashes as separators, not escapes; macOS/Linux ones escape.
-        tokens = shlex.split(text.strip(), posix=not windows)
+        tokens = split_pasted(text)
     except ValueError:  # an unbalanced quote: ordinary text
         return None
-    if windows:
-        tokens = [t[1:-1] if len(t) >= 2 and t[0] == t[-1] and t[0] in "\"'" else t
-                  for t in tokens]
     if not tokens:
         return None
     paths = []

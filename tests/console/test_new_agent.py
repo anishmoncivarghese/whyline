@@ -82,7 +82,7 @@ async def test_fill_review_and_save_a_repo_agent(tmp_path, monkeypatch):
         await pilot.click("#rv-save")
         await pilot.pause()
     saved = tmp_path / "repo/.whyline/agents/digest.toml"
-    text = saved.read_text()
+    text = saved.read_text(encoding="utf-8")
     assert saved.exists() and 'backup = ["codex"]' in text
     assert backup_writes == []
     assert 'knowledge = ["docs/a.md"]' in text
@@ -223,7 +223,8 @@ async def test_template_prefills_form_in_memory_and_follows_enabled_providers(
         app.screen.query_one("#nt-continue", tui.Button).press()
         await _until(
             pilot,
-            lambda: isinstance(app.screen, NewAgentScreen) and app.screen.query("#na-runner"),
+            lambda: isinstance(app.screen, NewAgentScreen) and app.screen.query("#na-runner")
+            and app.screen.query_one("#na-runner", tui.Select).value is not tui.Select.BLANK,
             "template form shown again",
         )
         assert app.screen.query_one("#na-runner", tui.Select).value == "claude"

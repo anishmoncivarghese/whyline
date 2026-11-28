@@ -73,11 +73,11 @@ def close(root: Path, slug: str) -> CloseResult:
     docset_mod.refresh(docs, found)
     folder = Path(docset_mod.SDLC_DIR) / slug
     rels += [
-        str(p.relative_to(docs)) for p in sorted((docs / folder).rglob("*")) if p.is_file()
+        p.relative_to(docs).as_posix() for p in sorted((docs / folder).rglob("*")) if p.is_file()
     ]
     rels = list(dict.fromkeys(rels))
     moved = {rel for rel in rels if rel.startswith(PLANS_DIR)}
-    written = {rel: (docs / rel).read_text() for rel in rels if rel not in moved}
+    written = {rel: (docs / rel).read_text(encoding="utf-8") for rel in rels if rel not in moved}
     foreign = [r for r in workspace._dirty(docs, list(written)) if r not in written]
     if foreign:
         return CloseResult(error="These files have changes whyline did not write: " + ", ".join(foreign))

@@ -51,8 +51,8 @@ def test_close_moves_both_files_and_updates_paths(repo):
     result = close.close(repo, "login")
     assert result.done
     assert not (repo / "plans/login.plan.md").exists()
-    assert (repo / "plans/done/login.plan.md").read_text() == PLAN
-    assert (repo / "plans/done/login.tests.md").read_text() == TESTS
+    assert (repo / "plans/done/login.plan.md").read_text(encoding="utf-8") == PLAN
+    assert (repo / "plans/done/login.tests.md").read_text(encoding="utf-8") == TESTS
     found = docset.load(repo, "login")
     assert found.document("plan")["path"] == "plans/done/login.plan.md"
     assert git(repo, "log", "-1", "--format=%s") == "docs: close Login"
@@ -138,7 +138,7 @@ def test_open_pr_pushes_only_the_branch_and_saves_the_url(remote):
     assert "A login form." in create[create.index("--body") + 1]
     assert git(bare, "branch", "--list").replace("*", "").split() == ["relay/login.plan"]
     assert docset.load(repo, "login").pr_url == url
-    assert "pull request opened" in (repo / "docs/sdlc/login/review-log.md").read_text()
+    assert "pull request opened" in (repo / "docs/sdlc/login/review-log.md").read_text(encoding="utf-8")
 
 
 def test_open_pr_refuses_without_gh(remote, monkeypatch):

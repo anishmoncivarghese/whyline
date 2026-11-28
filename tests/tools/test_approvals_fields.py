@@ -39,7 +39,7 @@ def test_fields_are_stored_and_shown_first():
               "limits": {"per_call": "20"}}
     clock = Clock(lambda n: approvals.answer("r1", 1, True))
     approvals.request(folder, "shop__buy", {"q": 1}, fields=fields, clock=clock, sleep=clock.sleep)
-    assert json.loads((folder / "approvals" / "1.json").read_text())["fields"] == fields
+    assert json.loads((folder / "approvals" / "1.json").read_text(encoding="utf-8"))["fields"] == fields
     approvals._create(folder / "approvals", {"tool": "t", "arguments": "{}", "asked_at": "x",
                                              "status": "waiting", "fields": {"to": "a@b", "text": "hi"}})
     (item,) = approvals.pending("r1")

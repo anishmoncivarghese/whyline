@@ -31,23 +31,23 @@ def test_current_is_none_without_a_prd(tmp_path):
 def test_publish_writes_all_four_files(tmp_path):
     assert _publish(tmp_path, V1) == "1.0"
     folder = tmp_path / "docs/product"
-    text = (folder / "prd.md").read_text()
+    text = (folder / "prd.md").read_text(encoding="utf-8")
     assert text.splitlines()[0] == "<!-- product-prd v1.0 -->"
     assert text.endswith(V1)
-    assert (folder / "history/prd-v1.0.md").read_text() == text
-    meta = json.loads((folder / "product.json").read_text())
+    assert (folder / "history/prd-v1.0.md").read_text(encoding="utf-8") == text
+    meta = json.loads((folder / "product.json").read_text(encoding="utf-8"))
     assert meta["schema"] == 1 and meta["version"] == "1.0"
     assert meta["approved_by"] == "anish" and meta["update_claim"] is None
     cur = product.current(tmp_path)
     assert (cur.version, cur.text, cur.sha256) == ("1.0", text, meta["sha256"])
     assert cur.path == folder / "prd.md"
-    assert "· Login · changed: all (new PRD) · approved by anish" in (folder / "changelog.md").read_text()
+    assert "· Login · changed: all (new PRD) · approved by anish" in (folder / "changelog.md").read_text(encoding="utf-8")
 
 
 def test_second_publish_logs_only_changed_sections(tmp_path):
     _publish(tmp_path, V1)
     assert _publish(tmp_path, V2) == "1.1"
-    lines = (tmp_path / "docs/product/changelog.md").read_text().splitlines()
+    lines = (tmp_path / "docs/product/changelog.md").read_text(encoding="utf-8").splitlines()
     assert lines[-1].startswith("v1.1 · ")
     assert lines[-1].endswith(" · Login · changed: Goals · approved by anish")
     assert _publish(tmp_path, V2, major=True) == "2.0"
@@ -147,12 +147,12 @@ def test_header_and_index_label(tmp_path):
     docset.add_version(tmp_path, made, "prd", V1, author="claude", note="n")
     docset.add_version(tmp_path, made, "prd", V2, author="claude", note="n")
     path = tmp_path / made.document("prd")["path"]
-    assert "**Version:** Product PRD v1.0 (draft 2)" in path.read_text()
-    assert "| Product PRD v1.0 (draft 2) |" in (tmp_path / "docs/sdlc/login/index.md").read_text()
+    assert "**Version:** Product PRD v1.0 (draft 2)" in path.read_text(encoding="utf-8")
+    assert "| Product PRD v1.0 (draft 2) |" in (tmp_path / "docs/sdlc/login/index.md").read_text(encoding="utf-8")
     docset.approve(tmp_path, made, "prd", approver="anish")
     _publish(tmp_path, V2)
     docset.refresh(tmp_path, made)
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     assert "**Version:** Product PRD v1.0\n" in text
     assert "draft" not in text
-    assert "| Product PRD v1.0 |" in (tmp_path / "docs/sdlc/login/index.md").read_text()
+    assert "| Product PRD v1.0 |" in (tmp_path / "docs/sdlc/login/index.md").read_text(encoding="utf-8")

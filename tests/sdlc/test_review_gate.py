@@ -27,7 +27,7 @@ def test_plan_coverage_gaps_become_blockers_but_a_none_reason_does_not(env, monk
     docset.approve(env, made, "spec", approver="anish")
     docset.add_version(env, made, "plan", PLAN, author="claude", note="drafted")
     path = env / "plan-report.md"
-    path.write_text("Blockers: 0 · Major: 0 · Nits: 0 · Not run: none · Reviewer: codex\n")
+    path.write_text("Blockers: 0 · Major: 0 · Nits: 0 · Not run: none · Reviewer: codex\n", encoding="utf-8")
     monkeypatch.setattr(
         goldfish, "review_document", lambda *a, **k: goldfish.Review(path, [], [], "codex")
     )
@@ -42,4 +42,4 @@ def test_plan_coverage_gaps_become_blockers_but_a_none_reason_does_not(env, monk
         ("T-3", "T-3 has no covers line"),
     }
     assert review.gate(result) == "fix"
-    assert path.read_text().splitlines()[0].startswith("Blockers: 4")
+    assert path.read_text(encoding="utf-8").splitlines()[0].startswith("Blockers: 4")

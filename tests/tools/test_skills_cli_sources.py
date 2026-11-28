@@ -91,12 +91,12 @@ def test_update_shows_diff_and_writes_nothing_on_n(home, monkeypatch, capsys):
     assert "up to date" in capsys.readouterr().out
     (folder / "SKILL.md").write_text("---\nname: pdf\ndescription: reads pdf files\n---\nNew text.\n")
     installed = home / ".whyline" / "skills" / "pdf" / "SKILL.md"
-    before = installed.read_text()
+    before = installed.read_text(encoding="utf-8")
     _answer(monkeypatch, "")
     assert _run("update", "pdf") == 0
     out = capsys.readouterr().out
     assert "+New text." in out and "Nothing changed." in out
-    assert installed.read_text() == before
+    assert installed.read_text(encoding="utf-8") == before
     assert _run("update", "pdf", "--yes") == 0
-    assert "New text." in installed.read_text()
+    assert "New text." in installed.read_text(encoding="utf-8")
     assert _run("update", "ghost") == 1

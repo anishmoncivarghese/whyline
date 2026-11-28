@@ -16,6 +16,16 @@ from whyline.console.settings_screen import (
     _PATH_READY,
 )
 
+
+async def _set_soon(pilot, event, seconds: float = 10.0) -> bool:
+    """Wait for a worker thread's event without blocking the event loop that
+    starts the worker (a slow machine may not have started it yet)."""
+    for _ in range(int(seconds / 0.05)):
+        if event.is_set():
+            return True
+        await pilot.pause(0.05)
+    return event.is_set()
+
 pytestmark = [
     pytest.mark.skipif(not tui.TUI_AVAILABLE, reason="textual not installed"),
     pytest.mark.asyncio,
@@ -102,7 +112,7 @@ async def test_screen_appears_while_a_fake_check_is_blocked():
         async with app.run_test(size=(80, 24)) as pilot:
             screen = await _open(app, _records(claude=True), check, lambda *_: None)
             await pilot.pause()
-            assert started.wait(timeout=2.0)
+            assert await _set_soon(pilot, started)
             assert app.screen is screen
             assert _plain(screen.query_one("#ss-title")) == "Settings"
             assert _plain(screen.query_one("#ss-section")) == "AI subscriptions"
@@ -182,7 +192,7 @@ async def test_unchecking_suppresses_a_late_row_update():
         async with app.run_test(size=(80, 24)) as pilot:
             screen = await _open(app, _records(claude=True), check, lambda *_: None)
             await pilot.pause()
-            assert started.wait(timeout=2.0)
+            assert await _set_soon(pilot, started)
             await pilot.click("#ss-claude")
             await pilot.pause()
             assert screen.query_one("#ss-claude", tui.Checkbox).value is False
@@ -217,9 +227,9 @@ async def test_a_second_refresh_ignores_the_first_token():
         async with app.run_test(size=(80, 24)) as pilot:
             screen = await _open(app, _records(claude=True), check, lambda *_: None)
             await pilot.pause()
-            assert first_started.wait(timeout=2.0)
+            assert await _set_soon(pilot, first_started)
             await pilot.click("#ss-check-selected")
-            assert second_started.wait(timeout=2.0)
+            assert await _set_soon(pilot, second_started)
             first_release.set()
             await app.workers.wait_for_complete()
             await pilot.pause()
@@ -354,7 +364,7 @@ async def test_enabling_shows_not_checked_yet_before_a_blocked_result():
             await pilot.pause()
             await app.workers.wait_for_complete()
             await pilot.click("#ss-grok")
-            assert started.wait(timeout=2.0)
+            assert await _set_soon(pilot, started)
             assert _status(screen, "grok") in (_NOT_CHECKED, "Checking…")
             assert screen.query_one("#ss-grok", tui.Checkbox).value is True
             release.set()

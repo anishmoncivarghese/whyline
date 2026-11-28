@@ -14,6 +14,16 @@ from whyline.console.relay_screens import (
 )
 from whyline.console.repl import NO_SUBSCRIPTIONS
 
+
+async def _set_soon(pilot, event, seconds: float = 10.0) -> bool:
+    """Wait for a worker thread's event without blocking the event loop that
+    starts the worker (a slow machine may not have started it yet)."""
+    for _ in range(int(seconds / 0.05)):
+        if event.is_set():
+            return True
+        await pilot.pause(0.05)
+    return event.is_set()
+
 # Captured before the autouse stub so a regression can restore the real
 # `agent_status` and prove Set up does not call it.
 _REAL_AGENT_STATUS = account_module.agent_status
@@ -117,7 +127,7 @@ async def _open(app, pilot):
 
 
 async def _wait_for(pilot, condition, what):
-    for _ in range(100):
+    for _ in range(300):  # 15 s: the Windows 3.11 runner is slow
         if condition():
             return
         await pilot.pause(0.05)
@@ -1654,7 +1664,7 @@ async def test_setup_shows_checking_models_before_agy_returns(tmp_path, monkeypa
         await pilot.pause()
         await pilot.click("#relay-setup")
         await pilot.pause()
-        assert started.wait(timeout=2.0)
+        assert await _set_soon(pilot, started)
         screen = app.screen
         assert isinstance(screen, RelaySetupScreen)
         assert not isinstance(screen, ProviderSettingsScreen)
@@ -1857,7 +1867,7 @@ async def test_late_agy_result_after_close_does_not_touch_widgets(tmp_path, monk
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test(size=(110, 40)) as pilot:
         screen, results = await _open(app, pilot)
-        assert started.wait(timeout=2.0)
+        assert await _set_soon(pilot, started)
         screen.dismiss(None)
         await _wait_for(pilot, lambda: results == [None], "closed")
         release.set()

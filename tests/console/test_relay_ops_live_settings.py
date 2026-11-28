@@ -43,7 +43,7 @@ def _stored(repo: Path) -> dict:
 
 
 def _config(repo: Path) -> dict:
-    return tomllib.loads((repo / ".whyline/relay/config.toml").read_text())
+    return tomllib.loads((repo / ".whyline/relay/config.toml").read_text(encoding="utf-8"))
 
 
 def _mark_running(repo: Path, round_: int) -> None:

@@ -1,3 +1,4 @@
+import os
 import sys
 from types import SimpleNamespace
 
@@ -12,6 +13,9 @@ from whyline.release.targets import custom
 
 def cfg(*entries):
     return ReleaseConfig(targets=Targets(custom=tuple(entries)))
+
+
+posix_shell = pytest.mark.skipif(os.name == "nt", reason="the command uses POSIX sh syntax; Windows runs cmd.exe")
 
 
 def make(tmp_path, *entries, **kw):
@@ -57,6 +61,7 @@ def test_step_is_irreversible_and_named_after_the_entry(tmp_path):
     assert step.id == "custom:ship" and step.irreversible
 
 
+@posix_shell
 def test_env_vars_reach_the_command_and_lines_stream(tmp_path):
     seen = []
     target, config, root = make(
@@ -64,12 +69,12 @@ def test_env_vars_reach_the_command_and_lines_stream(tmp_path):
         on_line=seen.append)
     (step,) = steps(target, config, root)
     step.run(None)
-    assert (tmp_path / "out.txt").read_text().strip() == "1.2.3 v1.2.3"
+    assert (tmp_path / "out.txt").read_text(encoding="utf-8").strip() == "1.2.3 v1.2.3"
     assert seen == [str(tmp_path.resolve())] or seen == [str(tmp_path)]
 
 
 def test_failure_shows_the_last_20_lines(tmp_path):
-    command = f'{sys.executable} -c "[print(i) for i in range(30)]"; exit 3'
+    command = f'{sys.executable} -c "import sys; [print(i) for i in range(30)]; sys.exit(3)"'
     target, config, root = make(tmp_path, Entry("ship", command))
     (step,) = steps(target, config, root)
     with pytest.raises(StepError) as error:
@@ -89,6 +94,7 @@ def test_verify_is_the_done_check_and_absent_means_not_done(tmp_path):
     assert b.done_check() is False
 
 
+@posix_shell
 def test_verify_check_sees_the_version(tmp_path):
     target, config, root = make(
         tmp_path, Entry("a", "true", 'test "$WHYLINE_RELEASE_TAG" = v1.2.3'))

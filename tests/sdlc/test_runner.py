@@ -59,7 +59,7 @@ def test_brainstorm_adds_version(env):
     result = runner.run_stage(env.root, made, Stage("brainstorm", "Brainstorm"), progress=print)
     assert result.done and result.version == 1
     assert env.brainstorms[0]["agents"] == ["claude", "codex"]
-    assert "# Synthesis" in (env.root / made.document("brainstorm")["path"]).read_text()
+    assert "# Synthesis" in (env.root / made.document("brainstorm")["path"]).read_text(encoding="utf-8")
     assert made.document("brainstorm")["status"] == "in_review"
     assert made.stage == "" and made.started_at == ""
 
@@ -287,8 +287,8 @@ def test_plan_stage_adds_plan_and_tests_versions(env, plan_env):
     result = runner.run_stage(env.root, made, Stage("plan", "Plan"), progress=print)
     assert result.done and result.version == 1
     base = docset._history_path(env.root, made.slug, "plan", 1)
-    assert base.read_text() == PLAN
-    assert base.with_name("plan-v1.tests.md").read_text() == TESTS
+    assert base.read_text(encoding="utf-8") == PLAN
+    assert base.with_name("plan-v1.tests.md").read_text(encoding="utf-8") == TESTS
     assert plan_env.spec == [env.root / made.document("spec")["path"]]
     assert plan_env.descriptions == [f"Let people log in.\n\n{runner.PLAN_COVERS_REQUEST}"]
     assert "covers: R<n>" in runner.PLAN_COVERS_REQUEST
@@ -308,11 +308,11 @@ def test_approve_plan_writes_both_files_with_spec_marker(env, plan_env):
     runner.run_stage(env.root, made, Stage("plan", "Plan"), progress=print)
     target = runner.approve_plan(env.root, made, approver="anish")
     assert target == env.root / "plans" / f"{made.slug}.plan.md"
-    text = target.read_text()
+    text = target.read_text(encoding="utf-8")
     assert f"spec: {made.document('spec')['path']}" in text.splitlines()[0]
     tests = testplan.path_for(target)
-    assert tests.read_text() == TESTS
-    assert testplan.validate(tests.read_text(), text) == []
+    assert tests.read_text(encoding="utf-8") == TESTS
+    assert testplan.validate(tests.read_text(encoding="utf-8"), text) == []
     assert made.document("plan")["status"] == "approved"
 
 

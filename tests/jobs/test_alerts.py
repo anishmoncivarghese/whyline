@@ -1,6 +1,7 @@
 """Tests for reading job-alert emails (JOB-16)."""
 from __future__ import annotations
 
+import os
 import json
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +20,7 @@ NOW = datetime(2026, 10, 30, 7, 0)
 @pytest.fixture(autouse=True)
 def _home(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
 
 
@@ -54,7 +56,7 @@ def test_a_sender_that_is_off_is_ignored() -> None:
 
 def test_forged_or_unauthenticated_sender_is_ignored(tmp_path) -> None:
     alerts.set_sender(LINKEDIN, True)
-    text = (FIXTURES / "alert_linkedin.eml").read_text()
+    text = (FIXTURES / "alert_linkedin.eml").read_text(encoding="utf-8")
     forged = tmp_path / "forged.eml"
     forged.write_text(text.replace("dmarc=pass", "dmarc=fail").replace("dkim=pass", "dkim=fail"))
     assert not alerts.handle(forged, authserv="mx.google.com").accepted
@@ -127,7 +129,8 @@ def test_generic_fallback_collects_links_that_look_like_titles() -> None:
 def test_settings_file_is_private_and_round_trips() -> None:
     alerts.set_sender("Alert@Indeed.com", True)
     assert alerts.senders()["alert@indeed.com"] is True
-    assert (alerts.settings_path().stat().st_mode & 0o777) == 0o600
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        assert (alerts.settings_path().stat().st_mode & 0o777) == 0o600
     with pytest.raises(alerts.AlertError):
         alerts.set_sender("not an address", True)
 
@@ -138,7 +141,7 @@ def test_cards_reach_the_next_fetch_and_empty_the_inbox(tmp_path, monkeypatch) -
     monkeypatch.setattr(step.companies, "list", lambda status=None: [])
     out = tmp_path / "run"
     assert step.jobs_fetch(None, out, NOW) == 3
-    manifest = json.loads((out / step.MANIFEST).read_text())
+    manifest = json.loads((out / step.MANIFEST).read_text(encoding="utf-8"))
     assert {m["title"] for m in manifest.values()} == {
         "Senior Python Engineer", "Backend Developer", "Data Engineer",
     }
@@ -179,4 +182,4 @@ def test_alerts_mail_script_command_installs_job_alerts(capsys, monkeypatch) -> 
     assert cli.main(["jobs", "alerts", "mail-script"]) == 0
     path = Path(capsys.readouterr().out.strip())
     assert path.name == "whyline-job-alerts.applescript"
-    assert "jobs alert " in path.read_text()
+    assert "jobs alert " in path.read_text(encoding="utf-8")

@@ -1,5 +1,6 @@
 """CLI coverage for `whyline idea`."""
 
+import os
 import json
 import sys
 from datetime import datetime
@@ -11,6 +12,8 @@ import pytest
 from whyline import cli
 from whyline.agents import launchd, telegram
 from whyline.ideas import actions, documents, email_in, reminders, store, telegram_in
+
+posix_modes = pytest.mark.skipif(os.name == "nt", reason="Windows files have no POSIX mode bits")
 
 
 TOKEN = "123:secret"
@@ -30,6 +33,7 @@ def ideas_home(tmp_path, monkeypatch):
     user_home = tmp_path / "user-home"
     user_home.mkdir()
     monkeypatch.setenv("HOME", str(user_home))
+    monkeypatch.setenv("USERPROFILE", str(user_home))
     return home
 
 
@@ -211,9 +215,11 @@ def test_doctor_reports_an_unwritable_workbook(ideas_home, capsys, monkeypatch):
     assert "workbook is not writable" in text
     assert "fail   pdf: PDF was empty" in text
     assert "Traceback" not in text
-    assert ideas_home.stat().st_mode & 0o777 == 0o700
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        assert ideas_home.stat().st_mode & 0o777 == 0o700
 
 
+@posix_modes
 def test_doctor_reports_a_0755_folder_and_leaves_it(ideas_home, capsys):
     ideas_home.mkdir()
     ideas_home.chmod(0o755)
@@ -240,7 +246,8 @@ def test_doctor_does_not_create_an_absent_ledger(ideas_home, capsys):
     assert f"ideas database is missing ({database})" in text
     assert not database.exists()
     assert list(ideas_home.iterdir()) == []
-    assert ideas_home.stat().st_mode & 0o777 == 0o700
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        assert ideas_home.stat().st_mode & 0o777 == 0o700
 
 
 def test_doctor_reads_an_existing_ledger_without_changing_it(ideas_home, capsys):
@@ -256,10 +263,12 @@ def test_doctor_reads_an_existing_ledger_without_changing_it(ideas_home, capsys)
 
     text = out + err
     assert "ok     schema: schema version 6" in text
-    assert f"ok     folder: {ideas_home} mode 0700" in text
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        assert f"ok     folder: {ideas_home} mode 0700" in text
+        assert database.stat().st_mode & 0o777 == mode
     assert database.read_bytes() == before
-    assert database.stat().st_mode & 0o777 == mode
-    assert ideas_home.stat().st_mode & 0o777 == 0o700
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        assert ideas_home.stat().st_mode & 0o777 == 0o700
 
 
 @pytest.mark.parametrize(
@@ -466,6 +475,7 @@ def _private_home(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setattr(pathlib.Path, "home", lambda: home)
     return home
 
@@ -1301,6 +1311,7 @@ def test_doctor_flags_an_overdue_reminder(ideas_home):
     assert _doctor_check("reminders", conn, datetime(2026, 10, 27, 8, 0)).ok
 
 
+@posix_modes
 def test_doctor_checks_memory_is_0600(ideas_home):
     ideas_home.mkdir()
     memory_file = ideas_home / "memory.md"
@@ -1520,6 +1531,7 @@ def wt_repo(tmp_path, monkeypatch):
         subprocess.run(["git", *a], cwd=cwd, check=True, capture_output=True)
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     root = tmp_path / "proj"
     root.mkdir()
     git(root, "init", "-b", "main")

@@ -437,7 +437,7 @@ def commit(root: Path, docset: DocSet, message: str) -> bool:
     """
     docs = workspace.docs_root(Path(root))
     rels = [
-        str(p.relative_to(docs))
+        p.relative_to(docs).as_posix()
         for p in sorted(_folder(docs, docset.slug).rglob("*"))
         if p.is_file()
     ]
@@ -445,7 +445,7 @@ def commit(root: Path, docset: DocSet, message: str) -> bool:
     if docset.prd_mode != PrdMode.NONE.value:
         extra.insert(0, PRODUCT_PRD)
     rels += [rel for rel in extra if (docs / rel).is_file()]
-    written = {rel: (docs / rel).read_text() for rel in rels}
+    written = {rel: (docs / rel).read_text(encoding="utf-8") for rel in rels}
     return workspace.docs_commit(docs, rels, message, written)
 
 

@@ -2,6 +2,15 @@ import pytest
 
 from whyline.console import relay_ops, tui
 
+
+async def _until(pilot, condition, seconds: float = 15.0):
+    """Wait for the dialog's widgets or its save; a slow runner mounts them late."""
+    for _ in range(int(seconds / 0.05)):
+        if condition():
+            return
+        await pilot.pause(0.05)
+    raise AssertionError("condition never became true")
+
 _CAP_PAUSE = "RLY-1 hit the 3-round cap without an approval"
 
 
@@ -64,12 +73,12 @@ async def test_dialog_saves_with_and_without_resuming(tmp_path, monkeypatch, but
         app._sync_relay_buttons()
         await pilot.pause()
         app.query_one("#pause-set-rounds", tui.Button).press()
-        await pilot.pause()
+        await _until(pilot, lambda: app.screen.query(f"#{button}") and app.screen.query("#round-cap-value"))
         box = app.screen.query_one("#round-cap-value", tui.Input)
         assert box.value == "3"
         box.value = "12"
         app.screen.query_one(f"#{button}", tui.Button).press()
-        await pilot.pause()
+        await _until(pilot, lambda: saved and (launched or not resumes))
         assert saved == [12]
         assert launched == ([["resume"]] if resumes else [])
 

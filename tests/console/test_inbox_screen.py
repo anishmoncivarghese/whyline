@@ -122,6 +122,15 @@ async def _until(pilot, condition, what):
     raise AssertionError(f"never happened: {what}")
 
 
+def _gone(find) -> bool:
+    """True once ``find`` raises NoMatches: removed widgets unmount a frame later."""
+    try:
+        find()
+    except tui.NoMatches:
+        return True
+    return False
+
+
 def _saved_screen_chats(monkeypatch):
     monkeypatch.setattr(telegram, "token_get", lambda **_kwargs: TOKEN)
     monkeypatch.setattr(
@@ -549,8 +558,7 @@ async def test_repositories_section_add_and_remove(tmp_path, ideas_home, monkeyp
         # Remove existing repo
         screen.query_one("#ib-repo-remove-existing", tui.Button).press()
         await pilot.pause()
-        with pytest.raises(tui.NoMatches):
-            screen.query_one("#ib-repo-remove-existing")
+        await _until(pilot, lambda: not screen.query("#ib-repo-remove-existing"), "repo removed")
 
 
 async def test_repositories_section_dotted_name_does_not_crash(tmp_path, ideas_home, monkeypatch):
@@ -598,8 +606,7 @@ async def test_repositories_section_dotted_name_does_not_crash(tmp_path, ideas_h
         screen.repo_remove_button("api.v2").press()
         await pilot.pause()
         assert "api.v2:" not in _visible(screen)
-        with pytest.raises(tui.NoMatches):
-            screen.repo_remove_button("api.v2")
+        await _until(pilot, lambda: _gone(lambda: screen.repo_remove_button("api.v2")), "repo removed")
 
         conn = store.connect()
         try:
@@ -645,8 +652,9 @@ async def test_email_section_add_and_remove(tmp_path, ideas_home, monkeypatch):
         screen.email_remove_button("alice@example.com").press()
         await pilot.pause()
         assert "alice@example.com" not in _visible(screen)
-        with pytest.raises(tui.NoMatches):
-            screen.email_remove_button("alice@example.com")
+        await _until(
+            pilot, lambda: _gone(lambda: screen.email_remove_button("alice@example.com")), "email removed"
+        )
 
         conn = store.connect()
         try:

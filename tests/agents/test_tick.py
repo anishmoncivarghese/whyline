@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import threading
 from datetime import datetime
@@ -142,7 +143,7 @@ def test_two_ticks_at_once_start_one_run(repo, home):
 
 def test_an_edited_definition_is_not_run(repo, home):
     defn = _scheduled(repo)
-    defn.path.write_text(defn.path.read_text().replace('instructions="x"', 'instructions="changed"'))
+    defn.path.write_text(defn.path.read_text(encoding="utf-8").replace('instructions="x"', 'instructions="changed"'))
     report = tick.run_tick(now=datetime(2026, 10, 5, 7, 1), spawn=lambda occ: None)
     assert report.started == [] and report.reviewed == [defn.agent_id]
 
@@ -190,7 +191,7 @@ def test_a_queued_claim_is_not_started_after_its_definition_changes(repo, home):
     assert waiting is not None
     act = state.get(conn, waiting["agent_id"])
     Path(act.def_path).write_text(
-        Path(act.def_path).read_text().replace('instructions="x"', 'instructions="changed"')
+        Path(act.def_path).read_text(encoding="utf-8").replace('instructions="x"', 'instructions="changed"')
     )
     freed = conn.execute(
         "SELECT id FROM occurrences WHERE status='running' ORDER BY id"
@@ -291,7 +292,7 @@ def test_run_occurrence_does_not_run_after_an_edit_or_pause(repo, home, monkeypa
     between must not call the runner, and must leave the due time claimed."""
     defn, edited_id = _running_occurrence(repo, "a")
     calls = _runner_calls(monkeypatch)
-    defn.path.write_text(defn.path.read_text().replace('instructions="x"', 'instructions="changed"'))
+    defn.path.write_text(defn.path.read_text(encoding="utf-8").replace('instructions="x"', 'instructions="changed"'))
     assert tick.run_occurrence(edited_id) is None
     assert calls == []
     conn = state.connect()
@@ -364,7 +365,7 @@ def _block(conn, defn, reason):
     if reason == "paused":
         state.set_status(conn, defn.agent_id, "paused", "by you")
     elif reason == "edited":
-        defn.path.write_text(defn.path.read_text().replace('instructions="x"', 'instructions="new"'))
+        defn.path.write_text(defn.path.read_text(encoding="utf-8").replace('instructions="x"', 'instructions="new"'))
     elif reason == "backoff":
         state.update(conn, defn.agent_id, backoff_until="2026-10-06T00:00:00")
 
@@ -393,7 +394,7 @@ def test_tick_flushes_held_check_ins_for_active_gated_agents(repo, home):
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "w.toml").write_text(
         'name="w"\ninstructions="x"\nrunner="codex"\n'
-        f'workdir="{repo}"\n[checkin]\ngate = "event-soon"\n'
+        f'workdir={json.dumps(str(repo))}\n[checkin]\ngate = "event-soon"\n'
         '[checkin.gate_args]\nminutes = "15"\n')
     defn = d.load(folder / "w.toml", kind="personal")
     state.accept(state.connect(), defn)
@@ -409,7 +410,7 @@ def test_tick_still_flushes_a_finished_watch_agent(repo, home):
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "w.toml").write_text(
         'name="w"\ninstructions="x"\nrunner="codex"\n'
-        f'workdir="{repo}"\n[checkin]\ngate = "page"\n'
+        f'workdir={json.dumps(str(repo))}\n[checkin]\ngate = "page"\n'
         '[checkin.gate_args]\nurl = "https://a.test/x"\nrule = "always"\n[watch]\nstop = "first"\n')
     defn = d.load(folder / "w.toml", kind="personal")
     conn = state.connect()

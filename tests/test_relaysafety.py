@@ -53,6 +53,7 @@ def test_hand_edited_bad_value_falls_back(tmp_path):
 
 def test_cli_show_set_and_refuse(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     assert cli.main(["relay-safety"]) == 0
     assert "15%" in capsys.readouterr().out
     assert cli.main(["relay-safety", "--battery", "off", "--on-wake", "pause"]) == 0

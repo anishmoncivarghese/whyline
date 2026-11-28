@@ -39,6 +39,12 @@ def _median_run(args: list[str], runs: int = 5) -> float:
     return statistics.median(timings)
 
 
+def _timed(args: list[str]) -> float:
+    start = time.perf_counter()
+    subprocess.run(args, capture_output=True)
+    return time.perf_counter() - start
+
+
 def _module_count(preamble: str) -> int:
     """Modules resident after running `preamble`. Deterministic, unlike timing."""
     completed = subprocess.run(
@@ -97,9 +103,15 @@ def test_each_command_stays_under_the_ceiling(repo, argv):
     repo.commit({"a.py": "one\n"}, "first", epoch=1_000_000)
     paths.ledger_path(repo.path).parent.mkdir(parents=True, exist_ok=True)
     paths.ledger_path(repo.path).touch()
+    # Measured above bare interpreter startup, as the import backstop is: a slow
+    # runner (windows-latest spent most of the budget starting processes) must
+    # not fail a command whose own cost is small.
+    baseline = min(_timed([sys.executable, "-c", "pass"]) for _ in range(3))
     elapsed = min(measure(repo, argv) for _ in range(3))
-    assert elapsed < COMMAND_CEILING_SECONDS, (
-        f"{' '.join(argv)} took {elapsed * 1000:.0f} ms"
+    cost = elapsed - baseline
+    assert cost < COMMAND_CEILING_SECONDS, (
+        f"{' '.join(argv)} took {elapsed * 1000:.0f} ms, "
+        f"{cost * 1000:.0f} ms above a {baseline * 1000:.0f} ms interpreter baseline"
     )
 
 

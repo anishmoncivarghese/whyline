@@ -100,7 +100,7 @@ def test_round_trip_every_field(tmp_path):
 def test_round_trip_notes_review_settings(tmp_path):
     cfg = replace(ReleaseConfig(), notes_review=False, notes_reviewer="grok")
     config.save(tmp_path, cfg)
-    text = (tmp_path / ".whyline" / "release.toml").read_text()
+    text = (tmp_path / ".whyline" / "release.toml").read_text(encoding="utf-8")
     assert "notes_review = false" in text
     assert 'notes_reviewer = "grok"' in text
     assert config.load(tmp_path) == cfg
@@ -267,7 +267,7 @@ def test_pending_drops_a_missing_path(tmp_path):
     gone.unlink()
 
     assert config.pending(tmp_path) == [Path("Dockerfile")]
-    stored = json.loads((tmp_path / ".git" / "whyline-release" / "pending.json").read_text())
+    stored = json.loads((tmp_path / ".git" / "whyline-release" / "pending.json").read_text(encoding="utf-8"))
     assert stored == ["Dockerfile"]
 
 
@@ -282,7 +282,7 @@ def test_bring_in_main_key(tmp_path):
     write_toml(tmp_path, "[release]\nbring_in_main = false\n")
     assert config.load(tmp_path).bring_in_main is False
     config.save(tmp_path, ReleaseConfig(bring_in_main=False))
-    assert "bring_in_main = false" in (tmp_path / ".whyline" / "release.toml").read_text()
+    assert "bring_in_main = false" in (tmp_path / ".whyline" / "release.toml").read_text(encoding="utf-8")
     write_toml(tmp_path, '[release]\nbring_in_main = "no"\n')
     with pytest.raises(config.ConfigError, match="release.bring_in_main"):
         config.load(tmp_path)

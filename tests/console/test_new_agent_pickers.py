@@ -63,7 +63,7 @@ def test_every_one_line_checkbox_has_a_focus_rule():
     rule = re.compile(r"((?:[#.\w-]+\s+)*)Checkbox\s*\{([^}]*)\}")
     missing = []
     for path in sorted(Path(console.__file__).parent.glob("*.py")):
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         for match in rule.finditer(text):
             prefix, body = match.group(1).strip(), match.group(2)
             if not re.search(r"height:\s*1\s*;", body):

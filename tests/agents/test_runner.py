@@ -388,6 +388,7 @@ def test_jobs_fetch_postings_are_event_files_but_the_manifest_is_not(repo, monke
     from whyline.jobs import companies, step
 
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
     monkeypatch.setattr(step.companies, "list", lambda status=None: [
         companies.Company(name="Acme", status="accepted", ats="greenhouse", slug="acme")])

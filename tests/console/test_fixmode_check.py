@@ -24,6 +24,7 @@ def test_repo_fixture_keeps_home_under_tmp(repo, tmp_path):
 @pytest.fixture
 def repo(tmp_path: Path, monkeypatch) -> Path:
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     git(tmp_path, "init", "-q", "-b", "main")
     git(tmp_path, "config", "user.email", "t@t")
     git(tmp_path, "config", "user.name", "t")

@@ -1,3 +1,4 @@
+import os
 import time
 from pathlib import Path
 
@@ -21,7 +22,8 @@ SESSION_HOME = Path.home()
 def test_tests_never_see_the_real_home():
     home = Path.home()
     assert home != SESSION_HOME
-    assert SESSION_HOME not in home.parents
+    if os.name != "nt":  # Windows keeps its temp folder inside the real home
+        assert SESSION_HOME not in home.parents
     assert "autohome" in home.name
 
 

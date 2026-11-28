@@ -105,7 +105,7 @@ def test_ask_for_changes_adds_version_and_reports_also_changed(env):
     assert also == ["Scope"]
     loaded = docset.load(env.root, made.slug)
     assert loaded.document("spec")["version"] == 2
-    log = (env.root / "docs" / "sdlc" / made.slug / "review-log.md").read_text()
+    log = (env.root / "docs" / "sdlc" / made.slug / "review-log.md").read_text(encoding="utf-8")
     assert "changes requested" in log and "Changed: Goal, Scope" in log
 
 

@@ -7,7 +7,7 @@ from whyline import cli
 from whyline.tools import catalogue, find, mcp_config, registry, skill_sources, skills
 from whyline.tools.mcp_config import Server, Tool
 
-FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "registry_search.json").read_text())
+FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "registry_search.json").read_text(encoding="utf-8"))
 
 
 @pytest.fixture

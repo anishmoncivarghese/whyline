@@ -114,7 +114,7 @@ def test_whylines_own_release_workflow_is_recognised():
 
 def test_add_workflow_writes_template_once_and_marks_pending(tmp_path):
     path = pypi.add_workflow(tmp_path)
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     assert path.name == "release-pypi.yml"
     for part in ("environment: pypi", "id-token: write", "contents: read", "astral-sh/setup-uv",
                  "uv build", "pypa/gh-action-pypi-publish", "- \"v*\""):

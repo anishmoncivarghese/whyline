@@ -4,6 +4,16 @@ from whyline.console import tui
 from whyline.console.repl import NO_SUBSCRIPTIONS
 
 
+async def _set_soon(pilot, event, seconds: float = 10.0) -> bool:
+    """Wait for a worker thread's event without blocking the event loop that
+    starts the worker (a slow machine may not have started it yet)."""
+    for _ in range(int(seconds / 0.05)):
+        if event.is_set():
+            return True
+        await pilot.pause(0.05)
+    return event.is_set()
+
+
 def _status(available=(), enabled=None):
     """A full agent_status map. `available` is the usable set; `enabled`
     defaults to every provider so unavailable rows still show as `!`."""
@@ -164,7 +174,7 @@ async def test_superseded_dispatch_token_discards_result(tmp_path, monkeypatch):
         prompt.value = "slow"
         await pilot.click("#send")
         # Wait for slow dispatch to begin running in worker thread
-        assert slow_started.wait(timeout=2.0)
+        assert await _set_soon(pilot, slow_started)
         # Supersede the token, then let the dispatch finish
         app._dispatch_token = object()
         release.set()
@@ -234,7 +244,7 @@ async def test_stop_cancels_the_active_worker(tmp_path, monkeypatch):
         prompt = app.query_one("#prompt", tui.Input)
         prompt.value = "long running"
         await pilot.click("#send")
-        assert started.wait(timeout=2.0)  # let the worker actually start and block on release
+        assert await _set_soon(pilot, started)  # let the worker actually start and block on release
         await pilot.click("#stop")  # invalidates the token while still blocked
         release.set()  # now let the blocked dispatch finish, "too late"
         await pilot.pause()
@@ -2827,7 +2837,7 @@ async def test_timeout_select_disables_while_chat_or_brainstorm_runs_and_stays_e
         app._send()
         assert select.disabled
         await pilot.pause()
-        assert chat_started.wait(timeout=2.0)
+        assert await _set_soon(pilot, chat_started)
         assert select.disabled
         chat_release.set()
         await app.workers.wait_for_complete()
@@ -2845,7 +2855,7 @@ async def test_timeout_select_disables_while_chat_or_brainstorm_runs_and_stays_e
         })
         assert select.disabled
         await pilot.pause()
-        assert bs_started.wait(timeout=2.0)
+        assert await _set_soon(pilot, bs_started)
         assert select.disabled
         bs_release.set()
         await app.workers.wait_for_complete()
@@ -2921,7 +2931,7 @@ async def test_send_captures_timeout_before_select_changes_mid_run(tmp_path, mon
         app._send()
         select.value = 1800
         await pilot.pause()
-        assert started.wait(timeout=2.0)
+        assert await _set_soon(pilot, started)
 
         # Change the select again before the fake run returns.
         select.value = 2700
@@ -3078,7 +3088,7 @@ async def test_stop_cancels_the_in_flight_chat_attempt(tmp_path, monkeypatch):
         prompt.value = "hello"
         app._send()
         await pilot.pause()
-        assert started.wait(timeout=2.0), [
+        assert await _set_soon(pilot, started), [
             (e.kind, e.text) for e in app.session.transcript
         ]
         held = seen_cancel[0]
@@ -3171,7 +3181,7 @@ async def test_newer_brainstorm_ignores_a_late_chat_stop(tmp_path, monkeypatch):
             prompt.value = "hello"
             app._send()
             await pilot.pause()
-            assert started.wait(timeout=2.0), [
+            assert await _set_soon(pilot, started), [
                 (e.kind, e.text) for e in app.session.transcript
             ]
             held = app._cancel_event

@@ -1,3 +1,4 @@
+import json
 import pytest
 
 from whyline import cli
@@ -15,7 +16,7 @@ def agent(home, tmp_path):
     folder = home / ".whyline/agents"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "shop.toml").write_text(
-        f'name="shop"\ninstructions="Say the price."\nrunner="claude"\nworkdir="{work}"\n')
+        f'name="shop"\ninstructions="Say the price."\nrunner="claude"\nworkdir={json.dumps(str(work))}\n')
     defn = d.load(folder / "shop.toml", kind="personal")
     state.accept(state.connect(), defn)
     return defn
@@ -41,10 +42,10 @@ def test_every_gives_the_right_minutes(agent, monkeypatch, text, minutes):
 
 
 def test_every_30s_is_refused(agent, capsys):
-    before = agent.path.read_text()
+    before = agent.path.read_text(encoding="utf-8")
     assert main("schedule", "shop", "--every", "30s") == 2
     assert "the shortest interval is 5 minutes" in capsys.readouterr().err
-    assert agent.path.read_text() == before
+    assert agent.path.read_text(encoding="utf-8") == before
 
 
 def test_schedule_kinds_call_save_schedule_and_keep_the_rest(agent, monkeypatch):
@@ -112,7 +113,7 @@ def test_test_watch_changes_nothing(agent, monkeypatch, home, capsys):
         return pagefetch.Page(url, "ok", text="Big sale " + "x" * 3000)
 
     monkeypatch.setattr(pagefetch, "_get", fake_get)
-    file_before = got.path.read_text()
+    file_before = got.path.read_text(encoding="utf-8")
     result = service.test_watch("shop")
     assert fetched == ["https://example.com/p"]
     assert result.would_fire is True
@@ -121,7 +122,7 @@ def test_test_watch_changes_nothing(agent, monkeypatch, home, capsys):
     assert not cache.exists()
     assert state.get_gate_state(state.connect(), got.agent_id) == gate_before
     assert state.watch_memory(state.connect(), got.agent_id) == memory_before
-    assert got.path.read_text() == file_before
+    assert got.path.read_text(encoding="utf-8") == file_before
     from whyline.agents import records
     assert records.list_runs(got.agent_id) == []
     assert main("watch", "test", "shop") == 0
@@ -132,7 +133,7 @@ def test_test_watch_without_instructions_gives_the_exact_message(home, tmp_path,
     folder = home / ".whyline/agents"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "plain.toml").write_text(
-        f'name="plain"\ninstructions=""\nrunner="claude"\nworkdir="{tmp_path}"\n'
+        f'name="plain"\ninstructions=""\nrunner="claude"\nworkdir={json.dumps(str(tmp_path))}\n'
         '[checkin]\ngate="page"\n[checkin.gate_args]\nurl="https://example.com/p"\n'
         'rule="appears"\ntext="hi"\n[watch]\n')
     monkeypatch.setattr(pagefetch, "_get", lambda url, now, o, r: pagefetch.Page(url, "ok", text="hi"))
@@ -202,14 +203,14 @@ def test_watch_refuses_repository_agents_before_writing(tmp_path, monkeypatch, c
     (repo / ".whyline/agents").mkdir(parents=True)
     path = repo / ".whyline/agents/rep.toml"
     path.write_text('name="rep"\ninstructions="Do it."\nrunner="claude"\n')
-    before = path.read_text()
+    before = path.read_text(encoding="utf-8")
     with pytest.raises(ValueError, match="personal agent"):
         service.save_watch("rep", url="https://example.com/p", rule="always", repo_root=repo)
-    assert path.read_text() == before
+    assert path.read_text(encoding="utf-8") == before
     monkeypatch.setattr(cli, "_repo_root_or_none", lambda: repo)
     assert main("watch", "rep", "--url", "https://example.com/p", "--rule", "always") == 2
     assert "personal agent" in capsys.readouterr().err
-    assert path.read_text() == before
+    assert path.read_text(encoding="utf-8") == before
 
 
 def test_start_again_calls_the_service(agent, monkeypatch, capsys):

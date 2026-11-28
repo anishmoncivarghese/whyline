@@ -224,7 +224,7 @@ def test_export_prints_files_and_notes(env, monkeypatch, capsys):
     monkeypatch.setattr(export, "export_pack", pack)
     assert docs("export", "login", "--out", str(env / "out")) == 0
     out = capsys.readouterr().out
-    assert "Wrote /o/login-docs.docx" in out and "Review log is missing" in out
+    assert f"Wrote {Path('/o/login-docs.docx')}" in out and "Review log is missing" in out
     assert seen["slug"] == "login" and seen["out"] == env / "out"
 
 
@@ -314,8 +314,9 @@ def test_home_new_uses_defaults_and_prints_cd(env, monkeypatch, capsys):
     assert (seen["choice"], seen["name"], seen["folder"], seen["parent"]) == (
         "new", "Gatekeeper", "gatekeeper", Path("/parents"))
     out = capsys.readouterr().out
-    assert "/elsewhere/gatekeeper" in out
-    assert f"cd /elsewhere/gatekeeper && whyline docs resume {made.slug}" in out
+    shown = Path("/elsewhere/gatekeeper")
+    assert str(shown) in out
+    assert f"cd {shown} && whyline docs resume {made.slug}" in out
 
 
 def test_home_here_keeps_root_and_explicit_options(env, monkeypatch, capsys):

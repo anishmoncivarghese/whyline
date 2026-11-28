@@ -86,12 +86,12 @@ def test_write_changes_only_known_lines_and_locks(tmp_path):
     (tmp_path / "package-lock.json").write_text("{}")
     run = FakeRun()
     changed = write(tmp_path, ReleaseConfig(), "1.3.0", run=run)
-    pyproject = (tmp_path / "pyproject.toml").read_text()
+    pyproject = (tmp_path / "pyproject.toml").read_text(encoding="utf-8")
     assert 'version = "1.3.0"' in pyproject
     assert "x==1.2.3" in pyproject
-    init = (tmp_path / "src" / "my_pkg" / "__init__.py").read_text()
+    init = (tmp_path / "src" / "my_pkg" / "__init__.py").read_text(encoding="utf-8")
     assert '__version__ = "1.3.0"' in init and "Doc 1.2.3." in init
-    assert json.loads((tmp_path / "package.json").read_text())["version"] == "1.3.0"
+    assert json.loads((tmp_path / "package.json").read_text(encoding="utf-8"))["version"] == "1.3.0"
     assert run.calls == [
         (["uv", "lock"], tmp_path),
         (["npm", "install", "--package-lock-only"], tmp_path),
@@ -103,7 +103,7 @@ def test_write_version_files_first_matching_line(tmp_path):
     (tmp_path / "pyproject.toml").write_text(PYPROJECT)
     (tmp_path / "VERSION").write_text("v1.2.3 and 1.2.3\n")
     write(tmp_path, ReleaseConfig(version_files=("VERSION",)), "1.2.4", run=FakeRun())
-    assert (tmp_path / "VERSION").read_text() == "v1.2.4 and 1.2.3\n"
+    assert (tmp_path / "VERSION").read_text(encoding="utf-8") == "v1.2.4 and 1.2.3\n"
 
 
 def test_missing_old_version_leaves_everything_untouched(tmp_path):
@@ -112,8 +112,8 @@ def test_missing_old_version_leaves_everything_untouched(tmp_path):
     run = FakeRun()
     with pytest.raises(VersionError, match="VERSION"):
         write(tmp_path, ReleaseConfig(version_files=("VERSION",)), "1.2.4", run=run)
-    assert (tmp_path / "pyproject.toml").read_text() == PYPROJECT
-    assert (tmp_path / "VERSION").read_text() == "0.0.1\n"
+    assert (tmp_path / "pyproject.toml").read_text(encoding="utf-8") == PYPROJECT
+    assert (tmp_path / "VERSION").read_text(encoding="utf-8") == "0.0.1\n"
     assert run.calls == []
 
 

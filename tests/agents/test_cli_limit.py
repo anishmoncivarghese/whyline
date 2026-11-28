@@ -59,4 +59,4 @@ def test_limit_needs_a_pays_tool_the_agent_uses_and_real_amounts(shop, capsys):
     assert "does not use files.other" in capsys.readouterr().err
     assert cli.main([*base[:5], "0", *base[6:]]) == 2
     assert "Set both limits for files.write" in capsys.readouterr().err
-    assert "limits" not in shop.read_text()
+    assert "limits" not in shop.read_text(encoding="utf-8")

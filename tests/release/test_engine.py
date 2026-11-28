@@ -296,7 +296,7 @@ def test_auto_rerun_only_once_and_never_tests(root):
     result = engine.run(root, Plan("1.0", steps), mode="auto", auto_run=_fake_gh(gh))
     assert result.status == engine.DONE and len(gh) == 1
     # Without a say callback the notice still lands in the durable release log.
-    assert "GitHub had no runner for test; rerunning once" in engine.log_path(root).read_text()
+    assert "GitHub had no runner for test; rerunning once" in engine.log_path(root).read_text(encoding="utf-8")
 
     # Any other cause shows the failure screen without a rerun.
     for cause in ("tests", "timeout", "publish", "other"):

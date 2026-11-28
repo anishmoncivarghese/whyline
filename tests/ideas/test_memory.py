@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import argparse
 import stat
 from pathlib import Path
@@ -72,13 +73,16 @@ def test_file_mode_0600(ideas_home):
     memory.add("A security sensitive fact")
     mem_file = paths.home() / "memory.md"
     assert mem_file.is_file()
-    assert stat.S_IMODE(mem_file.stat().st_mode) == 0o600
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        assert stat.S_IMODE(mem_file.stat().st_mode) == 0o600
 
     memory.edit(1, "Updated security fact")
-    assert stat.S_IMODE(mem_file.stat().st_mode) == 0o600
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        assert stat.S_IMODE(mem_file.stat().st_mode) == 0o600
 
     memory.clear()
-    assert stat.S_IMODE(mem_file.stat().st_mode) == 0o600
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        assert stat.S_IMODE(mem_file.stat().st_mode) == 0o600
 
 
 def test_edit_one_line(ideas_home):

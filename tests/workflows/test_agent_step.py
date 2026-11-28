@@ -57,7 +57,7 @@ class Fake:
         self.results, self.calls = list(results), []
 
     def __call__(self, command, prompt, **kwargs):
-        files = {Path(p).name: (Path(kwargs["cwd"]) / p).read_text()
+        files = {Path(p).name: (Path(kwargs["cwd"]) / p).read_text(encoding="utf-8")
                  for p in re.findall(r"^- (\S*input-\d+\.md)$", prompt, re.M)}
         self.calls.append({"command": list(command), "prompt": prompt, "files": files})
         return self.results[len(self.calls) - 1]
@@ -90,7 +90,7 @@ def step_row(conn, run_id):
 
 
 def output(row):
-    return json.loads(Path(row["output_path"]).read_text())
+    return json.loads(Path(row["output_path"]).read_text(encoding="utf-8"))
 
 
 def test_inputs_land_as_files_and_instructions_stay_literal(conn):

@@ -50,7 +50,7 @@ def test_registered():
 
 def test_template_with_ghcr_only(tmp_path):
     path = docker.add_workflow(tmp_path, cfg(), run=runner())
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     assert path.name == "release-docker.yml"
     for part in ("- \"v*\"", "contents: read", "packages: write",
                  "docker/setup-buildx-action", "docker/login-action",
@@ -68,7 +68,7 @@ def test_template_with_ghcr_only(tmp_path):
 def test_template_with_docker_hub_and_configured_image(tmp_path):
     path = docker.add_workflow(tmp_path, cfg("ghcr", "dockerhub", image="Me/Thing"),
                                run=runner())
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     assert "secrets.DOCKERHUB_USERNAME" in text and "secrets.DOCKERHUB_TOKEN" in text
     assert "ghcr.io/me/thing" in text and "            me/thing\n" in text
     assert "@@" not in text

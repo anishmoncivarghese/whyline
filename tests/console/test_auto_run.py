@@ -2049,7 +2049,7 @@ def test_given_synthesis_skips_brainstorm_and_spec_sees_its_text(tmp_path, monke
 
     synthesis_file = tmp_path / "existing_synthesis.md"
     synthesis_text = "# Feature\n\n## Final Synthesis\n\nExisting synthesis direction text.\n"
-    synthesis_file.write_text(synthesis_text, encoding="utf-8")
+    synthesis_file.write_bytes(synthesis_text.encode("utf-8"))
 
     def fail_brainstorm(*args, **kwargs):
         raise AssertionError("Brainstorm should not be called")
@@ -2251,7 +2251,7 @@ def test_resume_with_given_synthesis_skips_brainstorm(tmp_path, monkeypatch):
 
     synthesis_file = tmp_path / "resume_synth.md"
     synthesis_text = "# Resume Topic\n\n## Final Synthesis\n\nResumed synthesis.\n"
-    synthesis_file.write_text(synthesis_text, encoding="utf-8")
+    synthesis_file.write_bytes(synthesis_text.encode("utf-8"))
 
     def fail_brainstorm(*args, **kwargs):
         raise AssertionError("Brainstorm should not be called")

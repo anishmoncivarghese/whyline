@@ -40,12 +40,12 @@ def test_prepare_run_writes_tools_json_and_mcp_json(repo, tmp_path):
     run.mkdir()
     extras = runner.prepare_run(_with_tools(repo), run)
     assert extras.tools_file == run / "tools.json"
-    data = json.loads((run / "tools.json").read_text())
+    data = json.loads((run / "tools.json").read_text(encoding="utf-8"))
     assert data["run"] == "run" and data["agent"] == "a"
     assert data["tools"] == [{"server": "notion", "tool": "search", "permission": "allowed",
                               "description": "Find pages", "input_schema": {"type": "object"},
                               "read_only": True}]
-    entry = json.loads((run / "mcp.json").read_text())["mcpServers"]["whyline"]
+    entry = json.loads((run / "mcp.json").read_text(encoding="utf-8"))["mcpServers"]["whyline"]
     assert entry["command"] == EXE and entry["args"] == ["tools", "serve"]
 
 

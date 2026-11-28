@@ -240,13 +240,13 @@ def test_doctor_checks_antigravity_trust_without_changing_it(repo, capsys, monke
     settings = tmp_path_factory.mktemp("gemini") / "settings.json"
     settings.write_text(json.dumps({"trustedWorkspaces": ["/somewhere/else"]}))
     monkeypatch.setattr(doctor, "ANTIGRAVITY_SETTINGS", settings)
-    before = settings.read_text()
+    before = settings.read_text(encoding="utf-8")
 
     _, out, _ = _doctor(repo, capsys, monkeypatch)
 
     trust = _check(json.loads(out), "antigravity trust")
     assert trust["status"] == "warn" and "trust" in trust["fix"].lower()
-    assert settings.read_text() == before
+    assert settings.read_text(encoding="utf-8") == before
     settings.write_text(json.dumps({"trustedWorkspaces": [str(repo.path.resolve())]}))
     _, out, _ = _doctor(repo, capsys, monkeypatch)
     assert _check(json.loads(out), "antigravity trust")["status"] == "ok"

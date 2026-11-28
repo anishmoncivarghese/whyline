@@ -65,7 +65,7 @@ def repo(tmp_path, monkeypatch):
 def test_build_inputs_collects_commits_scenarios_decisions_and_tag(repo):
     root, made = repo
     path = record.build_inputs(root, made)
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     assert path == root / "docs/sdlc/login/build-inputs.md"
     assert "feat: build it (T-1)" in text and "base commit" not in text
     assert "S-1: Login works — passed" in text
@@ -80,7 +80,7 @@ def test_build_inputs_reads_scenario_ticks_from_the_build_checkout(repo):
     build = root / "build"
     (build / "plans").mkdir(parents=True)
     (build / "plans" / "login.tests.md").write_text(TESTS.replace("- [ ] S-2", "- [x] S-2"))
-    text = record.build_inputs(build, made).read_text()
+    text = record.build_inputs(build, made).read_text(encoding="utf-8")
     assert "S-2: Logout works — passed" in text
     assert "S-2: Logout works — failed" not in text
     assert (root / "docs/sdlc/login/build-inputs.md").exists()
@@ -89,7 +89,7 @@ def test_build_inputs_reads_scenario_ticks_from_the_build_checkout(repo):
 def test_build_inputs_has_no_release_without_a_tag(repo):
     root, made = repo
     git(root, "tag", "-d", "v1.0.0")
-    assert "## Release" not in record.build_inputs(root, made).read_text()
+    assert "## Release" not in record.build_inputs(root, made).read_text(encoding="utf-8")
 
 
 def test_build_inputs_ignores_a_tag_on_a_divergent_branch(repo):
@@ -101,7 +101,7 @@ def test_build_inputs_ignores_a_tag_on_a_divergent_branch(repo):
     git(root, "commit", "-qm", "side work")
     git(root, "tag", "v-side")
     git(root, "checkout", "-q", "-")
-    assert "v-side" not in record.build_inputs(root, made).read_text()
+    assert "v-side" not in record.build_inputs(root, made).read_text(encoding="utf-8")
 
 
 def test_render_decisions_design_records_then_decisions_newest_last(repo):
@@ -169,7 +169,7 @@ def test_approval_regenerates_and_commits_decisions(repo, monkeypatch):
     monkeypatch.setattr(
         docset, "commit",
         lambda r, found, message: committed.update(
-            text=(root / "docs/sdlc/login/decisions.md").read_text()
+            text=(root / "docs/sdlc/login/decisions.md").read_text(encoding="utf-8")
         ) or True,
     )
     review.approve(root, "login", "design", approver="anish")
@@ -202,7 +202,7 @@ def test_drift_review_prompt_has_the_diff_stat_and_the_document_path(lens_env):
     assert "docs/sdlc/login/design.md" in seen[0]
     assert f"git diff --stat {made.build_base}..HEAD" in seen[0] and "b.py" in seen[0]
     assert record.DRIFT_LINE in seen[0]
-    assert "promised, not built" in path.read_text()
+    assert "promised, not built" in path.read_text(encoding="utf-8")
 
 
 def test_build_record_attaches_drift_next_to_the_inputs(lens_env, monkeypatch):
@@ -239,7 +239,7 @@ def test_drift_that_does_not_run_still_gets_a_record(lens_env, monkeypatch):
     record.run_build_record(root, "login")
     drift = got["attachments"][-1]
     assert drift.name == "drift.md"
-    assert drift.read_text().startswith("Drift check didn't run: ")
+    assert drift.read_text(encoding="utf-8").startswith("Drift check didn't run: ")
 
 
 def _build(root, plan=PLAN, tests=TESTS):
@@ -284,9 +284,9 @@ def test_record_amendments_adds_a_version_and_logs_it(repo):
     assert doc["approved_by"].endswith(" (during build)")
     assert doc["note"] == "amended during build: added T-3"
     assert docset.version_label(made, doc) == "Plan v2 (amended during build)"
-    assert "amended during build" in (root / "docs/sdlc/login/review-log.md").read_text()
+    assert "amended during build" in (root / "docs/sdlc/login/review-log.md").read_text(encoding="utf-8")
     assert not record.plan_amendments(build, root, made)
-    assert "T-3" in record.build_inputs(build, made).read_text()
+    assert "T-3" in record.build_inputs(build, made).read_text(encoding="utf-8")
 
 
 def test_record_amendments_versions_a_test_plan_only_change(repo):
@@ -300,8 +300,8 @@ def test_record_amendments_versions_a_test_plan_only_change(repo):
     assert doc["version"] == 2 and doc["status"] == "approved"
     assert doc["note"] == "amended during build: added S-3"
     history = docset._history_path(root, "login", "plan", 2).parent
-    assert (history / "plan-v2.tests.md").read_text() == tests
-    assert (history / "plan-v1.tests.md").read_text() == TESTS
+    assert (history / "plan-v2.tests.md").read_text(encoding="utf-8") == tests
+    assert (history / "plan-v1.tests.md").read_text(encoding="utf-8") == TESTS
     assert not record.plan_amendments(build, root, made)
 
 
@@ -314,7 +314,7 @@ def test_record_amendments_does_nothing_without_changes(repo):
 def test_build_inputs_lists_plan_changes(repo):
     root, made = repo
     build = _build(root, PLAN + "- [ ] T-3: Audit\n  Edit `c.py`.\n")
-    text = record.build_inputs(build, made).read_text()
+    text = record.build_inputs(build, made).read_text(encoding="utf-8")
     assert "## Plan changes during the build" in text and "- Added: T-3" in text
 
 
@@ -369,5 +369,5 @@ def test_trace_table_follows_the_amended_plan(repo, monkeypatch):
 def test_build_inputs_has_the_traceability_table(repo, monkeypatch):
     root, made = repo
     monkeypatch.setattr("whyline.sdlc.trace.scope", lambda docs, found: ["R1"])
-    text = record.build_inputs(root, made).read_text()
+    text = record.build_inputs(root, made).read_text(encoding="utf-8")
     assert "## Requirements traceability" in text and "| R1 |" in text

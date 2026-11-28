@@ -1,3 +1,4 @@
+import os
 import json
 import stat
 from pathlib import Path
@@ -41,7 +42,7 @@ def statuses(conn, run_id):
 
 
 def output(run_id, step_id):
-    return json.loads((paths.runs_dir() / str(run_id) / f"{step_id}.json").read_text())
+    return json.loads((paths.runs_dir() / str(run_id) / f"{step_id}.json").read_text(encoding="utf-8"))
 
 
 LINEAR = '''
@@ -67,7 +68,8 @@ def test_linear_run_succeeds_and_writes_outputs(conn):
     assert output(run, "a") == {"greeting": "hello ana", "n": 3}
     assert output(run, "b") == {"echo": "hello ana!"}
     path = paths.runs_dir() / str(run) / "a.json"
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert engine.execute(run) == "succeeded"  # a finished run is left alone
 
 
@@ -284,7 +286,7 @@ def test_secret_is_redacted_on_disk(conn):
     leaky = {"set": lambda ctx, step: StepResult(
         "succeeded", {"note": "api_key=sk-abcdefghijklmnopqrstuvwxyz123456"})}
     engine.execute(run, handlers=leaky)
-    text = (paths.runs_dir() / str(run) / "a.json").read_text()
+    text = (paths.runs_dir() / str(run) / "a.json").read_text(encoding="utf-8")
     assert "abcdefghijklmnopqrstuvwxyz" not in text and "[redacted]" in text
 
 
@@ -372,7 +374,8 @@ def test_empty_output_still_writes_a_private_artifact(conn):
     assert engine.execute(run, handlers={"set": empty}) == "succeeded"
     path = paths.runs_dir() / str(run) / "a.json"
     assert output(run, "a") == {}
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
 def test_cancel_stops_a_queued_run(conn):

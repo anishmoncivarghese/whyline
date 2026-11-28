@@ -4632,6 +4632,7 @@ def _isolate_cap_auto_run(tmp_path: Path, repo: Path, monkeypatch: pytest.Monkey
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.chdir(repo)
     logs = repo / ".whyline" / "relay" / "logs"
     logs.mkdir(parents=True, exist_ok=True)
@@ -5112,6 +5113,10 @@ def _never_exits_script(tmp_path: Path) -> tuple[list[str], Path]:
     return [sys.executable, str(script), str(pid_file)], pid_file
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="whyline-relay's agents.run ends a timed-out agent with os.killpg, which Windows lacks",
+)
 def test_ask_agent_ends_an_agent_that_never_exits_at_the_limit(tmp_path: Path) -> None:
     from whyline.console.session import ConsoleSession
     from whyline_relay import agents as relay_agents
@@ -5135,7 +5140,7 @@ def test_ask_agent_ends_an_agent_that_never_exits_at_the_limit(tmp_path: Path) -
     assert res.option is None
     assert "resume-keep" in [o.id for o in res.options]
     # The agent's process group is gone, not just its parent.
-    pid = int(pid_file.read_text())
+    pid = int(pid_file.read_text(encoding="utf-8"))
     for _ in range(50):
         try:
             os.killpg(pid, 0)
@@ -5703,7 +5708,7 @@ def test_reply_proposing_set_model_clear_override_and_resume_applies_all_three_i
     assert all("config.toml" in f for f in diff_files)
 
     # 6. Dirty file in working tree was NOT committed
-    assert (repo / "dirty_code.py").read_text() == "uncommitted task code\n"
+    assert (repo / "dirty_code.py").read_text(encoding="utf-8") == "uncommitted task code\n"
     status_out = subprocess.run(
         ["git", "status", "--porcelain"],
         cwd=repo,
@@ -6196,7 +6201,10 @@ async def test_console_proposal_offers_review_screen_with_apply_step_1_only(
         assert str(screen.query_one("#cancel", Button).label) == "Close"
         assert not screen.query_one("#rps-result", Static).has_class("-empty")
         await pilot.click("#cancel")
-        await pilot.pause()
+        for _ in range(300):  # the dismiss callback runs a few frames later on a slow runner
+            await pilot.pause(0.05)
+            if dismissed:
+                break
         assert len(dismissed) == 1 and getattr(dismissed[0], "success", False) is True
 
         again = recovery.apply(repo, problem, "proposal", launch=launch)
@@ -6285,9 +6293,12 @@ async def test_live_console_flow_opens_proposal_screen_and_applies_step_1_only(
         assert relay_ops.read_agent_model(repo, "claude") == "sonnet"
         assert launched == []
         assert str(screen.query_one("#cancel", tui.Button).label) == "Close"
-        await pilot.click("#cancel")
-        await pilot.pause()
-        assert not isinstance(app.screen, ResolveProposalScreen)
+        landed = await pilot.click("#cancel")
+        for _ in range(100):
+            if not isinstance(app.screen, ResolveProposalScreen):
+                break
+            await pilot.pause(0.05)
+        assert not isinstance(app.screen, ResolveProposalScreen), f"click landed: {landed}"
 
 
 # ASK-4: Auto applies the agent's safe steps

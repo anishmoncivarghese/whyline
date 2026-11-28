@@ -31,8 +31,9 @@ def test_round_trip_and_mode(home):
     mcp_config.save_server(server)
     assert mcp_config._load_saved() == {"files": server}
     assert set(mcp_config.load()) == {"files", "made"}
-    mode = stat.S_IMODE(os.stat(home / ".whyline" / "mcp.toml").st_mode)
-    assert mode == 0o600
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        mode = stat.S_IMODE(os.stat(home / ".whyline" / "mcp.toml").st_mode)
+        assert mode == 0o600
 
 
 @pytest.mark.parametrize("stated", [True, False, None])
@@ -148,7 +149,7 @@ def test_cli_add_list_import_remove(home, capsys):
     assert "needs a credential: T" in out and "refused" in out and "secret-value" not in out
     assert cli.main(["tools", "mcp", "import", "gh", "far"]) == 1
     assert "gh" in mcp_config.load() and "far" not in mcp_config.load()
-    assert "secret-value" not in (home / ".whyline" / "mcp.toml").read_text()
+    assert "secret-value" not in (home / ".whyline" / "mcp.toml").read_text(encoding="utf-8")
     assert cli.main(["tools", "mcp", "list"]) == 0
     assert cli.main(["tools", "mcp", "remove", "gh"]) == 0
     assert cli.main(["tools", "mcp", "remove", "gh"]) == 1

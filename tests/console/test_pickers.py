@@ -153,6 +153,7 @@ async def test_path_box_accepts_tilde(tree, tmp_path, monkeypatch):
     home = tmp_path / "home"
     (home / "docs").mkdir(parents=True)
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     screen = _screen(tree)
     app = _Host(screen)
     async with app.run_test(size=(100, 40)) as pilot:

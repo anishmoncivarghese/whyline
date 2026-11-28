@@ -87,7 +87,7 @@ def test_server_error_is_returned_as_is_error(tmp_path):
     result = _drive([_call("fake__fail")], path, servers=_servers())[0]["result"]
     assert result["isError"] is True
     assert result["content"][0]["text"] == "it broke"
-    record = json.loads((tmp_path / "tool-calls.jsonl").read_text().splitlines()[0])
+    record = json.loads((tmp_path / "tool-calls.jsonl").read_text(encoding="utf-8").splitlines()[0])
     assert record["error"] == "it broke"
 
 
@@ -98,7 +98,7 @@ def test_ask_first_denied_is_not_forwarded(tmp_path):
                     ask=lambda folder, tool, args: asked.append(tool) or "denied")[0]["result"]
     assert asked == ["fake__echo"]
     assert result == {"content": [{"type": "text", "text": serve.DENIED_TEXT}], "isError": True}
-    record = json.loads((tmp_path / "tool-calls.jsonl").read_text())
+    record = json.loads((tmp_path / "tool-calls.jsonl").read_text(encoding="utf-8"))
     assert record["decision"] == "denied"
 
 
@@ -107,7 +107,7 @@ def test_ask_first_approved_is_forwarded(tmp_path):
     result = _drive([_call("fake__echo", {"text": "ok"})], path, servers=_servers(),
                     ask=lambda *a: "approved")[0]["result"]
     assert result["content"][0]["text"] == "ok"
-    assert json.loads((tmp_path / "tool-calls.jsonl").read_text())["decision"] == "approved"
+    assert json.loads((tmp_path / "tool-calls.jsonl").read_text(encoding="utf-8"))["decision"] == "approved"
 
 
 def test_call_log_redacts_credentials_and_cuts_length(tmp_path):
@@ -117,7 +117,7 @@ def test_call_log_redacts_credentials_and_cuts_length(tmp_path):
             _call("fake__echo", {"text": "x" * 5000}, ident=3)],
            path, servers=servers, session_factory=lambda server: _FakeSession(server),
            redaction_values=lambda names: [SECRET] if "my-key" in names else [])
-    lines = (tmp_path / "tool-calls.jsonl").read_text().splitlines()
+    lines = (tmp_path / "tool-calls.jsonl").read_text(encoding="utf-8").splitlines()
     first, second = (json.loads(line) for line in lines)
     assert SECRET not in lines[0]
     assert "[redacted]" in first["arguments"]
@@ -216,7 +216,7 @@ def test_made_server_lists_accepted_tools_only(home):
 def test_saving_a_server_never_writes_made(home):
     _made()
     mcp_config.save_server(mcp_config.Server("other", "cmd"))
-    assert "made" not in (home / ".whyline" / "mcp.toml").read_text()
+    assert "made" not in (home / ".whyline" / "mcp.toml").read_text(encoding="utf-8")
     with pytest.raises(ValueError):
         mcp_config.save_server(mcp_config.Server("made", "cmd"))
 
@@ -238,7 +238,7 @@ def test_made_tool_ask_first_asks_and_logs(tmp_path, home, fake_call):
                     ask=lambda folder, tool, args: asked.append(tool) or "approved")[0]["result"]
     assert asked == ["made__weather"]
     assert result["content"][0]["text"] == "sunny"
-    record = json.loads((tmp_path / "tool-calls.jsonl").read_text())
+    record = json.loads((tmp_path / "tool-calls.jsonl").read_text(encoding="utf-8"))
     assert (record["tool"], record["decision"], record["result_size"]) == ("made__weather", "approved", 5)
 
 
@@ -259,7 +259,7 @@ def test_changed_made_tool_is_refused_and_logged(tmp_path, home, fake_call):
     assert replies[0]["result"]["content"][0]["text"] == "made.weather is not accepted"
     assert replies[1]["result"]["isError"] is True
     assert fake_call == []
-    record = json.loads((tmp_path / "tool-calls.jsonl").read_text().splitlines()[0])
+    record = json.loads((tmp_path / "tool-calls.jsonl").read_text(encoding="utf-8").splitlines()[0])
     assert record["error"] == "made.weather is not accepted"
 
 

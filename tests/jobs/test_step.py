@@ -16,6 +16,7 @@ NOW = datetime(2026, 10, 30, 7, 0)
 @pytest.fixture(autouse=True)
 def _home(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
 
 
@@ -61,7 +62,7 @@ def test_writes_files_and_manifest_and_returns_count(tmp_path, monkeypatch) -> N
     assert n == 3
     files = sorted(p.name for p in out.glob("*.md"))
     assert len(files) == 3 and files[0].startswith("01-acme-engineer-")
-    manifest = json.loads((out / "manifest.json").read_text())
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
     assert set(manifest) == set(files)
     entry = manifest[files[0]]
     assert entry["uid"].startswith("greenhouse:acme:") and entry["company"] == "Acme"
@@ -225,10 +226,10 @@ def test_alert_match_swaps_in_the_board_posting(tmp_path, monkeypatch) -> None:
     http = _http({"acme": _board_of("acme", "Senior Backend Engineer (Remote)", "Designer")})
     out = tmp_path / "run"
     step.jobs_fetch(None, out, NOW, http=http)
-    texts = [p.read_text() for p in out.glob("*.md")]
+    texts = [p.read_text(encoding="utf-8") for p in out.glob("*.md")]
     assert len(texts) == 2 and all("Full board description." in t for t in texts)
     assert not any("Only the alert summary" in t or "linkedin" in t for t in texts)
-    manifest = json.loads((out / "manifest.json").read_text())
+    manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
     assert sum(m["title"].startswith("Senior Backend") for m in manifest.values()) == 1
     assert alerts.pending() == []
     assert seen.new_only([card]) == []  # the alert uid stays in the seen store
@@ -241,7 +242,7 @@ def test_alert_without_a_match_keeps_the_card_with_a_note(tmp_path, monkeypatch)
     _card("Quantum Chef", "Acme", "https://www.linkedin.com/jobs/view/2")
     out = tmp_path / "run"
     step.jobs_fetch(None, out, NOW, http=_http({"acme": _board_of("acme", "Designer")}))
-    (text,) = [p.read_text() for p in out.glob("*quantum*.md")]
+    (text,) = [p.read_text(encoding="utf-8") for p in out.glob("*quantum*.md")]
     assert "Found in a job-alert email" in text
     assert "Only the alert summary is available for this job." in text
 
@@ -271,5 +272,5 @@ def test_a_board_link_is_fetched(tmp_path, monkeypatch) -> None:
     out = tmp_path / "run"
     step.jobs_fetch(None, out, NOW, http=http)
     assert requested and all("boards-api.greenhouse.io/v1/boards/zed/" in u for u in requested)
-    (text,) = [p.read_text() for p in out.glob("*.md")]
+    (text,) = [p.read_text(encoding="utf-8") for p in out.glob("*.md")]
     assert "Full board description." in text and "Only the alert summary" not in text

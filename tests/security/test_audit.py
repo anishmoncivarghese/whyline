@@ -89,6 +89,7 @@ def test_output_dir_is_outside_the_repo_and_numbered(repo, tmp_path):
 
 def test_default_output_dir_is_under_home(repo, tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     report = audit.run(repo, agent="claude", ask_agent=FakeAgent([]))
     assert report.run_dir == tmp_path / "home" / ".whyline" / "security" / "audits" / "project" / "run-1"
 
@@ -134,7 +135,7 @@ def test_invalid_json_is_kept_and_reported(repo, tmp_path):
     assert not report.ok and report.findings == ()
     assert "the agent's output didn't match the schema" in report.summary
     assert "not valid JSON" in report.summary
-    assert (report.run_dir / "findings.json").read_text() == "[not json"
+    assert (report.run_dir / "findings.json").read_text(encoding="utf-8") == "[not json"
 
 
 def test_schema_errors_are_reported_first_five(repo, tmp_path):

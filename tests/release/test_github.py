@@ -1,3 +1,4 @@
+import os
 import json
 import subprocess
 import threading
@@ -125,6 +126,7 @@ def test_commit_with_nothing_and_no_release_commit_still_fails(repo):
         s["commit"].run(EVENT)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="the check uses POSIX sh syntax; Windows runs cmd.exe")
 def test_checks_stream_and_fail(repo):
     seen = []
     cfg = ReleaseConfig(checks=("echo hello",))

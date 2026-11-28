@@ -46,7 +46,7 @@ def test_events_are_time_ordered(tmp_path):
             _event("Standup", "09:00", "09:15"),
         ],
     )
-    text = (tmp_path / "brief" / "today.md").read_text()
+    text = (tmp_path / "brief" / "today.md").read_text(encoding="utf-8")
     assert result.path == tmp_path / "brief" / "today.md"
     assert text == result.text
     assert text.index("09:00-09:15 Standup (Work)") < text.index("12:00-13:00 Lunch @ Cafe (Work)")
@@ -219,7 +219,7 @@ def test_mail_parses_orders_and_applies_window_and_limit(tmp_path):
     assert "Newest" in result.text and "Newer" not in result.text and "Old" not in result.text
     assert "From: c@x.com" in result.text
     assert result.calendars == ("INBOX", "Archive")
-    assert (tmp_path / "mail.md").read_text() == result.text
+    assert (tmp_path / "mail.md").read_text(encoding="utf-8") == result.text
     assert seen[0][3:] == ["24", "1", "INBOX"]
 
 
@@ -296,7 +296,7 @@ def test_tasks_merge_app_reminders_whyline_and_memory(tmp_path, ideas_home, monk
     assert "call mum" in result.text
     assert "likes tea" in result.text
     assert "whyline:" in result.text
-    assert (tmp_path / "tasks.md").read_text() == result.text
+    assert (tmp_path / "tasks.md").read_text(encoding="utf-8") == result.text
 
 
 def test_tasks_status_names_failed_agents_and_paused_relay(tmp_path, ideas_home, monkeypatch):
@@ -337,6 +337,7 @@ def agent_env(tmp_path, monkeypatch, ideas_home):
     from whyline.ideas import telegram_in
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     monkeypatch.setattr(account, "enabled_agents", lambda: {"claude", "codex"})
     monkeypatch.setattr(telegram, "known_chats", lambda: {42: "Me (private)", 7: "Other"})
     conn = store.connect()
@@ -563,7 +564,7 @@ def test_check_reports_denied_calendar_and_mail_not_running(monkeypatch):
 def test_reminders_script_uses_eventkit_without_js_null():
     # AppleScript never shows the Reminders prompt, and JS null reaches
     # EventKit as NSNull and crashes it.
-    script = brief.REMINDERS_JS.read_text()
+    script = brief.REMINDERS_JS.read_text(encoding="utf-8")
     assert "EKEntityTypeReminder" in script
     assert "requestFullAccessToRemindersWithCompletion" in script
     call = script.split("predicateForIncompleteRemindersWithDueDateStartingEndingCalendars(")[1]

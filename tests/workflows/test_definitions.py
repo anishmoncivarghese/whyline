@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -97,8 +98,9 @@ def step(body: str, extra: str = "") -> str:
 
 def test_paths_are_private(home):
     assert paths.home() == home / ".whyline" / "workflows"
-    assert paths.home().stat().st_mode & 0o777 == 0o700
-    assert paths.runs_dir().stat().st_mode & 0o777 == 0o700
+    if os.name != "nt":  # Windows files have no POSIX mode bits
+        assert paths.home().stat().st_mode & 0o777 == 0o700
+        assert paths.runs_dir().stat().st_mode & 0o777 == 0o700
     assert paths.state_path().name == "state.sqlite"
     assert paths.settings_path().name == "settings.toml"
     assert paths.reports_dir("x") == paths.home() / "reports" / "x"

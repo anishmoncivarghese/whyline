@@ -20,6 +20,7 @@ def _git(cwd: Path, *args: str) -> str:
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     root = tmp_path / "proj"
     root.mkdir()
     _git(root, "init", "-b", "main")
@@ -92,10 +93,10 @@ def test_public_argument(repo):
 def test_saves_url_and_logs(repo):
     github_repo.create_repo(repo, owner="me", name="login", private=False, run=_stub([]))
     folder = repo / docset_mod.SDLC_DIR / "login"
-    data = json.loads((folder / docset_mod.MANIFEST).read_text())
+    data = json.loads((folder / docset_mod.MANIFEST).read_text(encoding="utf-8"))
     assert data["github"] == {"url": "https://github.com/me/login", "private": False}
     assert "GitHub repository created: https://github.com/me/login" in (
-        folder / docset_mod.REVIEW_LOG).read_text()
+        folder / docset_mod.REVIEW_LOG).read_text(encoding="utf-8")
     assert _git(repo, "status", "--porcelain").strip() == ""
     assert "GitHub repository created" in _git(repo, "log", "-1", "--format=%s")
 
@@ -127,7 +128,7 @@ def test_refuses_empty_name(repo, name):
 def test_create_failure_saves_nothing(repo):
     with pytest.raises(github_repo.GithubRepoError, match="name taken"):
         github_repo.create_repo(repo, owner="me", name="login", run=_stub([], create=1))
-    data = json.loads((repo / docset_mod.SDLC_DIR / "login" / docset_mod.MANIFEST).read_text())
+    data = json.loads((repo / docset_mod.SDLC_DIR / "login" / docset_mod.MANIFEST).read_text(encoding="utf-8"))
     assert "github" not in data
 
 
@@ -135,7 +136,7 @@ def test_runner_run_never_calls_it(repo, monkeypatch):
     def boom(*a, **k):
         raise AssertionError("create_repo must only be called by a user action")
     monkeypatch.setattr(github_repo, "create_repo", boom)
-    assert "github_repo" not in Path(runner.__file__).read_text()
+    assert "github_repo" not in Path(runner.__file__).read_text(encoding="utf-8")
     for mode in ("human", "auto"):
         docset = docset_mod.load(repo, "login")
         docset.mode = mode

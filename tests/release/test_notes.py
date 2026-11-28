@@ -106,7 +106,7 @@ def test_missing_or_empty_pair_falls_back_and_says_so(tmp_path):
 def test_write_to_notes_path(tmp_path):
     path = notes.write(tmp_path, ReleaseConfig(), "1.3.0", "# v1.3.0")
     assert path == tmp_path / "docs/releases/v1.3.0.md"
-    assert path.read_text() == "# v1.3.0\n"
+    assert path.read_text(encoding="utf-8") == "# v1.3.0\n"
 
 
 def test_write_without_notes_path(tmp_path):

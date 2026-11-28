@@ -827,7 +827,7 @@ def _fake_plan(monkeypatch, steps):
         lambda root, cfg, version, **kw: release_engine.Plan(version, list(steps)))
 
 
-async def _until(pilot, condition, tries=300):
+async def _until(pilot, condition, tries=1500):  # 15 s: the Windows 3.11 runner is slow
     for _ in range(tries):
         if condition():
             return
@@ -836,7 +836,9 @@ async def _until(pilot, condition, tries=300):
 
 
 def _screen_is(app, cls):
-    return isinstance(app.screen, cls)
+    # Pushed is not composed: on a slow runner the screen is current a few frames
+    # before its children exist, and a query then finds nothing.
+    return isinstance(app.screen, cls) and app.screen.is_mounted
 
 
 async def _begin(app, pilot, mode="ask"):
@@ -915,7 +917,8 @@ async def test_bring_in_main_confirmation_shows_source_text(tmp_path, monkeypatc
     app = tui.WhylineConsoleApp(root=tmp_path)
     async with app.run_test() as pilot:
         await _begin(app, pilot, "ask")
-        await _until(pilot, lambda: _screen_is(app, ConfirmStepScreen))
+        await _until(pilot, lambda: _screen_is(app, ConfirmStepScreen)
+                     and app.screen.query("#release-go"))
         detail = app.screen.query_one("#release-confirm-detail")
         assert "Releasing from main at abc123." in str(detail.render())
         app.screen.query_one("#release-go", tui.Button).press()
@@ -1003,7 +1006,10 @@ async def test_notes_stop_cancels_without_a_failure_popup(tmp_path, monkeypatch)
     app._release_ask_agent = lambda prompt: "<notes>\nnotes\n</notes>"
     async with app.run_test() as pilot:
         await _begin(app, pilot, "ask")
-        await _until(pilot, lambda: _screen_is(app, NotesReviewScreen))
+        await _until(
+            pilot,
+            lambda: _screen_is(app, NotesReviewScreen) and app.screen.query("#release-notes-stop"),
+        )
         app.screen.query_one("#release-notes-stop", tui.Button).press()
         await _until(pilot, lambda: not app._release_running())
         assert cancelled == [True]
