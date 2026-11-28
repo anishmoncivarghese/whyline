@@ -1332,3 +1332,248 @@ async def test_fix_with_an_agent_gets_the_failure_and_answer(tmp_path, monkeypat
         await _until(pilot, lambda: "Start a new release when the fix is in; v1.2.3 is already tagged."
                      in _output(app))
         assert "Nothing was pushed" in _output(app)
+
+
+# -- RSO-9: Resolve on a stopped release ---------------------------------------
+
+
+class _Stop(Exception):
+    def __init__(self, message, kind):
+        super().__init__(message)
+        self.kind = kind
+        self.data = {}
+
+
+def _stopped_on(monkeypatch, app, kind, ask=None):
+    from whyline.release import resolve as release_resolve
+
+    seen = []
+
+    def explain_stop(root, cfg, version, got_kind, data, reason, **kw):
+        seen.append(got_kind)
+        return release_resolve.Resolution(got_kind, "Problem", ("a fact",))
+
+    def boom(cancel):
+        raise _Stop("it stopped", kind)
+
+    monkeypatch.setattr(release_resolve, "explain_stop", explain_stop)
+    monkeypatch.setattr(app, "_saved_failure", lambda: None)
+    app._release_ask_agent = ask or (lambda prompt: "")
+    _fake_plan(monkeypatch, [_step("s", "S", False, boom)])
+    return seen
+
+
+def _shown_buttons(app):
+    return {b.id for b in app.screen.query(tui.Button)
+            if all(w.display for w in b.ancestors_with_self)}
+
+
+def _resolve_ready(app):
+    from whyline.console.release_screens import ResolveScreen
+
+    screen = app.screen
+    return isinstance(screen, ResolveScreen) and screen._res is not None and not screen._working
+
+
+@pytest.mark.parametrize("kind", ["merge-conflict", "dirty", "check-failed", "push-behind",
+                                  "tag-exists", "release-exists", "publish-failed"])
+async def test_resolve_opens_for_each_stop_kind(tmp_path, monkeypatch, kind):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    seen = _stopped_on(monkeypatch, app, kind)
+    async with app.run_test() as pilot:
+        await _begin(app, pilot, "ask")
+        await _until(pilot, lambda: _screen_is(app, ReleaseFailedScreen))
+        resolve = app.screen.query_one("#release-resolve", tui.Button)
+        assert resolve.variant == "primary"
+        assert app.screen.query_one("#release-resume", tui.Button).variant == "default"
+        resolve.press()
+        await _until(pilot, lambda: _resolve_ready(app))
+        assert seen == [kind]
+
+
+async def test_a_ci_failure_keeps_the_old_buttons_only(tmp_path, monkeypatch):
+    from whyline.release import ci_failure
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    monkeypatch.setattr(
+        app, "_saved_failure", lambda: ci_failure.Failure(cause="tests", run_id="9", job="t"))
+
+    def boom(cancel):
+        raise release_github.StepError("CI failed")
+
+    _fake_plan(monkeypatch, [_step("ci", "CI", False, boom)])
+    async with app.run_test() as pilot:
+        await _begin(app, pilot, "ask")
+        await _until(pilot, lambda: _screen_is(app, ReleaseFailedScreen))
+        ids = {b.id for b in app.screen.query(tui.Button)}
+        assert ids == {"release-rerun", "release-ask", "release-open-run",
+                       "release-failed-close"}
+
+
+async def _propose(app, pilot, text="fix it"):
+    app.screen.query_one("#resolve-say", tui.Input).value = text
+    await pilot.pause()
+    app.screen.query_one("#resolve-ask-go", tui.Button).press()
+    await _until(pilot, lambda: _resolve_ready(app)
+                 and not app.screen.query_one("#resolve-proposal").has_class("-hidden"))
+
+
+REPLY = ("<cause>Two files disagree</cause>\n<steps>\n1. Edit a.py\n"
+         "2. git push --force\n</steps>")
+
+
+async def test_ask_shows_cause_steps_and_refused_steps(tmp_path, monkeypatch):
+    from whyline.release import resolve as release_resolve
+
+    prompts = []
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    _stopped_on(monkeypatch, app, "check-failed", ask=lambda p: prompts.append(p) or REPLY)
+    async with app.run_test() as pilot:
+        await _begin(app, pilot, "ask")
+        await _until(pilot, lambda: _screen_is(app, ReleaseFailedScreen)
+                     and app.screen.query("#release-resolve"))
+        app.screen.query_one("#release-resolve", tui.Button).press()
+        await _until(pilot, lambda: _resolve_ready(app))
+        assert app.screen.query_one("#resolve-ask-go", tui.Button).disabled
+        await _propose(app, pilot)
+        shown = str(app.screen.query_one("#resolve-proposal").render())
+        assert "Two files disagree" in shown and "1. Edit a.py" in shown
+        assert release_resolve.refusal("git push --force") in shown
+        assert "fix it" in prompts[0] and "Problem" in prompts[0]
+        visible = _shown_buttons(app)
+        assert visible == {"resolve-dothis", "resolve-change", "resolve-pcancel"}
+        app.screen.query_one("#resolve-change", tui.Button).press()
+        await pilot.pause()
+        assert app.screen.query_one("#resolve-say", tui.Input).value == "fix it"
+        assert app.screen.query_one("#resolve-proposal").has_class("-hidden")
+        assert "resolve-close" in _shown_buttons(app)
+
+
+async def test_cancel_a_proposal_closes_resolve(tmp_path, monkeypatch):
+    from whyline.console.release_screens import ResolveScreen
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    _stopped_on(monkeypatch, app, "check-failed", ask=lambda p: REPLY)
+    async with app.run_test() as pilot:
+        await _begin(app, pilot, "ask")
+        await _until(pilot, lambda: _screen_is(app, ReleaseFailedScreen)
+                     and app.screen.query("#release-resolve"))
+        app.screen.query_one("#release-resolve", tui.Button).press()
+        await _until(pilot, lambda: _resolve_ready(app))
+        await _propose(app, pilot)
+        app.screen.query_one("#resolve-pcancel", tui.Button).press()
+        await _until(pilot, lambda: not isinstance(app.screen, ResolveScreen))
+
+
+async def test_conflict_ask_an_agent_fills_the_resolve_box(tmp_path, monkeypatch):
+    from whyline.console.release_screens import ConflictScreen, ResolveScreen
+
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    _stopped_on(monkeypatch, app, "merge-conflict")
+    async with app.run_test() as pilot:
+        await _begin(app, pilot, "ask")
+        await _until(pilot, lambda: _screen_is(app, ReleaseFailedScreen)
+                     and app.screen.query("#release-resolve"))
+        app.screen.query_one("#release-resolve", tui.Button).press()
+        await _until(pilot, lambda: _resolve_ready(app))
+        resolve = app.screen
+        conflict = ConflictScreen(resolve.root, resolve._cfg, resolve._version)
+        app.push_screen(conflict, resolve._conflicts_done)
+        await _until(pilot, lambda: app.screen is conflict)
+        conflict.dismiss(("ask", "src/a.py"))
+        box = resolve.query_one("#resolve-say", tui.Input)
+        await _until(pilot, lambda: app.screen is resolve and "src/a.py" in box.value)
+        assert not resolve.query_one("#resolve-ask-go", tui.Button).disabled
+
+
+async def test_no_steps_offers_only_change_it_and_close(tmp_path, monkeypatch):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    _stopped_on(monkeypatch, app, "check-failed",
+                ask=lambda p: "<cause>Nothing to do</cause>\n<steps>\n</steps>")
+    async with app.run_test() as pilot:
+        await _begin(app, pilot, "ask")
+        await _until(pilot, lambda: _screen_is(app, ReleaseFailedScreen)
+                     and app.screen.query("#release-resolve"))
+        app.screen.query_one("#release-resolve", tui.Button).press()
+        await _until(pilot, lambda: _resolve_ready(app))
+        await _propose(app, pilot)
+        assert app.screen.query_one("#resolve-dothis", tui.Button).has_class("-hidden")
+        visible = _shown_buttons(app)
+        assert visible == {"resolve-change", "resolve-close"}
+
+
+def _fix_fakes(monkeypatch, undone=None):
+    from types import SimpleNamespace
+
+    from whyline.console import fixmode
+
+    seen = []
+
+    def fake_fix(root, session, **kw):
+        seen.append([t.text for t in session.turns])
+        return SimpleNamespace(status="proposal", agent="claude", diagnosis="done", changes=[],
+                               snapshot="snap", violations=[])
+
+    monkeypatch.setattr(fixmode, "run_fix", fake_fix)
+    monkeypatch.setattr(fixmode, "fix_level", lambda root: fixmode.LEVEL_APPROVAL)
+    monkeypatch.setattr(fixmode, "open_session",
+                        lambda root, pid, agent="": fixmode.Session(pause_id=pid, agent="claude"))
+    if undone is not None:
+        monkeypatch.setattr(fixmode, "undo", lambda root, snap: undone.append(snap) or ["a.py"])
+    return seen
+
+
+async def _do_this(app, pilot):
+    await _begin(app, pilot, "ask")
+    await _until(pilot, lambda: _screen_is(app, ReleaseFailedScreen)
+                 and app.screen.query("#release-resolve"))
+    app.screen.query_one("#release-resolve", tui.Button).press()
+    await _until(pilot, lambda: _resolve_ready(app))
+    await _propose(app, pilot)
+    app.screen.query_one("#resolve-dothis", tui.Button).press()
+
+
+async def test_do_this_starts_a_fix_turn_and_keep_makes_resume_primary(tmp_path, monkeypatch):
+    from whyline.console.release_screens import ReleaseFixResultScreen
+    from whyline.release import resolve as release_resolve
+
+    seen = _fix_fakes(monkeypatch)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    _stopped_on(monkeypatch, app, "check-failed", ask=lambda p: REPLY)
+    async with app.run_test() as pilot:
+        await _do_this(app, pilot)
+        await _until(pilot, lambda: _screen_is(app, ReleaseFixResultScreen))
+        proposal = release_resolve.parse_proposal(REPLY, "fix it")
+        res = release_resolve.Resolution("check-failed", "Problem", ("a fact",))
+        assert seen[0][-1] == release_resolve.fix_request(res, proposal, "fix it")
+        app.screen.query_one("#release-fix-keep", tui.Button).press()
+        await _until(pilot, lambda: _screen_is(app, ReleaseFailedScreen))
+        assert app.screen.query_one("#release-resume", tui.Button).variant == "primary"
+        assert "already tagged" not in _output(app)
+
+
+async def test_undo_after_do_this_leaves_resolve_primary(tmp_path, monkeypatch):
+    from whyline.console.release_screens import ReleaseFixResultScreen
+
+    undone = []
+    _fix_fakes(monkeypatch, undone=undone)
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    _stopped_on(monkeypatch, app, "check-failed", ask=lambda p: REPLY)
+    async with app.run_test() as pilot:
+        await _do_this(app, pilot)
+        await _until(pilot, lambda: _screen_is(app, ReleaseFixResultScreen))
+        app.screen.query_one("#release-fix-undo", tui.Button).press()
+        await _until(pilot, lambda: _screen_is(app, ReleaseFailedScreen))
+        assert undone == ["snap"]
+        assert app.screen.query_one("#release-resume", tui.Button).variant == "default"
+        assert app.screen.query_one("#release-resolve", tui.Button).variant == "primary"
+
+
+@pytest.mark.parametrize("mode, line", [("auto", True), ("ask", False)])
+async def test_auto_mode_says_resolve_is_waiting(tmp_path, monkeypatch, mode, line):
+    app = tui.WhylineConsoleApp(root=tmp_path)
+    _stopped_on(monkeypatch, app, "check-failed")
+    async with app.run_test() as pilot:
+        await _begin(app, pilot, mode)
+        await _until(pilot, lambda: _screen_is(app, ReleaseFailedScreen))
+        assert ("Resolve is waiting in the Release window." in _output(app)) is line

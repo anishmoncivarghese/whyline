@@ -49506,3 +49506,108 @@ Append-only. Written by whyline; readable without it.
 
 <!-- whyline-event: d8256a72c3d9418c992997936aa56361 -->
 <!-- whyline-meta: {"v":1,"ts":"2026-11-26T11:01:02.723Z"} -->
+
+## 2026-11-26 — Resolve Do this reuses the Fix turn via a shared _run_release_fix; Ask stays disabled until text is typed
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSO-9
+
+**Because:** one Fix path keeps guards and Keep/Undo identical to Fix with an agent; the existing Ask-disabled test expects an empty box to disable it
+
+**Rejected:**
+
+- a second Fix runner for Resolve — would duplicate the guard and undo handling
+
+**Files:** src/whyline/console/tui.py
+
+<!-- whyline-event: 8c1ce17331ff4ffd84b2c1ed75d0d1ec -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-26T11:10:08.248Z"} -->
+
+## 2026-11-26 — Pass: Resolve Ask/Do this and stopped-release Resolve match RSO-9; full suite is green
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-9
+
+**Because:** Ask calls propose in a worker with the release agent picker, shows cause/steps/refused, Do this/Change it/Cancel, and with no steps only Change it and Close. Do this starts the Fix turn through _run_release_fix with fix_request; Keep and Undo work; Resume is primary after a kept fix; CI failures keep RCR buttons; auto mode adds the waiting line; Resolve opens for each stop kind. uv run pytest -q exited 0 with one skip, one unrelated flake rerun then passed, and warnings only.
+
+**Rejected:**
+
+- Fail because ConflictScreen Ask an agent does not fill the box — RSO-9 numbered items and tests cover ResolveScreen Ask; ConflictScreen still dismisses with (ask, path) as RSO-8 left it
+- Fail because Cancel and Change it both return to the box — spec lists both after a proposal with steps; Close remains the way out
+
+**Test:** uv run pytest -q: exit 0, one skip, one unrelated flake rerun then passed, warnings only
+
+**Files:** src/whyline/console/release_screens.py, src/whyline/console/tui.py, tests/console/test_tui_relay_run.py
+
+<!-- whyline-event: b61bc87d6c4947b190f90e898d8c4a2e -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-26T12:02:16.646Z"} -->
+
+## 2026-11-26 — Reject RSO-9: proposal cancellation and conflict Ask are not wired as specified
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSO-9
+
+**Because:** ResolveScreen treats Cancel exactly like Change it while leaving Close visible for stepful proposals, and it ignores ConflictScreen's ask result instead of prefilling the Resolve box; the each-stop-kind test also omits release-exists. The full uv run pytest -q suite exited 0 with one skip, three passing reruns, and warnings only, so these are uncovered behavior gaps.
+
+**Rejected:**
+
+- Approve — the current tests pass but do not assert these required interactions
+
+**Files:** src/whyline/console/release_screens.py, tests/console/test_tui_relay_run.py
+
+<!-- whyline-event: c906c034095c4cd79d1e6dc392f8fe26 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-26T13:03:34.781Z"} -->
+
+## 2026-11-26 — Proposal Cancel closes Resolve; Close hidden while steps are shown; conflict Ask prefills the Resolve box
+
+**Actor:** claude
+**Role:** implementer
+**Task:** RSO-9
+
+**Because:** Spec lists Do this/Change it/Cancel with steps and Change it/Close without; Change it keeps the typed text, Cancel is a real exit; RSO-8 left ('ask', path) for RSO-9 to handle
+
+**Rejected:**
+
+- Leave Cancel as Change it — reviewer ruled it must cancel
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: bff21bb248d64ea69e43f568eadd028d -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-26T13:21:59.202Z"} -->
+
+## 2026-11-26 — Pass RSO-9: Ask, Do this, Keep/Undo, stop kinds, CI buttons, and the auto-mode line behave as specified
+
+**Actor:** grok
+**Role:** tester
+**Task:** RSO-9
+
+**Because:** Isolated RSO-9 tests passed 16/16: propose with refused steps, Cancel closes while Change it keeps the text and restores Close, no-steps offers Change it and Close, conflict Ask prefills the box, Do this uses fix_request, Keep makes Resume primary, Undo leaves Resolve primary, each stop kind including release-exists, CI keeps RCR buttons, auto mode adds the waiting line. Full-suite failures were Textual mount races (PlanReleaseScreen #release-steps, Keep queried before #release-fix-keep mounted); the Keep test passed in isolation.
+
+**Rejected:**
+
+- Fail for full-suite red — the three failures are screen-class-before-children races, not missing Keep or Resolve behavior
+
+**Files:** src/whyline/console/release_screens.py
+
+<!-- whyline-event: abc4356b0b44419788b6428640e4afca -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-26T14:43:44.329Z"} -->
+
+## 2026-11-28 — Approve RSO-9: Resolve Ask, guarded Fix, stopped-release actions, and auto-mode notice meet the task
+
+**Actor:** codex
+**Role:** reviewer
+**Task:** RSO-9
+
+**Because:** The diff wires propose through a worker and the release agent picker, preserves typed text across Change it, handles refused and empty proposals, shares the guarded Fix runner with Keep/Undo, rechecks or restores the stopped-release screen appropriately, preserves CI controls, and the required plain uv run pytest -q completed with exit 0 and one skip; the previously reported mount-timing flake did not reproduce.
+
+**Rejected:**
+
+- Request changes for the prior Textual mount race — the required fresh full-suite run was green and the behavior is correctly covered.
+
+**Files:** src/whyline/console/release_screens.py, src/whyline/console/tui.py, tests/console/test_tui_relay_run.py
+
+<!-- whyline-event: d211ae1c3acf491192394f130d49c325 -->
+<!-- whyline-meta: {"v":1,"ts":"2026-11-28T06:21:26.035Z"} -->

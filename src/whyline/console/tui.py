@@ -6671,18 +6671,52 @@ class WhylineConsoleApp(App):
                 self._sync_mode_indicator()
                 self._launch_relay(["done", task])
         elif result.status == "failed" and not self._release_stopped:
-            from whyline.console.release_screens import ReleaseFailedScreen
-
-            self.render_event(SessionEvent(kind="error", text=result.message))
-            self.push_screen(
-                ReleaseFailedScreen(
-                    result.message, self._release_pr_flag, self._saved_failure()),
-                self._release_failure_done,
-            )
+            text = result.message
+            if self._saved_failure() is None and self._release_choice.mode == "auto":
+                text += "\nResolve is waiting in the Release window."
+            self.render_event(SessionEvent(kind="error", text=text))
+            self._show_release_failed(result.message)
         elif result.status == "error":
             self.render_event(SessionEvent(kind="error", text=result.message))
         else:
             self.render_event(SessionEvent(kind="output", text=result.message))
+
+    def _show_release_failed(self, message: str, *, fix_kept: bool = False) -> None:
+        """The stopped-release window; Resolve… beside Resume unless CI failed."""
+        from whyline.console.release_screens import ReleaseFailedScreen, ResolveScreen
+        from whyline.release import config as release_config
+        from whyline.release import ready as release_ready
+        from whyline.release import resolve as release_resolve
+        from whyline.release import state as release_state
+
+        root = self.session.root
+        self._release_stop_text = message
+        failure = self._saved_failure()
+        resolve = None
+        if failure is None:
+            try:
+                saved = release_state.load(root)
+            except Exception:  # noqa: BLE001 - no saved state: nothing to resolve
+                saved = None
+            kind = str(getattr(saved, "kind", "") or "")
+            data = dict(getattr(saved, "data", None) or {})
+            version = self._release_choice.version
+            run = getattr(self, "_release_run", release_ready.default_run)
+            fetch = getattr(self, "_release_fetch", release_ready.default_fetch)
+
+            def resolve() -> Any:
+                cfg = release_config.load(root)
+                return ResolveScreen(
+                    root, cfg, version, release_ready.ReadyItem(kind or "stop", False, message),
+                    run=run, fetch=fetch,
+                    explain=lambda: release_resolve.explain_stop(
+                        root, cfg, version, kind, data, message, run=run, fetch=fetch))
+
+        self.push_screen(
+            ReleaseFailedScreen(message, self._release_pr_flag, failure, resolve=resolve,
+                                fix_kept=fix_kept),
+            self._release_failure_done,
+        )
 
     def _saved_failure(self) -> Any:
         from whyline.release import ci_failure
@@ -6695,7 +6729,13 @@ class WhylineConsoleApp(App):
             return None
 
     def _release_failure_done(self, choice: Any) -> None:
-        if choice == "resume":
+        from whyline.console.release_screens import FixAsk
+
+        if isinstance(choice, FixAsk):
+            message = getattr(self, "_release_stop_text", "")
+            self._begin_resolve_fix(
+                choice, lambda kept: self._show_release_failed(message, fix_kept=kept))
+        elif choice == "resume":
             self._run_release(resume=True)
         elif choice == "rerun":
             self._run_release(resume=True, rerun=True)
@@ -6758,10 +6798,7 @@ class WhylineConsoleApp(App):
     def _begin_release_fix(self, failure: Any, answer: Any) -> None:
         """A Fix session for a failed release: it edits, each change waits for approval,
         and nothing is pushed."""
-        import threading
-
-        from whyline.console import fixmode, recovery
-        from whyline_relay import setup as relay_setup
+        from whyline.console import fixmode
 
         root = self.session.root
         say = lambda text: self.render_event(SessionEvent(kind="output", text=text))  # noqa: E731
@@ -6780,6 +6817,49 @@ class WhylineConsoleApp(App):
             session.turns.append(
                 fixmode.Turn("you", "The release's CI failed:\n" + failure.text(), stamp))
             session.turns.append(fixmode.Turn(session.agent or "agent", answer.text, stamp))
+        self._run_release_fix(session, getattr(self._release_choice, "version", ""))
+
+    def _begin_resolve_fix(self, ask: Any, on_done: Any) -> None:
+        """Do this from Resolve: the same Fix turn, with the accepted proposal as its
+        instruction. on_done(kept) runs when the user has chosen Keep or Undo."""
+        from whyline.console import fixmode
+        from whyline.release import ready as release_ready
+        from whyline.release import resolve as release_resolve
+
+        root = self.session.root
+        say = lambda text: self.render_event(SessionEvent(kind="output", text=text))  # noqa: E731
+        if fixmode.fix_level(root) == fixmode.LEVEL_SUGGEST:
+            say("Your Fix level is Suggest, so the agent won't edit. "
+                "Choose Fix with approval in Settings to let it.")
+            return
+        try:
+            session = fixmode.open_session(
+                root, fixmode.pause_id("release-resolve", ask.resolution.key),
+                self.session.agent or "")
+        except Exception:  # noqa: BLE001
+            session = fixmode.Session(pause_id="release-resolve", agent=self.session.agent or "")
+        session.turns.append(fixmode.Turn("you", ask.request, self._wall().isoformat()))
+        run = getattr(self, "_release_run", release_ready.default_run)
+
+        def finished(res: Any) -> None:
+            if res is not None:
+                try:
+                    release_resolve.record_fix(root, ask.resolution, ask.text,
+                                               str(getattr(res, "status", "")), run=run)
+                except Exception:  # noqa: BLE001 - the record never blocks the fix
+                    pass
+
+        self._run_release_fix(session, "", on_done=on_done, on_result=finished)
+
+    def _run_release_fix(self, session: Any, version: str, *, on_done: Any = None,
+                         on_result: Any = None) -> None:
+        import threading
+
+        from whyline.console import fixmode, recovery
+        from whyline_relay import setup as relay_setup
+
+        root = self.session.root
+        say = lambda text: self.render_event(SessionEvent(kind="output", text=text))  # noqa: E731
         chain: list[str] = []
         for name in [session.agent or "", *self._fix_backups(relay_setup, root)]:
             if name and name not in chain:
@@ -6787,7 +6867,6 @@ class WhylineConsoleApp(App):
         cancel = threading.Event()
         self._ask_cancel = cancel
         runner = self._runner or recovery._AUTO_RUNNER
-        version = self._release_choice.version
 
         def progress(text: str) -> None:
             self.call_from_thread(self.render_event, SessionEvent(kind="output", text=text))
@@ -6801,13 +6880,21 @@ class WhylineConsoleApp(App):
             except Exception as exc:  # noqa: BLE001
                 progress(f"Fix failed: {exc}")
             finally:
-                self.call_from_thread(self._release_fix_finished, res, cancel, version)
+                if on_result is not None:
+                    on_result(res)
+                if on_done is None:
+                    self.call_from_thread(self._release_fix_finished, res, cancel, version)
+                else:
+                    self.call_from_thread(
+                        self._release_fix_finished, res, cancel, version, on_done)
 
         say(f"{chain[0] if chain else 'The agent'} is fixing…")
         self._set_busy(True, "fixing the release failure")
         self.run_worker(fix_thread, thread=True)
 
-    def _release_fix_finished(self, res: Any, cancel: Any, version: str) -> None:
+    def _release_fix_finished(self, res: Any, cancel: Any, version: str,
+                              on_done: Any = None) -> None:
+        """on_done(kept) is the Resolve path: it replaces the already-tagged note."""
         from whyline.console.release_screens import FIX_DONE_TEXT, ReleaseFixResultScreen
 
         self._ask_cancel = None
@@ -6816,6 +6903,8 @@ class WhylineConsoleApp(App):
         if cancel.is_set() or res is None or res.status not in ("proposal", "violation"):
             say("Fix stopped; partial edits were undone." if cancel.is_set()
                 else "No agent could make a guarded fix.")
+            if on_done is not None:
+                on_done(False)
             return
 
         def decided(answer: Any) -> None:
@@ -6829,7 +6918,10 @@ class WhylineConsoleApp(App):
                     say(f"Could not undo the fix: {exc}")
             elif res.status == "proposal":
                 say("Changes kept. Nothing was pushed.")
-            say(FIX_DONE_TEXT.format(version=version))
+            if on_done is not None:
+                on_done(answer == "keep" and res.status == "proposal")
+            else:
+                say(FIX_DONE_TEXT.format(version=version))
 
         self.push_screen(ReleaseFixResultScreen(res), decided)
 

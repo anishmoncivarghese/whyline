@@ -1443,6 +1443,10 @@ class ReleaseScreen(ModalScreen):
             self._open_place(option)
         elif action == "version":
             self._use_version(str(option.id)[len("version-"):])
+        elif action == "fix":
+            begin = getattr(self.app, "_begin_resolve_fix", None)
+            if begin is not None:
+                begin(option, lambda kept: self._run_check() if kept else None)
 
     def _open_place(self, option: release_resolve.Option) -> None:
         if option.id == "open-security":
@@ -1534,11 +1538,21 @@ class ReleaseScreen(ModalScreen):
         self._start_release(choice)
 
 
+@dataclass(frozen=True)
+class FixAsk:
+    """A proposal the user accepted: the Fix instruction and what to record about it."""
+
+    request: str
+    resolution: release_resolve.Resolution
+    text: str
+
+
 class ResolveScreen(ModalScreen):
     """What is wrong with one failed check, and the options to put it right.
 
-    Dismisses with None, or (action, option) where action is recheck, open or version.
-    Nothing that changes the repository runs before Do it.
+    Dismisses with None, or (action, option) where action is recheck, open, version or
+    fix (the option is then a FixAsk). Nothing that changes the repository runs before
+    Do it or Do this.
     """
 
     BINDINGS = [("escape", "close", "Close")]
@@ -1547,7 +1561,8 @@ class ResolveScreen(ModalScreen):
     #resolve-box { width: 90%; max-width: 100; height: 90%; border: round $accent;
                    background: $surface; padding: 1 2; }
     #resolve-body { height: 1fr; }
-    #resolve-options, #resolve-actions, #resolve-after, #resolve-ask { height: auto; }
+    #resolve-options, #resolve-actions, #resolve-after, #resolve-ask,
+    #resolve-propose-actions { height: auto; }
     #resolve-title { text-style: bold; }
     #resolve-say { width: 1fr; }
     .-hidden { display: none; }
@@ -1555,7 +1570,9 @@ class ResolveScreen(ModalScreen):
 
     def __init__(self, root: Path | str, cfg: release_config.ReleaseConfig, version: str,
                  item: release_ready.ReadyItem, *, run: release_ready.Run | None = None,
-                 fetch: release_ready.Fetch | None = None) -> None:
+                 fetch: release_ready.Fetch | None = None,
+                 explain: Callable[[], release_resolve.Resolution] | None = None,
+                 ask_agent: Callable[[str], str] | None = None) -> None:
         super().__init__()
         self.root = Path(root)
         self._cfg = cfg
@@ -1563,6 +1580,10 @@ class ResolveScreen(ModalScreen):
         self._item = item
         self._run = run or release_ready.default_run
         self._fetch = fetch or release_ready.default_fetch
+        self._explain = explain
+        self._ask_agent = ask_agent
+        self._proposal: release_resolve.Proposal | None = None
+        self._typed = ""
         self._res: release_resolve.Resolution | None = None
         self._option: release_resolve.Option | None = None
         self._buttons: dict[str, release_resolve.Option] = {}
@@ -1579,7 +1600,12 @@ class ResolveScreen(ModalScreen):
                 yield Static("", id="resolve-preview", classes="-hidden", markup=False)
                 yield Input(placeholder="Commit message", id="resolve-message",
                             classes="-hidden")
+                yield Static("", id="resolve-proposal", classes="-hidden", markup=False)
                 yield Static("", id="resolve-result", markup=False)
+            with Horizontal(id="resolve-propose-actions", classes="-hidden"):
+                yield Button("Do this", id="resolve-dothis", variant="primary")
+                yield Button("Change it", id="resolve-change")
+                yield Button("Cancel", id="resolve-pcancel")
             with Horizontal(id="resolve-actions", classes="-hidden"):
                 yield Button("Do it", id="resolve-do", variant="primary")
                 yield Button("Cancel", id="resolve-cancel")
@@ -1596,21 +1622,37 @@ class ResolveScreen(ModalScreen):
     # -- work ---------------------------------------------------------------
 
     def _controls(self) -> list[Button]:
-        ids = {"resolve-do", "resolve-cancel", "resolve-undo", "resolve-close", *self._buttons}
+        ids = {"resolve-do", "resolve-cancel", "resolve-undo", "resolve-close",
+               "resolve-dothis", "resolve-change", "resolve-pcancel", *self._buttons}
         return [b for b in self.query(Button) if b.id in ids]
 
     def _busy(self, busy: bool) -> None:
         self._working = busy
         for button in self._controls():
             button.disabled = busy
+        self._sync_ask()
+
+    def _sync_ask(self) -> None:
+        """Ask needs the facts read and something typed."""
+        typed = bool(self.query_one("#resolve-say", Input).value.strip())
+        self.query_one("#resolve-ask-go", Button).disabled = (
+            self._working or self._res is None or not typed)
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "resolve-say":
+            event.stop()
+            self._sync_ask()
 
     def _work(self, fn, *args) -> None:
         self._busy(True)
         self.run_worker(lambda: fn(*args), thread=True, exclusive=True, name="release-resolve")
 
     def _explain_in_thread(self) -> None:
-        res = release_resolve.explain(self.root, self._cfg, self._version, self._item,
-                                      run=self._run, fetch=self._fetch)
+        if self._explain is not None:
+            res = self._explain()
+        else:
+            res = release_resolve.explain(self.root, self._cfg, self._version, self._item,
+                                          run=self._run, fetch=self._fetch)
         self.app.call_from_thread(self._show_resolution, res)
 
     def _show_resolution(self, res: release_resolve.Resolution) -> None:
@@ -1625,6 +1667,62 @@ class ResolveScreen(ModalScreen):
             box.mount(Button(option.label, id=button_id,
                              variant="primary" if index == 0 else "default"))
         self._busy(False)
+
+    def _propose_in_thread(self, text: str) -> None:
+        try:
+            ask = (self._ask_agent or getattr(self.app, "_release_ask_agent", None)
+                   or release_plan.default_ask_agent(self.root))
+            proposal = release_resolve.propose(self.root, self._res, text, ask_agent=ask,
+                                               run=self._run)
+        except Exception as exc:  # noqa: BLE001 - the agent may be missing or time out
+            self.app.call_from_thread(self._propose_failed, str(exc) or "it failed")
+            return
+        self.app.call_from_thread(self._show_proposal, proposal, text)
+
+    def _propose_failed(self, message: str) -> None:
+        self.query_one("#resolve-result", Static).update(
+            f"The agent could not answer: {message}")
+        self._busy(False)
+
+    def _show_proposal(self, proposal: release_resolve.Proposal, text: str) -> None:
+        self._proposal = proposal
+        self._typed = text
+        lines = [f"Cause: {proposal.cause or '(not known)'}", ""]
+        if proposal.steps:
+            lines.append("Steps:")
+            lines += [f"{n}. {step}" for n, step in enumerate(proposal.steps, 1)]
+        else:
+            lines.append("No steps to take.")
+        if proposal.refused:
+            lines += ["", "Not done:"]
+            lines += [f"- {release_resolve.refusal(step)}" for step in proposal.refused]
+        self.query_one("#resolve-proposal", Static).update("\n".join(lines))
+        self.query_one("#resolve-proposal").remove_class("-hidden")
+        for widget_id in ("#resolve-options", "#resolve-ask"):
+            self.query_one(widget_id).add_class("-hidden")
+        self.query_one("#resolve-result", Static).update("")
+        self.query_one("#resolve-propose-actions").remove_class("-hidden")
+        for widget_id in ("#resolve-dothis", "#resolve-pcancel"):
+            self.query_one(widget_id).set_class(not proposal.steps, "-hidden")
+        # With steps the way out is Cancel; with none it is Close.
+        self.query_one("#resolve-close").set_class(bool(proposal.steps), "-hidden")
+        self._busy(False)
+
+    def _leave_proposal(self) -> None:
+        """Back to the box; what was typed stays."""
+        self._proposal = None
+        self.query_one("#resolve-proposal").add_class("-hidden")
+        self.query_one("#resolve-propose-actions").add_class("-hidden")
+        self.query_one("#resolve-options").remove_class("-hidden")
+        self.query_one("#resolve-ask").remove_class("-hidden")
+        self.query_one("#resolve-close").remove_class("-hidden")
+        self.query_one("#resolve-result", Static).update("")
+
+    def _do_this(self) -> None:
+        if self._proposal is None or self._res is None or not self._proposal.steps:
+            return
+        request = release_resolve.fix_request(self._res, self._proposal, self._typed)
+        self.dismiss(("fix", FixAsk(request, self._res, self._typed)))
 
     def _preview_in_thread(self, option: release_resolve.Option) -> None:
         shown = release_resolve.preview(self.root, self._cfg, self._version, option,
@@ -1683,6 +1781,15 @@ class ResolveScreen(ModalScreen):
             self._cancel()
         elif button_id == "resolve-undo":
             self._work(self._undo_in_thread, self._snapshot)
+        elif button_id == "resolve-ask-go":
+            self._work(self._propose_in_thread,
+                       self.query_one("#resolve-say", Input).value.strip())
+        elif button_id == "resolve-dothis":
+            self._do_this()
+        elif button_id == "resolve-change":
+            self._leave_proposal()
+        elif button_id == "resolve-pcancel":
+            self.action_close()
         elif button_id == "resolve-close":
             self.action_close()
 
@@ -1708,6 +1815,11 @@ class ResolveScreen(ModalScreen):
         if result and result[0] == "recheck":
             self._acted = True
             self.dismiss(("recheck", None))
+        elif result and result[0] == "ask":
+            box = self.query_one("#resolve-say", Input)
+            box.value = f"Settle the conflict in {result[1]}"
+            box.focus()
+            self._sync_ask()
 
     def _do_it(self) -> None:
         option = self._option
@@ -2255,10 +2367,14 @@ class ReleaseFailedScreen(ModalScreen):
         on_no_runner: str | None = None,
         stop_kind: str = "",
         conflicts: Callable[[], ConflictScreen] | None = None,
+        resolve: Callable[[], ResolveScreen] | None = None,
+        fix_kept: bool = False,
     ) -> None:
         super().__init__()
         self._stop_kind = stop_kind
         self._conflicts = conflicts
+        self._resolve = resolve
+        self._fix_kept = fix_kept
         self._on_no_runner = on_no_runner
         self._reason = reason
         self._open_pr = open_pr
@@ -2282,7 +2398,13 @@ class ReleaseFailedScreen(ModalScreen):
                              id="release-failed-reason", markup=False)
             with Horizontal():
                 if failure is None:
-                    yield Button("Resume release", id="release-resume", variant="primary")
+                    resolving = self._resolve is not None
+                    yield Button("Resume release", id="release-resume",
+                                 variant="primary" if self._fix_kept or not resolving
+                                 else "default")
+                    if resolving:
+                        yield Button("Resolve…", id="release-resolve",
+                                     variant="default" if self._fix_kept else "primary")
                 else:
                     rerun_first = (failure.cause in RERUN_FIRST
                                    and self._no_runner_setting() != "off")
@@ -2311,6 +2433,9 @@ class ReleaseFailedScreen(ModalScreen):
         elif button == "release-conflicts":
             if self._conflicts is not None:
                 self.app.push_screen(self._conflicts(), self._conflicts_done)
+        elif button == "release-resolve":
+            if self._resolve is not None:
+                self.app.push_screen(self._resolve(), self._resolve_done)
         else:
             choices = {"release-resume": RESUME, "release-ask": ASK,
                        "release-open-pr": OPEN_PR}
@@ -2319,6 +2444,14 @@ class ReleaseFailedScreen(ModalScreen):
     def _conflicts_done(self, result) -> None:
         if result and result[0] == "recheck":
             self.dismiss(RESUME)
+
+    def _resolve_done(self, result) -> None:
+        if not result:
+            return
+        if result[0] == "recheck":
+            self.dismiss(RESUME)
+        elif result[0] == "fix":
+            self.dismiss(result[1])  # a FixAsk; the console starts the Fix turn
 
     def _rerun_answer(self, rerun: bool | None) -> None:
         if rerun:
